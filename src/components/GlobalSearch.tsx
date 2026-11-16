@@ -65,7 +65,7 @@ export function GlobalSearch({ variant }: { variant: "sidebar" | "icon" }) {
         onClose={() => setOpen(false)}
         onClick={(e) => e.target === e.currentTarget && setOpen(false)}
         aria-label="Cerca"
-        className="m-0 mx-auto mt-0 w-full max-w-full bg-transparent p-0 backdrop:bg-ink/50 md:mt-[12vh] md:max-w-[640px]"
+        className="m-0 mx-auto mt-0 h-dvh max-h-dvh w-full max-w-full bg-transparent p-0 backdrop:bg-ink/50 md:mt-[12vh] md:h-auto md:max-h-[80vh] md:max-w-[640px]"
       >
         {open && <SearchBox onClose={() => setOpen(false)} />}
       </dialog>
@@ -121,13 +121,14 @@ function SearchBox({ onClose }: { onClose: () => void }) {
   let last = "";
 
   return (
-    <div className="overflow-hidden border-hair bg-label shadow-[0_24px_60px_-20px_rgb(17_20_24/0.5)] md:rounded-md md:border">
-      <div className="flex items-center gap-2 border-b border-hair px-3">
-        <Search className="size-5 shrink-0 text-ink-3" aria-hidden />
+    <div className="flex h-full flex-col overflow-hidden bg-label shadow-[0_30px_80px_-24px_rgb(17_20_24/0.55)] md:h-auto md:rounded-md">
+      {/* Campo di ricerca: grande, senza riquadri; la finestra stessa è il segnale che si sta cercando */}
+      <div className="flex items-center gap-3 border-b-2 border-band px-4">
+        <Search className="size-6 shrink-0 text-band" strokeWidth={2.2} aria-hidden />
         <input
           autoFocus
-          className="h-14 min-w-0 flex-1 bg-transparent text-[18px] outline-none"
-          placeholder="Targa, telaio, ID, codice OE, cliente…"
+          className="h-16 focus-visible:outline-none min-w-0 flex-1 bg-transparent text-[20px] font-medium text-ink placeholder:font-normal placeholder:text-ink-3"
+          placeholder="Cerca targa, telaio, codice…"
           value={q}
           onChange={(e) => {
             setQ(e.target.value);
@@ -144,34 +145,62 @@ function SearchBox({ onClose }: { onClose: () => void }) {
           }}
           aria-label="Cerca in tutto il gestionale"
         />
-        <button onClick={onClose} className="grid size-10 place-items-center rounded text-ink-3 hover:text-ink" aria-label="Chiudi ricerca">
+        {q && (
+          <button onClick={() => setQ("")} className="code shrink-0 rounded px-2 py-1 text-[13px] font-semibold uppercase tracking-wide text-ink-3 hover:text-ink">
+            Svuota
+          </button>
+        )}
+        <button onClick={onClose} className="grid size-10 shrink-0 place-items-center rounded-full text-ink-3 hover:bg-carton hover:text-ink" aria-label="Chiudi ricerca">
           <X className="size-5" aria-hidden />
         </button>
       </div>
-      <div className="max-h-[70vh] overflow-y-auto md:max-h-[60vh]">
+
+      <div className="min-h-0 flex-1 overflow-y-auto md:max-h-[58vh] md:flex-none">
         {query.length < 2 ? (
-          <p className="px-4 py-6 text-ink-3">Scrivi almeno due caratteri. Le targhe si trovano anche con gli spazi (es. «EK 482»).</p>
+          // A vuoto: cosa si può cercare, con un esempio da toccare
+          <div className="p-4">
+            <p className="code mb-2.5 text-[13px] font-bold uppercase tracking-wide text-ink-3">Cerca per</p>
+            <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+              {EXAMPLES.map((x) => (
+                <li key={x.label}>
+                  <button onClick={() => setQ(x.example)} className="flex w-full items-center justify-between gap-3 rounded-md border border-hair-soft bg-carton px-3 py-2.5 text-left hover:border-band hover:bg-band-tint">
+                    <span className="text-[15px] font-semibold">{x.label}</span>
+                    <span className="code truncate text-[15px] text-ink-2">{x.example}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : hits.length === 0 ? (
-          <p className="px-4 py-6 text-ink-2">Nessun risultato per «{q}».</p>
+          <div className="px-4 py-8 text-center">
+            <p className="font-semibold">Nessun risultato per «{q}»</p>
+            <p className="mt-1 text-sm text-ink-2">Prova con una parte del codice o della targa.</p>
+          </div>
         ) : (
-          <ul className="pb-2">
+          <ul className="py-1.5">
             {hits.map((h, i) => {
               const header = h.group !== last;
               last = h.group;
+              const on = i === cur;
               return (
                 <li key={h.group + h.id}>
                   {header && <p className="code px-4 pb-1 pt-3 text-[13px] font-bold uppercase tracking-wide text-ink-3">{h.group}</p>}
                   <button
                     onClick={() => go(h)}
                     onMouseEnter={() => setSel(i)}
-                    className={`grid w-full grid-cols-[20px_auto_minmax(0,1fr)] items-center gap-3 px-4 py-2.5 text-left ${i === cur ? "bg-band-tint" : ""}`}
+                    className={`grid w-full grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3 border-l-4 px-3 py-2 text-left ${on ? "border-band bg-band-tint" : "border-transparent"}`}
                   >
-                    <h.icon className="size-5 text-ink-3" aria-hidden />
-                    <span className="code text-[17px] font-bold">{h.id}</span>
+                    <span className={`grid size-9 place-items-center rounded ${on ? "bg-band text-white" : "bg-carton text-ink-2"}`}>
+                      <h.icon className="size-5" aria-hidden />
+                    </span>
                     <span className="min-w-0">
-                      <span className="block truncate font-semibold">{h.title}</span>
+                      <span className="flex items-baseline gap-2">
+                        <span className="code shrink-0 text-[17px] font-bold">{h.id}</span>
+                        <span className="truncate font-semibold">{h.title}</span>
+                      </span>
                       <span className="block truncate text-sm text-ink-2">{h.sub}</span>
                     </span>
+                    {on && <span className="code hidden text-[12px] font-semibold uppercase tracking-wide text-band md:block">Invio</span>}
                   </button>
                 </li>
               );
@@ -179,9 +208,24 @@ function SearchBox({ onClose }: { onClose: () => void }) {
           </ul>
         )}
       </div>
-      <p className="hidden border-t border-hair-soft px-4 py-2 text-[12px] text-ink-3 md:block">
-↑ ↓ per scegliere · Invio per aprire · Esc per chiudere
+      <p className="hidden items-center gap-4 border-t border-hair-soft bg-carton px-4 py-2 text-[13px] text-ink-3 md:flex">
+        <span><Kbd>↑</Kbd> <Kbd>↓</Kbd> scegli</span>
+        <span><Kbd>Invio</Kbd> apri</span>
+        <span><Kbd>Esc</Kbd> chiudi</span>
       </p>
     </div>
   );
 }
+
+const Kbd = ({ children }: { children: React.ReactNode }) => (
+  <kbd className="code inline-grid h-6 min-w-6 place-items-center rounded border border-hair bg-label px-1.5 text-[12px] font-semibold text-ink-2 shadow-[0_1px_0_var(--hair)]">{children}</kbd>
+);
+
+const EXAMPLES = [
+  { label: "Targa", example: "EK 482" },
+  { label: "Ricambio", example: "R-002306" },
+  { label: "Codice vecchio", example: "K000" },
+  { label: "Codice OE", example: "1K0 510" },
+  { label: "Veicolo o pratica", example: "V-000117" },
+  { label: "Cliente o documento", example: "Officina" },
+];

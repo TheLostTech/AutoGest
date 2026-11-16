@@ -65,9 +65,12 @@ body {
   color: var(--band-ink);
 }
 
-:focus-visible {
-  outline: 3px solid var(--band);
-  outline-offset: 2px;
+/* Nello strato base: i componenti possono sostituirlo con le loro classi (es. la ricerca globale) */
+@layer base {
+  :focus-visible {
+    outline: 3px solid var(--band);
+    outline-offset: 2px;
+  }
 }
 
 * {
