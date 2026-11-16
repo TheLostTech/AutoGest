@@ -8,7 +8,7 @@ import { BRAND, DEMO_NOTICE } from "@/lib/config";
 export default function ShopLayout({ children }: { children: React.ReactNode }) {
   const n = useCart((s) => s.ids.length);
   return (
-    <div className="min-h-dvh bg-carton">
+    <div className="min-h-dvh bg-ground">
       <div className="bg-ink px-4 py-1.5 text-center text-[12px] font-semibold uppercase tracking-[0.14em] text-white/80 code">
         {DEMO_NOTICE} · negozio online · <Link href="/" className="underline">torna al gestionale</Link>
       </div>

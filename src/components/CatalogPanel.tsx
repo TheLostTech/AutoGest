@@ -70,8 +70,7 @@ export function CatalogPanel({ part, vehicle }: { part: Part; vehicle?: Vehicle 
         {state === "none" && <p className="text-sm font-semibold text-warn">Nessun risultato: piattaforma del veicolo non determinata.</p>}
         {state === "found" && info && (
           <div className="rounded-md border border-band/40 bg-band-tint/50 p-4">
-            <p className="code text-[12px] font-semibold uppercase tracking-[0.14em] text-band-deep">{info.source}</p>
-            <dl className="mt-2 grid grid-cols-[120px_1fr] gap-x-3 gap-y-1.5 text-[15px]">
+            <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1.5 text-[15px]">
               <dt className="text-ink-3">Codice OE atteso</dt>
               <dd className="code text-[20px] font-bold">{info.oem}</dd>
               <dt className="text-ink-3">Costruttore</dt>
@@ -92,6 +91,7 @@ export function CatalogPanel({ part, vehicle }: { part: Part; vehicle?: Vehicle 
                 <input className="field code text-[18px] font-bold uppercase" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder={info.oem} />
               </Field>
             </div>
+            <p className="mt-3 text-sm text-ink-3">Fonte: {info.source.toLowerCase()}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button
                 disabled={!matches}

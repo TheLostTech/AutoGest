@@ -56,7 +56,7 @@ export function RecoveryList({ vehicle, addHref }: { vehicle: Vehicle; addHref?:
                   <span className="text-ink-3"> / soglia {r.min}–{r.max}</span>
                 </span>
                 {r.riservati > 0 && <span>{r.riservati} riservati</span>}
-                {r.invendibili > 0 && <span>{r.invendibili} invendibili</span>}
+                {r.invendibili > 0 && <span className="basis-full">{r.invendibili} {r.invendibili === 1 ? "invendibile" : "invendibili"} (non contati)</span>}
                 {r.daAltriModelli > 0 && <span>{r.daAltriModelli} da modelli compatibili</span>}
                 {r.daQuestoVeicolo > 0 && <span className="font-semibold text-band">{r.daQuestoVeicolo} già da questo veicolo</span>}
               </div>

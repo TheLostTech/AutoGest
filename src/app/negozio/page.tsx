@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { PART_TYPES, PLATFORMS, CONDITIONS } from "@/lib/catalog";
+import { PART_TYPES, PLATFORMS, CONDITIONS, typeById } from "@/lib/catalog";
 import { euro, fits } from "@/lib/logic";
 import { PartImage } from "@/components/ui";
 
@@ -78,15 +78,23 @@ export default function Negozio() {
           const v = vById.get(p.vehicleId);
           return (
             <li key={p.id}>
-              <Link href={`/negozio/${p.id}`} className="flex h-full flex-col overflow-hidden rounded-md border border-hair bg-label transition-colors hover:border-band">
+              <Link href={`/negozio/${p.id}`} className="label-sheet flex h-full flex-col overflow-hidden transition-colors hover:border-band">
+                <div className="flex items-center justify-between bg-band px-3 py-1 text-white">
+                  <span className="code text-[11px] font-semibold uppercase tracking-[0.12em]">{typeById(p.typeId).category}</span>
+                  <span className="code text-[11px] font-semibold uppercase tracking-[0.12em]">{p.compat?.verified ? "OE verificato" : "usato"}</span>
+                </div>
                 <PartImage src={p.photos[0]} typeId={p.typeId} className="aspect-square w-full bg-white p-3" />
                 <div className="flex flex-1 flex-col border-t border-hair-soft p-3">
-                  <span className="line-clamp-2 font-semibold leading-snug">{p.description}</span>
-                  <span className="mt-1 text-sm text-ink-3">{v?.year} · cond. {p.condition} {CONDITIONS[p.condition].label.toLowerCase()}</span>
-                  {platform && v?.platform !== platform && <span className="mt-1 text-[13px] font-semibold text-ok">Compatibile (codice OE verificato)</span>}
-                  <span className="mt-auto flex items-end justify-between pt-2">
-                    <span className="code text-[24px] font-bold leading-none">{euro(p.price)}</span>
-                    <span className="code text-[13px] font-semibold text-ink-3">{p.id}</span>
+                  <span className="code text-[26px] font-bold leading-none">{p.id}</span>
+                  <span className="mt-1 line-clamp-2 font-semibold leading-snug">{p.description}</span>
+                  <span className="mt-1 text-[13px] text-ink-2">da {v?.make} {v?.model} {v?.year} · <span className="code font-semibold">{p.vehicleId}</span></span>
+                  {platform && v?.platform !== platform && <span className="mt-1 text-[13px] font-semibold text-ok">Compatibile con la tua auto (codice OE verificato)</span>}
+                  <span className="mt-auto flex items-end justify-between pt-3">
+                    <span className="code text-[26px] font-bold leading-none">{euro(p.price)}</span>
+                    <span className="flex items-center gap-1.5" title={CONDITIONS[p.condition].label}>
+                      <span className="text-[12px] text-ink-3">cond.</span>
+                      <span className="code grid size-8 place-items-center rounded border-2 border-ink text-[20px] font-bold leading-none">{p.condition}</span>
+                    </span>
                   </span>
                 </div>
               </Link>

@@ -22,8 +22,10 @@ export default function Campo() {
                 className={`label-sheet flex items-center gap-4 p-4 transition-colors ${active ? "border-band ring-2 ring-band" : "hover:border-ink-3"}`}
               >
                 <div className="min-w-0 flex-1">
-                  {active && <span className="code mb-1 block text-[12px] font-bold uppercase tracking-[0.14em] text-band">In lavorazione ora</span>}
-                  <div className="code text-[40px] font-bold leading-none">{v.id}</div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="code text-[40px] font-bold leading-none">{v.id}</span>
+                    {active && <span className="code inline-flex h-7 items-center rounded bg-band px-2.5 text-[13px] font-semibold uppercase tracking-wide text-white">in lavorazione</span>}
+                  </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Plate plate={v.plate} size="sm" />
                     <span className="font-semibold">{v.make} {v.model}</span>

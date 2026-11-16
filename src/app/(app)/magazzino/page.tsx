@@ -84,13 +84,13 @@ function Mappa() {
         })}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Panel className="min-w-0" title={`${w.name} · ${w.corsie} corsie × ${w.scaffali} scaffali · ${w.ripiani.length} ripiani${w.contenitori ? ` × ${w.contenitori} contenitori` : ""}`}>
           <div className="overflow-x-auto p-4">
-            <table className="border-separate border-spacing-1.5">
+            <table className="w-full min-w-[640px] table-fixed border-separate border-spacing-1.5 xl:min-w-0">
               <thead>
                 <tr>
-                  <th className="code w-14 text-left text-[13px] font-semibold uppercase tracking-wide text-ink-3">Corsia</th>
+                  <th className="code w-12 text-left text-[13px] font-semibold uppercase tracking-wide text-ink-3">Corsia</th>
                   {Array.from({ length: w.scaffali }, (_, i) => (
                     <th key={i} className="code text-[13px] font-semibold text-ink-3">{scaffaleId(i + 1)}</th>
                   ))}
@@ -112,7 +112,7 @@ function Mappa() {
                           <td key={s}>
                             <button
                               onClick={() => setSel({ corsia: c, scaffale: s })}
-                              className={`relative grid h-14 w-16 place-items-center overflow-hidden rounded border text-center ${active ? "border-band ring-2 ring-band" : "border-hair"} ${hit ? "ring-4 ring-warn" : ""}`}
+                              className={`relative grid h-14 w-full min-w-11 place-items-center overflow-hidden rounded border text-center ${active ? "border-band ring-2 ring-band" : "border-hair"} ${hit ? "ring-4 ring-warn" : ""}`}
                               style={{ background: n ? `color-mix(in oklab, var(--band) ${Math.round(12 + fill * 70)}%, white)` : "var(--carton)" }}
                               aria-label={`Corsia ${c} scaffale ${s}: ${n} pezzi`}
                             >

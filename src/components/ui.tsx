@@ -106,8 +106,15 @@ export function Plate({ plate, size = "md" }: { plate: string; size?: "sm" | "md
 
 export function PartImage({ src, typeId, className = "", alt }: { src?: string; typeId: string; className?: string; alt?: string }) {
   if (src) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={src} alt={alt ?? typeById(typeId).name} className={`object-contain ${className}`} />;
+    // I render da catalogo non sono foto del pezzo reale: vanno dichiarati.
+    const demo = src.startsWith("/renders/");
+    return (
+      <div className={`relative ${className}`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={alt ?? typeById(typeId).name} className="size-full object-contain" />
+        {demo && <span className="absolute bottom-1 right-1 rounded bg-white/90 px-1.5 py-0.5 text-[11px] font-medium text-ink-2">immagine dimostrativa</span>}
+      </div>
+    );
   }
   return (
     <div className={`flex flex-col items-center justify-center gap-1 border border-dashed border-hair bg-carton text-ink-3 ${className}`}>

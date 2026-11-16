@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useRef, useState } from "react";
-import { Camera, Check, ChevronLeft, Loader2, Printer, Sparkles, X } from "lucide-react";
+import { Camera, Check, ChevronLeft, ChevronRight, Loader2, Printer, Sparkles, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { CONDITIONS, PART_TYPES, SIDES, typeById } from "@/lib/catalog";
 import { compressImage, suggestComponent } from "@/lib/services";
@@ -232,10 +232,10 @@ function NuovoPezzo() {
 
         {cat && (!t?.sided || side) && (
           <div className={`rounded-md border p-4 ${oemOk ? "border-ok bg-ok-bg" : "border-hair bg-label"}`}>
-            <p className="code text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-3">Dal catalogo ricambi (simulato)</p>
-            <p className="mt-1 text-[15px]">Codice OE atteso</p>
+            <p className="text-[15px]">Codice OE atteso</p>
             <p className="code text-[26px] font-bold leading-tight">{cat.oem}</p>
             <p className="text-sm text-ink-2">{cat.manufacturer} · montabile su {cat.platforms.length} {cat.platforms.length === 1 ? "modello" : "modelli"}{cat.platforms.length > 1 ? `: ${cat.platforms.map(platformLabel).join(", ")}` : ""}</p>
+            <p className="mt-1 text-[13px] text-ink-3">Fonte: catalogo ricambi (simulato)</p>
             {oemOk ? (
               <p className="mt-3 flex items-center gap-2 font-semibold text-ok"><Check className="size-5" strokeWidth={3} aria-hidden /> Codice verificato sul pezzo: compatibilità dichiarata</p>
             ) : (
@@ -248,7 +248,10 @@ function NuovoPezzo() {
         )}
 
         <details className="rounded-md border border-hair bg-label">
-          <summary className="min-h-12 cursor-pointer px-4 py-3 font-semibold">Dati facoltativi: codice OEM, difetti, prezzo</summary>
+          <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 px-4 py-3 font-semibold [&::-webkit-details-marker]:hidden">
+            <ChevronRight className="size-5 shrink-0 text-band transition-transform duration-200 [[open]>summary>&]:rotate-90" aria-hidden />
+            Dati facoltativi: codice OEM, difetti, prezzo
+          </summary>
           <div className="space-y-4 border-t border-hair-soft p-4">
             <Field label="Codice OEM (se leggibile)" hint="Non dichiara compatibilità finché non viene verificato">
               <input className="field code uppercase" value={oem} onChange={(e) => setOem(e.target.value)} />
