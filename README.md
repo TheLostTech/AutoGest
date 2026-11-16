@@ -14,11 +14,13 @@ npm run dev
 
 Apri http://localhost:3000. Il ruolo si cambia dalla barra laterale (desktop) o dalla testata (smartphone). «Ripristina dati demo» riporta i dati iniziali.
 
+Il menu è diviso in aree (Oggi, Veicoli, Ricambi, Vendite, Ufficio): le sottosezioni compaiono solo dentro l'area aperta, e ogni ruolo vede solo le aree e le sezioni che gli servono. Su smartphone la barra in basso mostra le 4 voci del ruolo. La roadmap del prodotto è in [docs/ROADMAP.md](docs/ROADMAP.md).
+
 ## Cosa c'è
 
 | Area | Percorso | Note |
 |---|---|---|
-| Oggi | `/` | Veicoli in lavorazione, cose da sistemare, stato magazzino, ultime operazioni |
+| Oggi | `/` | Coda «Da fare» del ruolo, generata dai dati e ordinata per scadenza (in ritardo, entro oggi, questa settimana, più avanti); numeri del ruolo, veicoli in lavorazione. Termini dimostrativi in `src/lib/agenda.ts` |
 | Accettazione | `/veicoli/nuovo` | Foto targa con OCR (simulato) e caratteri incerti, controllo duplicati targa/VIN, banca dati veicoli (simulata, con guasto simulabile → «da verificare»), pratica separata dall'ID interno |
 | Scheda veicolo | `/veicoli/[id]` | Pratica, verifica, ricambi originati, analisi recupero vs scorte |
 | Smontaggio (mobile) | `/campo` | Veicolo attivo, lista «da recuperare» confrontata con scorte e soglie, cataloga pezzo con foto, suggerimento IA (simulato) da confermare, etichetta generata al salvataggio |

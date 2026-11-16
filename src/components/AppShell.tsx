@@ -2,108 +2,241 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Boxes,
-  CarFront,
-  ClipboardCheck,
-  History,
-  LayoutGrid,
-  Map as MapIcon,
-  ScanLine,
-  ShoppingCart,
-  SlidersHorizontal,
-  Store,
-  Wrench,
-  type LucideIcon,
-} from "lucide-react";
+import { Boxes, Briefcase, CarFront, LayoutGrid, Map as MapIcon, ScanLine, ShoppingCart, Wrench, type LucideIcon } from "lucide-react";
 import { ROLE_USER, useStore } from "@/lib/store";
 import type { Role } from "@/lib/types";
 import { BRAND, DEMO_NOTICE } from "@/lib/config";
 
-interface NavItem {
+// Navigazione per aree di lavoro: poche voci, le sottosezioni compaiono solo dentro l'area aperta.
+// Un'area senza sottosezioni visibili per il ruolo (o un modulo non attivo, es. Ambiente) non compare.
+const ALL_ROLES: Role[] = ["accettazione", "smontatore", "magazziniere", "responsabile", "vendite"];
+
+interface Sub {
   href: string;
   label: string;
+  roles: Role[];
+}
+interface Area {
+  id: string;
+  label: string;
   icon: LucideIcon;
+  subs: Sub[];
 }
 
-const ALL: Record<string, NavItem> = {
-  oggi: { href: "/", label: "Oggi", icon: LayoutGrid },
-  campo: { href: "/campo", label: "Smontaggio", icon: Wrench },
-  veicoli: { href: "/veicoli", label: "Veicoli", icon: CarFront },
-  ricambi: { href: "/ricambi", label: "Ricambi", icon: Boxes },
-  mappa: { href: "/magazzino", label: "Ubicazioni", icon: MapIcon },
-  scan: { href: "/scansione", label: "Scansiona", icon: ScanLine },
-  pubblica: { href: "/pubblicazione", label: "Pubblicazione", icon: ClipboardCheck },
-  vendite: { href: "/vendite", label: "Vendite", icon: ShoppingCart },
-  regole: { href: "/regole", label: "Regole scorte", icon: SlidersHorizontal },
-  registro: { href: "/registro", label: "Registro", icon: History },
+const AREAS: Area[] = [
+  { id: "oggi", label: "Oggi", icon: LayoutGrid, subs: [{ href: "/", label: "Da fare", roles: ALL_ROLES }] },
+  {
+    id: "veicoli",
+    label: "Veicoli",
+    icon: CarFront,
+    subs: [
+      { href: "/veicoli", label: "Elenco veicoli", roles: ALL_ROLES },
+      { href: "/veicoli/nuovo", label: "Nuovo ingresso", roles: ["accettazione", "responsabile"] },
+      { href: "/campo", label: "Smontaggio", roles: ["smontatore", "responsabile"] },
+    ],
+  },
+  {
+    id: "ricambi",
+    label: "Ricambi",
+    icon: Boxes,
+    subs: [
+      { href: "/ricambi", label: "Magazzino", roles: ["smontatore", "magazziniere", "responsabile", "vendite"] },
+      { href: "/magazzino", label: "Ubicazioni", roles: ["magazziniere", "responsabile", "vendite"] },
+      { href: "/pubblicazione", label: "Pubblicazione", roles: ["responsabile"] },
+      { href: "/regole", label: "Scorte minime", roles: ["responsabile"] },
+    ],
+  },
+  {
+    id: "vendite",
+    label: "Vendite",
+    icon: ShoppingCart,
+    subs: [
+      { href: "/vendite", label: "Banco e ordini", roles: ["vendite", "responsabile"] },
+      { href: "/negozio", label: "Negozio online", roles: ["vendite", "responsabile"] },
+    ],
+  },
+  {
+    id: "ufficio",
+    label: "Ufficio",
+    icon: Briefcase,
+    subs: [{ href: "/registro", label: "Registro attività", roles: ["accettazione", "magazziniere", "responsabile"] }],
+  },
+];
+
+// Barra inferiore del telefono: le 4 cose che il ruolo usa davvero sul campo
+type Tab = { label: string; icon: LucideIcon } & ({ area: string } | { href: string });
+const MOBILE_TABS: Record<Role, Tab[]> = {
+  accettazione: [
+    { area: "oggi", label: "Oggi", icon: LayoutGrid },
+    { area: "veicoli", label: "Veicoli", icon: CarFront },
+    { href: "/scansione", label: "Scansiona", icon: ScanLine },
+    { area: "ufficio", label: "Ufficio", icon: Briefcase },
+  ],
+  smontatore: [
+    { area: "oggi", label: "Oggi", icon: LayoutGrid },
+    { href: "/campo", label: "Smontaggio", icon: Wrench },
+    { href: "/scansione", label: "Scansiona", icon: ScanLine },
+    { area: "ricambi", label: "Ricambi", icon: Boxes },
+  ],
+  magazziniere: [
+    { area: "oggi", label: "Oggi", icon: LayoutGrid },
+    { area: "ricambi", label: "Ricambi", icon: Boxes },
+    { href: "/scansione", label: "Scansiona", icon: ScanLine },
+    { href: "/magazzino", label: "Ubicazioni", icon: MapIcon },
+  ],
+  responsabile: [
+    { area: "oggi", label: "Oggi", icon: LayoutGrid },
+    { area: "veicoli", label: "Veicoli", icon: CarFront },
+    { area: "ricambi", label: "Ricambi", icon: Boxes },
+    { area: "vendite", label: "Vendite", icon: ShoppingCart },
+  ],
+  vendite: [
+    { area: "oggi", label: "Oggi", icon: LayoutGrid },
+    { area: "vendite", label: "Vendite", icon: ShoppingCart },
+    { area: "ricambi", label: "Ricambi", icon: Boxes },
+    { href: "/scansione", label: "Scansiona", icon: ScanLine },
+  ],
 };
 
-const BY_ROLE: Record<Role, string[]> = {
-  accettazione: ["oggi", "veicoli", "scan", "registro"],
-  smontatore: ["campo", "scan", "ricambi", "veicoli"],
-  magazziniere: ["scan", "mappa", "ricambi", "veicoli", "registro"],
-  responsabile: ["oggi", "veicoli", "ricambi", "mappa", "pubblica", "vendite", "regole", "registro"],
-  vendite: ["vendite", "ricambi", "mappa", "scan", "veicoli"],
-};
+const ROLES: Role[] = ALL_ROLES;
 
-const ROLES: Role[] = ["accettazione", "smontatore", "magazziniere", "responsabile", "vendite"];
+const matches = (path: string, href: string) => (href === "/" ? path === "/" : path === href || path.startsWith(href + "/"));
+
+function visibleAreas(role: Role) {
+  return AREAS.map((a) => ({ ...a, subs: a.subs.filter((s) => s.roles.includes(role)) })).filter((a) => a.subs.length > 0);
+}
+
+// La sottosezione più specifica che corrisponde al percorso (es. /veicoli/nuovo batte /veicoli)
+function currentSub(path: string, areas: Area[]) {
+  let best: { area: Area; sub: Sub } | undefined;
+  for (const area of AREAS) {
+    for (const sub of area.subs) {
+      if (matches(path, sub.href) && (!best || sub.href.length > best.sub.href.length)) best = { area, sub };
+    }
+  }
+  if (!best) return undefined;
+  // Se il ruolo non vede quella sottosezione, resta comunque evidenziata l'area
+  const visible = areas.find((a) => a.id === best!.area.id);
+  return { areaId: best.area.id, subHref: best.sub.href, area: visible };
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const role = useStore((s) => s.role);
   const setRole = useStore((s) => s.setRole);
-  const items = BY_ROLE[role].map((k) => ALL[k]);
-  const active = (href: string) => (href === "/" ? path === "/" : path === href || path.startsWith(href + "/"));
+  const areas = visibleAreas(role);
+  const cur = currentSub(path, areas);
+  const tabs = MOBILE_TABS[role];
+  const hasScanTab = tabs.some((t) => "href" in t && t.href === "/scansione");
+  const subTabs = cur?.area && cur.area.subs.length > 1 ? cur.area.subs : [];
+
+  // Nella barra inferiore vince la voce più specifica: se una scheda punta proprio a questa pagina, l'area non si accende
+  const hrefTabActive = tabs.some((t) => "href" in t && matches(path, t.href));
+  const tabActive = (t: Tab) => ("href" in t ? matches(path, t.href) : !hrefTabActive && cur?.areaId === t.area);
+  const tabHref = (t: Tab) => ("href" in t ? t.href : (areas.find((a) => a.id === t.area)?.subs[0].href ?? "/"));
 
   return (
     <div className="min-h-dvh md:grid md:grid-cols-[232px_1fr]">
       {/* Fascia blu: come la stampa sulla scatola */}
       <aside className="no-print hidden bg-band text-white md:sticky md:top-0 md:flex md:h-dvh md:flex-col">
-        <div className="px-5 pb-5 pt-6">
+        <div className="px-5 pb-4 pt-6">
           <div className="code text-[26px] font-bold uppercase leading-none tracking-wide">{BRAND.azienda}</div>
-          <div className="mt-1 text-[13px] font-medium text-white/75">Gestionale ricambi</div>
+          <div className="mt-1 text-[13px] font-medium text-white/75">Gestionale autodemolizione</div>
         </div>
-        <nav className="flex-1 space-y-0.5 px-2" aria-label="Sezioni">
-          {items.map((it) => (
-            <Link
-              key={it.href}
-              href={it.href}
-              className={`flex min-h-11 items-center gap-3 rounded px-3 text-[15px] font-semibold transition-colors ${
-                active(it.href) ? "bg-white text-band" : "text-white/90 hover:bg-white/12"
-              }`}
-              aria-current={active(it.href) ? "page" : undefined}
-            >
-              <it.icon className="size-[18px]" strokeWidth={2} aria-hidden />
-              {it.label}
-            </Link>
-          ))}
-          <Link href="/negozio" className="mt-4 flex min-h-11 items-center gap-3 rounded border border-white/30 px-3 text-[15px] font-semibold text-white hover:bg-white/12">
-            <Store className="size-[18px]" strokeWidth={2} aria-hidden />
-            Negozio online
+        <div className="px-3 pb-4">
+          <Link
+            href="/scansione"
+            className={`flex min-h-11 items-center justify-center gap-2 rounded-md text-[15px] font-semibold transition-colors ${matches(path, "/scansione") ? "bg-white text-band" : "bg-band-deep text-white hover:bg-white hover:text-band"}`}
+          >
+            <ScanLine className="size-[18px]" aria-hidden />
+            Scansiona etichetta
           </Link>
+        </div>
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-2" aria-label="Aree">
+          {areas.map((a) => {
+            const open = cur?.areaId === a.id;
+            return (
+              <div key={a.id}>
+                <Link
+                  href={a.subs[0].href}
+                  className={`flex min-h-11 items-center gap-3 rounded px-3 text-[15px] font-semibold transition-colors ${
+                    open ? (a.subs.length > 1 ? "text-white" : "bg-white text-band") : "text-white/85 hover:bg-white/12"
+                  }`}
+                  aria-current={open && a.subs.length === 1 ? "page" : undefined}
+                >
+                  <a.icon className="size-[18px]" strokeWidth={2} aria-hidden />
+                  {a.label}
+                </Link>
+                {open && a.subs.length > 1 && (
+                  <ul className="mb-2 ml-[22px] space-y-0.5 border-l border-white/25 pl-2">
+                    {a.subs.map((s) => {
+                      const on = cur?.subHref === s.href;
+                      return (
+                        <li key={s.href}>
+                          <Link
+                            href={s.href}
+                            className={`flex min-h-10 items-center rounded px-3 text-[15px] transition-colors ${on ? "bg-white font-semibold text-band" : "text-white/85 hover:bg-white/12"}`}
+                            aria-current={on ? "page" : undefined}
+                          >
+                            {s.label}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
         </nav>
         <RoleSwitch role={role} setRole={setRole} />
       </aside>
 
       <div className="flex min-h-dvh min-w-0 flex-col">
         {/* Testata mobile */}
-        <header className="no-print sticky top-0 z-30 flex items-center justify-between gap-3 bg-band px-4 py-2.5 text-white md:hidden">
-          <Link href="/" className="code text-[20px] font-bold uppercase tracking-wide">{BRAND.azienda}</Link>
-          <label className="flex items-center gap-2">
-            <span className="sr-only">Ruolo</span>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value as Role)}
-              className="h-10 rounded border border-white/40 bg-band-deep px-2 text-[15px] font-semibold text-white"
-            >
-              {ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_USER[r].label}
-                </option>
-              ))}
-            </select>
-          </label>
+        <header className="no-print sticky top-0 z-30 bg-band text-white md:hidden">
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+            <Link href="/" className="code truncate text-[20px] font-bold uppercase tracking-wide">{BRAND.azienda}</Link>
+            <div className="flex shrink-0 items-center gap-2">
+              {!hasScanTab && (
+                <Link href="/scansione" className="grid size-10 place-items-center rounded border border-white/40" aria-label="Scansiona etichetta">
+                  <ScanLine className="size-5" aria-hidden />
+                </Link>
+              )}
+              <label>
+                <span className="sr-only">Ruolo</span>
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as Role)}
+                  className="h-10 rounded border border-white/40 bg-band-deep px-2 text-[15px] font-semibold text-white"
+                >
+                  {ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {ROLE_USER[r].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+          {/* Sottosezioni dell'area aperta */}
+          {subTabs.length > 0 && (
+            <nav className="flex gap-1 overflow-x-auto px-3 pb-2" aria-label={`Sezioni di ${cur?.area?.label}`}>
+              {subTabs.map((s) => {
+                const on = cur?.subHref === s.href;
+                return (
+                  <Link
+                    key={s.href}
+                    href={s.href}
+                    className={`flex h-9 shrink-0 items-center rounded-full px-3.5 text-[14px] font-semibold ${on ? "bg-white text-band" : "text-white/85 hover:bg-white/12"}`}
+                    aria-current={on ? "page" : undefined}
+                  >
+                    {s.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          )}
         </header>
         <div className="no-print border-b border-hair bg-carton px-4 py-1.5 text-center text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-3 code md:text-right">
           {DEMO_NOTICE} · {ROLE_USER[role].user} · {ROLE_USER[role].device}
@@ -111,20 +244,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="flex-1 px-4 pb-28 pt-5 md:px-8 md:pb-12 md:pt-7">{children}</main>
 
         {/* Barra inferiore mobile: bersagli grandi, usabili coi guanti */}
-        <nav className="no-print fixed inset-x-0 bottom-0 z-30 grid border-t border-hair bg-label pb-[env(safe-area-inset-bottom)] md:hidden" style={{ gridTemplateColumns: `repeat(${Math.min(items.length, 4)}, 1fr)` }} aria-label="Sezioni">
-          {items.slice(0, 4).map((it) => (
-            <Link
-              key={it.href}
-              href={it.href}
-              className={`flex min-h-16 flex-col items-center justify-center gap-1 text-[12px] font-semibold ${active(it.href) ? "text-band" : "text-ink-2"}`}
-              aria-current={active(it.href) ? "page" : undefined}
-            >
-              <span className={`grid h-8 w-14 place-items-center rounded-full ${active(it.href) ? "bg-band-tint" : ""}`}>
-                <it.icon className="size-[22px]" strokeWidth={2} aria-hidden />
-              </span>
-              {it.label}
-            </Link>
-          ))}
+        <nav className="no-print fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-hair bg-label pb-[env(safe-area-inset-bottom)] md:hidden" aria-label="Aree">
+          {tabs.map((t) => {
+            const on = tabActive(t);
+            return (
+              <Link
+                key={t.label}
+                href={tabHref(t)}
+                className={`flex min-h-16 flex-col items-center justify-center gap-1 text-[12px] font-semibold ${on ? "text-band" : "text-ink-2"}`}
+                aria-current={on ? "page" : undefined}
+              >
+                <span className={`grid h-8 w-14 place-items-center rounded-full ${on ? "bg-band-tint" : ""}`}>
+                  <t.icon className="size-[22px]" strokeWidth={2} aria-hidden />
+                </span>
+                {t.label}
+              </Link>
+            );
+          })}
         </nav>
       </div>
     </div>
