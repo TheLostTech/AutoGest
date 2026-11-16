@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useState } from "react";
+import { VIN_RE } from "@/lib/services";
 import { BadgeCheck, Leaf, Wrench } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Button, ButtonLink, Empty, Notice, Panel, Plate } from "@/components/ui";
@@ -17,6 +19,7 @@ export default function SchedaVeicolo() {
   const v = useStore((s) => s.vehicles.find((x) => x.id === id));
   const parts = useStore((s) => s.parts).filter((p) => p.vehicleId === id);
   const { updateVehicle, setActiveVehicle, audit } = useStore();
+  const [vin, setVin] = useState("");
 
   if (!v) return <Empty title={`Veicolo ${id} non trovato`} />;
   const platform = platformById(v.platform);
@@ -48,11 +51,30 @@ export default function SchedaVeicolo() {
         <div className="mb-6">
           <Notice tone="warn">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <span>Identificazione da verificare{v.notes ? `: ${v.notes}` : ""}. I ricambi di questo veicolo non potranno essere pubblicati finché non viene confermata.</span>
-              <Button size="sm" variant="secondary" onClick={() => updateVehicle(v.id, { verification: "verificato" }, "Identificazione verificata", "Controllo su libretto/telaio")}>
-                <BadgeCheck className="size-4" aria-hidden />
-                Confermo dati e telaio
-              </Button>
+              <span className="min-w-0 flex-1">
+                Identificazione da verificare{v.notes ? `: ${v.notes}` : ""}. Senza telaio verificato la pratica non si può prendere in carico e i ricambi non si pubblicano.
+              </span>
+              <span className="flex flex-wrap items-center gap-2">
+                {!v.vin && (
+                  <input
+                    className="field code h-10 w-[19ch] min-w-0 uppercase tracking-wide"
+                    value={vin}
+                    maxLength={17}
+                    onChange={(e) => setVin(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+                    placeholder="Telaio (17 caratteri)"
+                    aria-label="Telaio letto sul veicolo"
+                  />
+                )}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={!VIN_RE.test(v.vin || vin)}
+                  onClick={() => updateVehicle(v.id, { verification: "verificato", vin: v.vin || vin }, "Identificazione verificata", `Telaio ${v.vin || vin} controllato su libretto e veicolo`)}
+                >
+                  <BadgeCheck className="size-4" aria-hidden />
+                  Confermo dati e telaio
+                </Button>
+              </span>
             </div>
           </Notice>
         </div>

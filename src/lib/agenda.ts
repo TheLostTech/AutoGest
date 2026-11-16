@@ -77,12 +77,12 @@ export function buildAgenda(
         due: addDays(v.intakeAt, TERMS.verificaIdentita),
         roles: ["accettazione", "responsabile"],
       });
-    if (v.visura?.fermo)
+    if (v.visura?.fermo && !v.presaInCarico && !v.documenti?.includes("inutilizzabilita"))
       items.push({
         id: `fermo-${v.id}`,
         kind: "pratica",
-        title: `Fermo amministrativo su ${v.id}`,
-        detail: `${name(v)} · presa in carico bloccata: contatta chi conferisce`,
+        title: `Fermo amministrativo su ${v.id}: serve l'attestazione di inutilizzabilità`,
+        detail: `${name(v)} · senza attestazione la presa in carico resta ferma`,
         action: "Apri pratica",
         href: `/veicoli/${v.id}#pratica`,
         due: v.visura.at,

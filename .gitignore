@@ -43,3 +43,6 @@ next-env.d.ts
 # locali
 .claude/
 .impeccable/review/
+
+# archivio condiviso della demo (dati locali)
+.demo-data/

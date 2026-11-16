@@ -91,6 +91,9 @@ interface Actions {
 
 const now = () => new Date().toISOString();
 
+// Chiave dei dati salvati: cambia quando cambia la struttura dei dati demo
+export const STORE_SCHEMA = "gestionale-demolizione-demo-v8";
+
 function initial(): State {
   const s = buildSeed();
   return {
@@ -391,7 +394,7 @@ export const useStore = create<State & Actions>()(
       };
     },
     {
-      name: "gestionale-demolizione-demo-v8",
+      name: STORE_SCHEMA,
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
     },

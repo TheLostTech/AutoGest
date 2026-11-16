@@ -35,11 +35,11 @@ export interface Vehicle {
   weightKg?: number; // peso in ingresso (bilancia o stima)
   bonifica?: Bonifica;
   // Pratica: conferimento → documenti → visura → presa in carico → radiazione
-  conferente?: { tipo: ConferenteTipo; nome: string };
+  conferente?: { tipo: ConferenteTipo; nome: string; cf?: string; documento?: string }; // cf = codice fiscale o partita IVA
   documenti?: string[]; // chiavi dei documenti ricevuti (vedi pratica.ts)
   visura?: { at: string; fermo: boolean; intestatario: string };
   presaInCarico?: { at: string; by: string };
-  radiazione?: { stato: "da richiedere" | "richiesta" | "completata"; richiestaAt?: string; completataAt?: string; estremi?: string };
+  radiazione?: { stato: "da richiedere" | "richiesta" | "completata"; richiestaAt?: string; completataAt?: string; estremi?: string; canale?: "rvfu" | "agenzia" };
 }
 
 export type ConferenteTipo = "privato" | "concessionaria" | "assicurazione" | "ente";

@@ -8,7 +8,8 @@ import { CONFERENTI, docsFor } from "@/lib/pratica";
 import { dateIt } from "@/lib/logic";
 import { fmtKg } from "@/lib/ambiente";
 
-// Fac-simile del certificato di rottamazione: il modello ufficiale va verificato.
+// Copia per il detentore del Certificato di Rottamazione Digitale (CRD) emesso nel RVFU.
+// Nel reale il CRD (con codice nazionale) lo genera il RVFU: qui è un fac-simile dimostrativo.
 export default function Certificato() {
   const { id } = useParams<{ id: string }>();
   const v = useStore((s) => s.vehicles.find((x) => x.id === id));
@@ -37,14 +38,16 @@ export default function Certificato() {
           <div>
             <p className="code text-[22px] font-bold uppercase leading-none tracking-wide">{BRAND.azienda}</p>
             <p className="mt-1 text-sm text-ink-2">{BRAND.sede} · Centro di raccolta veicoli fuori uso</p>
+            <p className="text-sm text-ink-2">Autorizzazione impianto n. — (da configurare)</p>
           </div>
           <div className="text-right">
-            <p className="text-sm text-ink-3">Numero</p>
+            <p className="text-sm text-ink-3">Numero pratica · codice CRD dal RVFU</p>
             <p className="code text-[24px] font-bold leading-none">{v.dossier.number}</p>
           </div>
         </header>
 
-        <h1 className="mt-6 text-[26px] font-bold">Certificato di rottamazione</h1>
+        <h1 className="mt-6 text-[26px] font-bold">Certificato di Rottamazione Digitale</h1>
+        <p className="text-ink-2">Copia per chi consegna il veicolo</p>
         <p className="mt-1 text-ink-2">Presa in carico del {dateIt(v.presaInCarico.at, true)} · ID interno {v.id}</p>
 
         <section className="mt-6">
@@ -63,8 +66,10 @@ export default function Certificato() {
           <dl className="grid grid-cols-[160px_1fr] gap-x-6 gap-y-1.5">
             {row("Tipo", CONFERENTI.find((c) => c.value === v.conferente?.tipo)?.label ?? "—")}
             {row("Nome", v.conferente?.nome ?? "—")}
+            {row("Codice fiscale / P. IVA", <span className="code">{v.conferente?.cf ?? "—"}</span>)}
+            {row("Documento d'identità", v.conferente?.documento ?? "—")}
             {row("Intestatario da visura", v.visura?.intestatario ?? "—")}
-            {row("Fermo amministrativo", v.visura ? (v.visura.fermo ? "presente" : "assente") : "—")}
+            {row("Fermo amministrativo", v.visura ? (v.visura.fermo ? `presente${v.documenti?.includes("inutilizzabilita") ? " · attestazione di inutilizzabilità acquisita" : ""}` : "assente") : "—")}
           </dl>
         </section>
 
@@ -81,7 +86,7 @@ export default function Certificato() {
         </section>
 
         <p className="mt-8 max-w-[70ch] text-ink-2">
-          Il centro di raccolta dichiara di aver preso in carico il veicolo sopra descritto per la demolizione, e si impegna a curarne la radiazione dal Pubblico Registro Automobilistico.
+          Il centro di raccolta dichiara di aver preso in carico il veicolo sopra descritto per la demolizione e ne cura la radiazione dal Pubblico Registro Automobilistico entro 30 giorni dalla consegna. Dalla data del presente certificato il detentore è sollevato da ogni responsabilità civile, penale e amministrativa connessa alla proprietà del veicolo (da verificare sul testo vigente).
         </p>
 
         <div className="mt-14 grid grid-cols-2 gap-10">

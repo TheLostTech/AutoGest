@@ -8,6 +8,7 @@ import { ROLE_USER, useStore } from "@/lib/store";
 import type { Role } from "@/lib/types";
 import { BRAND, DEMO_NOTICE } from "@/lib/config";
 import { GlobalSearch } from "./GlobalSearch";
+import { resetShared } from "@/lib/sync";
 
 // Navigazione per aree di lavoro: poche voci, le sottosezioni compaiono solo dentro l'area aperta.
 // Un'area senza sottosezioni visibili per il ruolo (o un modulo non attivo) non compare.
@@ -343,7 +344,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function RoleSwitch({ role, setRole }: { role: Role; setRole: (r: Role) => void }) {
-  const reset = useStore((s) => s.reset);
   return (
     <div className="border-t border-white/20 p-4">
       <label className="block">
@@ -358,7 +358,7 @@ function RoleSwitch({ role, setRole }: { role: Role; setRole: (r: Role) => void 
       </label>
       <button
         onClick={() => {
-          if (confirm("Ripristinare i dati dimostrativi iniziali? Le modifiche fatte nella demo andranno perse.")) reset();
+          if (confirm("Ripristinare i dati dimostrativi iniziali su tutti i dispositivi collegati? Le modifiche fatte nella demo andranno perse.")) void resetShared();
         }}
         className="mt-3 text-[13px] font-semibold text-white/75 underline hover:text-white"
       >

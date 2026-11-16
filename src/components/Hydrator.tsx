@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
+import { startSync } from "@/lib/sync";
 
 export function Hydrator({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    const done = () => setReady(true);
+    // Prima i dati salvati nel browser, poi l'allineamento con gli altri dispositivi (al massimo 2 secondi)
+    const done = () => void startSync().finally(() => setReady(true));
     const unsub = useStore.persist.onFinishHydration(done);
     try {
       void useStore.persist.rehydrate();
