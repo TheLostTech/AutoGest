@@ -81,7 +81,7 @@ export default function Negozio() {
               <Link href={`/negozio/${p.id}`} className="label-sheet flex h-full flex-col overflow-hidden transition-colors hover:border-band">
                 <div className="flex items-center justify-between bg-band px-3 py-1 text-white">
                   <span className="code text-[11px] font-semibold uppercase tracking-[0.12em]">{typeById(p.typeId).category}</span>
-                  <span className="code text-[11px] font-semibold uppercase tracking-[0.12em]">{p.compat?.verified ? "OE verificato" : "usato"}</span>
+                  {p.compat?.verified && <span className="code text-[11px] font-semibold uppercase tracking-[0.12em]">OE verificato</span>}
                 </div>
                 <PartImage src={p.photos[0]} typeId={p.typeId} className="aspect-square w-full bg-white p-3" />
                 <div className="flex flex-1 flex-col border-t border-hair-soft p-3">
