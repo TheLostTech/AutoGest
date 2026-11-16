@@ -76,3 +76,15 @@ export function firstFreeSlot(w: Warehouse, parts: Part[]): Location | undefined
         }
   return undefined;
 }
+
+// Ubicazione scritta a mano come la usate (es. corsia "3" o "T03", scaffale "104", ripiano "b", contenitore "1")
+export function normLoc(mag: string, corsia: string, scaffale: string, ripiano: string, contenitore?: string): Location {
+  const c = corsia.trim().toUpperCase();
+  return {
+    mag,
+    corsia: /^\d+$/.test(c) ? corsiaId(Number(c)) : c,
+    scaffale: scaffale.trim().toUpperCase(),
+    ripiano: ripiano.trim().toUpperCase(),
+    contenitore: contenitore?.trim() ? contenitore.trim().toUpperCase() : undefined,
+  };
+}

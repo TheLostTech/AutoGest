@@ -3,116 +3,105 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, Check } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, Plus } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { corsiaId, ripianiCount, sameRipiano, scaffaleId } from "@/lib/warehouse";
-import { dateIt } from "@/lib/logic";
-import { ButtonLink, Empty, Panel } from "@/components/ui";
+import { originLabel } from "@/lib/warehouse";
+import { ButtonLink, Empty, StatusChip } from "@/components/ui";
+import type { Part } from "@/lib/types";
 
+// Il magazzino come elenco di ricambi, raggruppati per ubicazione; si aggiunge un pezzo alla volta.
 export default function InventarioMagazzino() {
   const { mag } = useParams<{ mag: string }>();
   const id = decodeURIComponent(mag);
-  const { warehouses, inventory, parts } = useStore();
+  const { warehouses, parts } = useStore();
   const w = warehouses.find((x) => x.id === id);
-  const [sel, setSel] = useState<{ c: string; s: string } | null>(null);
+  const [q, setQ] = useState("");
   if (!w) return <Empty title={`Magazzino ${id} non trovato`} />;
 
-  const lastCount = (c: string, s: string, r: string) => [...inventory].reverse().find((x) => x.mag === w.id && x.corsia === c && x.scaffale === s && x.ripiano === r);
-  const here = (c: string, s: string, r: string) => parts.filter((p) => sameRipiano(p.location, w.id, c, s, r) && p.status !== "venduto" && p.status !== "scartato");
-  const doneShelf = (c: string, s: string) => [...w.ripiani].filter((r) => lastCount(c, s, r)).length;
-  const tot = ripianiCount(w);
-  const done = new Set(inventory.filter((x) => x.mag === w.id).map((x) => `${x.corsia}-${x.scaffale}-${x.ripiano}`)).size;
+  const norm = (x?: string) => (x ?? "").toUpperCase().replace(/[\s\-.]/g, "");
+  const query = norm(q);
+  const inside = parts
+    .filter((p) => p.location?.mag === w.id && p.status !== "venduto" && p.status !== "scartato")
+    .filter((p) => !query || [p.id, p.description, p.legacyCode, p.oem, p.pastDossier?.number, p.pastDossier?.model].some((x) => norm(x).includes(query)));
+
+  // Gruppi per ripiano, in ordine di corsia, scaffale, ripiano
+  const groups = new Map<string, Part[]>();
+  for (const p of [...inside].sort((a, b) => key(a).localeCompare(key(b), "it", { numeric: true }))) {
+    const k = `${p.location!.corsia}|${p.location!.scaffale}|${p.location!.ripiano}`;
+    groups.set(k, [...(groups.get(k) ?? []), p]);
+  }
+  const addHref = `/inventario/${encodeURIComponent(w.id)}/nuovo`;
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="mx-auto max-w-4xl">
       <Link href="/inventario" className="mb-3 inline-flex items-center gap-1.5 text-[15px] font-semibold text-band">
         <ArrowLeft className="size-4" aria-hidden /> Inventario
       </Link>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="code text-[40px] font-bold leading-none">Mag. {w.id}</h1>
-          <p className="mt-1 font-semibold">{w.name} <span className="font-normal text-ink-2">· {w.desc}</span></p>
+          <h1 className="code text-[44px] font-bold leading-none">Mag. {w.id}</h1>
+          <p className="mt-1 text-ink-2">
+            {w.name} · <b className="text-ink">{parts.filter((p) => p.location?.mag === w.id && p.status !== "venduto" && p.status !== "scartato").length}</b> ricambi
+          </p>
         </div>
-        <p className="text-ink-2"><b className="code text-[22px] text-ink">{done}</b> di {tot} ripiani contati</p>
+        <ButtonLink href={addHref} size="lg">
+          <Plus className="size-6" aria-hidden /> Aggiungi ricambio
+        </ButtonLink>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Panel title="Tocca uno scaffale">
-          <div className="overflow-x-auto p-3">
-            <table className="border-separate border-spacing-1.5">
-              <thead>
-                <tr>
-                  <th className="code px-1 text-left text-[13px] font-semibold text-ink-3">Corsia</th>
-                  {Array.from({ length: w.scaffali }, (_, i) => (
-                    <th key={i} className="code min-w-12 text-[13px] font-semibold text-ink-3">{scaffaleId(i + 1)}</th>
+      <input className="field mb-4" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca per ID, descrizione, codice vecchio, pratica, modello…" aria-label="Cerca nel magazzino" />
+
+      {groups.size === 0 ? (
+        <div className="label-sheet px-5 py-10 text-center">
+          <p className="font-semibold">{q ? "Nessun ricambio trovato" : "Magazzino ancora vuoto"}</p>
+          {!q && <p className="mt-1 text-ink-2">Inserisci i ricambi che ci sono già, uno alla volta, con la loro ubicazione.</p>}
+          {!q && <ButtonLink href={addHref} className="mt-4"><Plus className="size-5" aria-hidden /> Aggiungi il primo ricambio</ButtonLink>}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {[...groups.entries()].map(([k, list]) => {
+            const [c, s, r] = k.split("|");
+            return (
+              <section key={k} className="rounded-md border border-hair bg-label">
+                <header className="flex items-center justify-between gap-3 border-b border-hair-soft px-4 py-2.5">
+                  <h2 className="code text-[17px] font-bold">
+                    {w.id}/{c} · Scaffale {s} · Ripiano {r}
+                  </h2>
+                  <Link
+                    href={`/inventario/conta?mag=${encodeURIComponent(w.id)}&c=${c}&s=${s}&r=${r}`}
+                    className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-band"
+                    title="Controlla che i pezzi registrati qui ci siano davvero"
+                  >
+                    <ClipboardCheck className="size-4" aria-hidden /> Verifica
+                  </Link>
+                </header>
+                <ul className="divide-y divide-hair-soft">
+                  {list.map((p) => (
+                    <li key={p.id}>
+                      <Link href={`/ricambi/${p.id}`} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 hover:bg-carton">
+                        <span className="min-w-0">
+                          <span className="flex items-baseline gap-2">
+                            <span className="code text-[17px] font-bold">{p.id}</span>
+                            {p.legacyCode && <span className="code text-sm text-ink-2">{p.legacyCode}</span>}
+                            {p.location?.contenitore && <span className="text-sm text-ink-3">cont. {p.location.contenitore}</span>}
+                          </span>
+                          <span className="block truncate">{p.description}</span>
+                          <span className={`block truncate text-sm ${p.missingSince ? "font-semibold text-danger" : "text-ink-3"}`}>
+                            {p.missingSince ? "Non trovato all'ultima verifica" : `da ${originLabel(p)}`}
+                          </span>
+                        </span>
+                        <StatusChip status={p.status} />
+                      </Link>
+                    </li>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {Array.from({ length: w.corsie }, (_, ci) => {
-                  const c = corsiaId(ci + 1);
-                  return (
-                    <tr key={c}>
-                      <th className="code pr-2 text-left text-[18px] font-bold">{c}</th>
-                      {Array.from({ length: w.scaffali }, (_, si) => {
-                        const s = scaffaleId(si + 1);
-                        const n = doneShelf(c, s);
-                        const all = n === w.ripiani.length;
-                        const on = sel?.c === c && sel.s === s;
-                        return (
-                          <td key={s}>
-                            <button
-                              onClick={() => setSel({ c, s })}
-                              aria-pressed={on}
-                              aria-label={`Corsia ${c} scaffale ${s}: ${n} ripiani contati su ${w.ripiani.length}`}
-                              className={`code grid h-12 w-12 place-items-center rounded text-[15px] font-bold ${
-                                on ? "ring-2 ring-ink ring-offset-1" : ""
-                              } ${all ? "bg-band text-white" : n ? "bg-band-tint text-band" : "border border-hair bg-carton text-ink-3"}`}
-                            >
-                              {all ? <Check className="size-5" aria-hidden /> : `${n}/${w.ripiani.length}`}
-                            </button>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
-
-        <Panel title={sel ? `Scaffale ${w.id}/${sel.c}-${sel.s}` : "Ripiani"}>
-          {!sel ? (
-            <p className="p-4 text-ink-2">Scegli lo scaffale davanti a cui ti trovi: poi conti un ripiano alla volta.</p>
-          ) : (
-            <ul className="divide-y divide-hair-soft">
-              {[...w.ripiani].reverse().map((r) => {
-                const last = lastCount(sel.c, sel.s, r);
-                const n = here(sel.c, sel.s, r).length;
-                return (
-                  <li key={r} className="flex items-center gap-3 px-4 py-3">
-                    <span className="code grid size-11 shrink-0 place-items-center rounded bg-carton text-[20px] font-bold">{r}</span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-semibold">Ripiano {r} · {n} {n === 1 ? "pezzo registrato" : "pezzi registrati"}</span>
-                      <span className={`block text-sm ${last ? "text-ok" : "text-ink-3"}`}>
-                        {last ? `Contato ${dateIt(last.at)} · ${last.found.length + last.added.length} presenti${last.missing.length ? ` · ${last.missing.length} mancanti` : ""}` : "Da contare"}
-                      </span>
-                    </span>
-                    <ButtonLink
-                      size="sm"
-                      variant={last ? "secondary" : "primary"}
-                      href={`/inventario/conta?mag=${encodeURIComponent(w.id)}&c=${sel.c}&s=${sel.s}&r=${r}`}
-                    >
-                      {last ? "Riconta" : "Conta"}
-                    </ButtonLink>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </Panel>
-      </div>
+                </ul>
+              </section>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
+
+const key = (p: Part) => `${p.location!.corsia} ${p.location!.scaffale} ${p.location!.ripiano} ${p.location!.contenitore ?? ""}`;
