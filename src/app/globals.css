@@ -141,8 +141,27 @@ textarea.field {
   animation: stamp-in 520ms var(--ease-out-expo) both;
 }
 
+/* Scheda dettaglio: sale dal basso sul telefono, entra da destra su schermo largo */
+@keyframes sheet-up {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes sheet-side {
+  from { transform: translateX(32px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+dialog.sheet[open] {
+  animation: sheet-up 280ms var(--ease-out-expo) both;
+}
+@media (min-width: 768px) {
+  dialog.sheet[open] {
+    animation-name: sheet-side;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .stamp-in {
+  .stamp-in,
+  dialog.sheet[open] {
     animation: none;
   }
 }

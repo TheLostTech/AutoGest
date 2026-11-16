@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Trash2, Zap } from "lucide-react";
+import { Info, Trash2, Zap } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Button, Field, Notice, OrderChip, PageTitle, Panel, PartImage } from "@/components/ui";
 import { dateIt, euro } from "@/lib/logic";
+import { PartDetailSheet } from "@/components/PartDetailSheet";
 import type { Order } from "@/lib/types";
 
 export default function Page() {
@@ -26,6 +27,7 @@ function Vendite() {
   const [msg, setMsg] = useState<{ tone: "ok" | "danger" | "warn"; text: React.ReactNode } | null>(null);
   const [raceId, setRaceId] = useState("");
   const [chan, setChan] = useState<"tutti" | Order["channel"]>("tutti");
+  const [detail, setDetail] = useState<string | null>(null);
 
   const avail = s.parts.filter((p) => p.status === "disponibile");
   const query = q.trim().toUpperCase();
@@ -77,11 +79,14 @@ function Vendite() {
             {results.length > 0 && (
               <ul className="divide-y divide-hair-soft rounded-md border border-hair">
                 {results.map((p) => (
-                  <li key={p.id}>
-                    <button onClick={() => { setCart([...cart, p.id]); setQ(""); }} className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-2 text-left hover:bg-carton">
+                  <li key={p.id} className="flex items-stretch">
+                    <button onClick={() => { setCart([...cart, p.id]); setQ(""); }} className="grid min-w-0 flex-1 grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-2 text-left hover:bg-carton" aria-label={`Aggiungi ${p.id} al conto`}>
                       <span className="code text-[18px] font-bold">{p.id}</span>
                       <span className="truncate">{p.description}</span>
                       <span className="code font-bold">{euro(p.price)}</span>
+                    </button>
+                    <button onClick={() => setDetail(p.id)} className="grid w-12 shrink-0 place-items-center border-l border-hair-soft text-band hover:bg-band-tint" aria-label={`Dettagli di ${p.id}`}>
+                      <Info className="size-5" aria-hidden />
                     </button>
                   </li>
                 ))}
@@ -89,13 +94,18 @@ function Vendite() {
             )}
             <ul className="divide-y divide-hair-soft">
               {cartParts.map((p) => (
-                <li key={p.id} className="grid grid-cols-[48px_1fr_auto_auto] items-center gap-3 py-2">
-                  <PartImage src={p.photos[0]} typeId={p.typeId} className="size-12 rounded bg-white [&>span]:hidden" />
-                  <span className="min-w-0">
-                    <span className="code block text-[18px] font-bold leading-none">{p.id}</span>
-                    <span className="block truncate text-sm text-ink-2">{p.description}</span>
-                    {p.status !== "disponibile" && <span className="text-sm font-semibold text-danger">non più disponibile ({p.status})</span>}
-                  </span>
+                <li key={p.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 py-2">
+                  <button onClick={() => setDetail(p.id)} className="-ml-1 grid min-w-0 grid-cols-[48px_1fr] items-center gap-3 rounded p-1 text-left hover:bg-carton" aria-label={`Dettagli di ${p.id}`}>
+                    <PartImage src={p.photos[0]} typeId={p.typeId} className="size-12 rounded bg-white [&>span]:hidden" />
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-1.5">
+                        <span className="code text-[18px] font-bold leading-none">{p.id}</span>
+                        <Info className="size-4 text-band" aria-hidden />
+                      </span>
+                      <span className="block truncate text-sm text-ink-2">{p.description}</span>
+                      {p.status !== "disponibile" && <span className="text-sm font-semibold text-danger">non più disponibile ({p.status})</span>}
+                    </span>
+                  </button>
                   <span className="code text-[18px] font-bold">{euro(p.price)}</span>
                   <button onClick={() => setCart(cart.filter((x) => x !== p.id))} className="grid size-10 place-items-center text-ink-3 hover:text-danger" aria-label={`Togli ${p.id}`}>
                     <Trash2 className="size-5" />
@@ -178,6 +188,8 @@ function Vendite() {
           ))}
         </ul>
       </Panel>
+
+      <PartDetailSheet partId={detail} onClose={() => setDetail(null)} inCart={!!detail && cart.includes(detail)} onAdd={(id) => { setCart((c) => (c.includes(id) ? c : [...c, id])); setQ(""); }} />
     </div>
   );
 }
