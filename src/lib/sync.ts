@@ -5,9 +5,9 @@
 import { STORE_SCHEMA, useStore } from "./store";
 
 const PREPEND = ["vehicles", "parts", "orders", "docs", "firs"] as const;
-const APPEND = ["audit", "wasteMoves"] as const;
+const APPEND = ["audit", "wasteMoves", "inventory"] as const;
 const LISTS = [...PREPEND, ...APPEND] as const;
-const WHOLE = ["rules", "listini"] as const;
+const WHOLE = ["rules", "listini", "warehouses"] as const;
 const SHARED = [...LISTS, ...WHOLE, "counters"] as const;
 
 type S = ReturnType<typeof useStore.getState>;
@@ -21,6 +21,25 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let synced: Partial<S> = {}; // ultimo stato condiviso noto (riferimenti), per calcolare cosa è cambiato
 
 const pick = (s: S) => Object.fromEntries(SHARED.map((k) => [k, s[k]])) as Partial<S>;
+
+// Dal server si accettano solo i campi condivisi, e solo se hanno la forma attesa:
+// ruolo, veicolo attivo e funzioni dello store non possono essere sovrascritti da fuori.
+function sanitize(raw: unknown): Partial<S> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of [...LISTS, ...WHOLE]) {
+    if (!(k in r)) continue;
+    if (!Array.isArray(r[k]) || !(r[k] as unknown[]).every((x) => x && typeof x === "object")) return null;
+    out[k] = r[k];
+  }
+  if ("counters" in r) {
+    const c = r.counters;
+    if (!c || typeof c !== "object" || Array.isArray(c)) return null;
+    out.counters = c;
+  }
+  return out as Partial<S>;
+}
 const keyOf = (r: Rec) => r.id ?? r.typeId ?? "";
 
 async function api(method: "GET" | "PUT", body?: unknown) {
@@ -71,8 +90,10 @@ async function pull() {
     const res = await api("GET");
     if (!res.state || res.schema !== STORE_SCHEMA) return pushAll();
     if (res.version > version && !dirty && !pushing) {
+      const clean = sanitize(res.state);
+      if (!clean) return; // archivio non valido: si resta sui dati locali
       applying = true;
-      useStore.setState(res.state);
+      useStore.setState(clean);
       applying = false;
       version = res.version;
       synced = pick(useStore.getState());

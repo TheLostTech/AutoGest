@@ -2,7 +2,7 @@
 
 import { Wand2 } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { corsiaId, firstFreeSlot, locLong, locToString, scaffaleId, warehouseFor, WAREHOUSES, whById } from "@/lib/warehouse";
+import { corsiaId, firstFreeSlot, locLong, locToString, scaffaleId, warehouseFor, whById } from "@/lib/warehouse";
 import { typeById } from "@/lib/catalog";
 import type { Location } from "@/lib/types";
 import { Button, Field } from "./ui";
@@ -10,12 +10,13 @@ import { Button, Field } from "./ui";
 // Selezione a cascata: Magazzino → Corsia → Scaffale → Ripiano → Contenitore
 export function LocationPicker({ value, onChange, typeId }: { value: Location; onChange: (l: Location) => void; typeId: string }) {
   const parts = useStore((s) => s.parts);
-  const w = whById(value.mag) ?? WAREHOUSES[0];
+  const WAREHOUSES = useStore((s) => s.warehouses);
+  const w = whById(value.mag, WAREHOUSES) ?? WAREHOUSES[0];
   const t = typeById(typeId);
-  const suggested = warehouseFor(t.category, t.shippable);
+  const suggested = warehouseFor(t.category, t.shippable, WAREHOUSES);
   const range = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
   const setMag = (mag: string) => {
-    const nw = whById(mag)!;
+    const nw = whById(mag, WAREHOUSES)!;
     onChange({ mag, corsia: corsiaId(1), scaffale: scaffaleId(1), ripiano: nw.ripiani[0], contenitore: nw.contenitori ? "1" : undefined });
   };
   const inSlot = parts.filter((p) => p.location && locToString(p.location) === locToString(value) && p.status !== "venduto" && p.status !== "scartato").length;

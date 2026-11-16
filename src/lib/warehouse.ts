@@ -25,12 +25,22 @@ export const WAREHOUSES: Warehouse[] = [
 export const corsiaId = (n: number) => `T${String(n).padStart(2, "0")}`;
 export const scaffaleId = (n: number) => String(100 + n);
 
-export function warehouseFor(category: string, shippable: boolean): Warehouse {
-  if (category === "Carrozzeria" && !shippable) return WAREHOUSES[4];
-  return WAREHOUSES.find((w) => w.categories.includes(category)) ?? WAREHOUSES[2];
+// I magazzini sono dati (creabili dall'Inventario): le funzioni ricevono l'elenco attuale
+export function warehouseFor(category: string, shippable: boolean, list: Warehouse[] = WAREHOUSES): Warehouse {
+  if (category === "Carrozzeria" && !shippable) return list.find((w) => w.id === "P") ?? list[0];
+  return list.find((w) => w.categories.includes(category)) ?? list.find((w) => w.id === "3") ?? list[0];
 }
 
-export const whById = (id: string) => WAREHOUSES.find((w) => w.id === id);
+export const whById = (id: string, list: Warehouse[] = WAREHOUSES) => list.find((w) => w.id === id);
+
+export const sameRipiano = (l: Location | undefined, mag: string, corsia: string, scaffale: string, ripiano: string) =>
+  sameShelf(l, mag, corsia, scaffale) && l!.ripiano === ripiano;
+
+export const ripianiCount = (w: Warehouse) => w.corsie * w.scaffali * w.ripiani.length;
+
+// Provenienza leggibile: veicolo nel gestionale, pratica passata (inventario) o non documentata
+export const originLabel = (p: Pick<Part, "vehicleId" | "pastDossier">) =>
+  p.vehicleId || (p.pastDossier ? `pratica ${p.pastDossier.number}` : "provenienza non documentata");
 
 export function locToString(l?: Location) {
   if (!l) return "—";

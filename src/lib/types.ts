@@ -113,7 +113,11 @@ export interface Compatibility {
 
 export interface Part {
   id: string; // R-000000
-  vehicleId: string;
+  vehicleId: string; // "" per i pezzi trovati in inventario senza veicolo d'origine documentato
+  origin?: "smontaggio" | "inventario";
+  // Provenienza da una pratica di demolizione passata (es. dal vecchio Excel), quando il veicolo non è nel gestionale
+  pastDossier?: { number: string; plate?: string; vin?: string; model?: string };
+  missingSince?: string; // non trovato al suo posto durante l'ultima conta
   typeId: string;
   description: string;
   condition: Condition;
@@ -203,4 +207,19 @@ export interface SalesDoc {
   refDocId?: string; // es. nota di credito → fattura
   listino?: string;
   status: "emesso" | "aperto" | "convertito" | "inviata allo SdI";
+}
+
+// ——— Inventario: conta di un ripiano ———
+
+export interface InventoryCount {
+  id: string; // I-000001
+  at: string;
+  by: string;
+  mag: string;
+  corsia: string;
+  scaffale: string;
+  ripiano: string;
+  found: string[]; // ricambi già registrati e trovati al loro posto
+  missing: string[]; // registrati qui ma non trovati
+  added: string[]; // catalogati durante la conta
 }

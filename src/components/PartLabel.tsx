@@ -1,5 +1,6 @@
 "use client";
 
+import { originLabel } from "@/lib/warehouse";
 import { Barcode, partUrl, Qr } from "./codes";
 import { typeById, CONDITIONS } from "@/lib/catalog";
 import { locToString } from "@/lib/warehouse";
@@ -26,11 +27,11 @@ export function PartLabel({ part, vehicle, size = "md", className = "" }: { part
           <dl className={`mt-auto grid grid-cols-[auto_1fr] gap-x-2 text-ink-2 ${print ? "text-[7pt] leading-tight" : "mt-2 text-[13px] leading-snug"}`}>
             <dt className="font-semibold text-ink-3">Da</dt>
             <dd className="code truncate font-semibold text-ink">
-              {part.vehicleId}
+              {!part.vehicleId && part.pastDossier ? [part.pastDossier.model, part.pastDossier.plate].filter(Boolean).join(" · ") || "veicolo della pratica" : originLabel(part)}
               {vehicle && <span className="font-medium text-ink-2"> · {vehicle.make} {vehicle.model} · {vehicle.plate}</span>}
             </dd>
             <dt className="font-semibold text-ink-3">Pratica</dt>
-            <dd className="code truncate">{vehicle?.dossier.number || "da registrare"}</dd>
+            <dd className="code truncate">{vehicle ? vehicle.dossier.number || "da registrare" : part.pastDossier ? part.pastDossier.number : part.legacyCode ? `vecchio codice ${part.legacyCode}` : "—"}</dd>
             <dt className="font-semibold text-ink-3">Stato</dt>
             <dd className="truncate">
               {part.condition} · {CONDITIONS[part.condition].label}

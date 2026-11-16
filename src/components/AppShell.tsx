@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Boxes, Briefcase, CarFront, LayoutGrid, Leaf, Map as MapIcon, Menu, ScanLine, ShoppingCart, Wrench, X, type LucideIcon } from "lucide-react";
+import { Boxes, Briefcase, CarFront, ClipboardList, LayoutGrid, Leaf, Menu, ScanLine, ShoppingCart, Wrench, X, type LucideIcon } from "lucide-react";
 import { ROLE_USER, useStore } from "@/lib/store";
 import type { Role } from "@/lib/types";
 import { BRAND, DEMO_NOTICE } from "@/lib/config";
@@ -45,6 +45,7 @@ const AREAS: Area[] = [
     subs: [
       { href: "/ricambi", label: "Magazzino", roles: ["smontatore", "magazziniere", "responsabile", "vendite"] },
       { href: "/magazzino", label: "Ubicazioni", roles: ["magazziniere", "responsabile", "vendite"] },
+      { href: "/inventario", label: "Inventario", roles: ["magazziniere", "responsabile"] },
       { href: "/pubblicazione", label: "Pubblicazione", roles: ["responsabile"] },
       { href: "/regole", label: "Scorte minime", roles: ["responsabile"] },
     ],
@@ -96,9 +97,9 @@ const MOBILE_TABS: Record<Role, Tab[]> = {
   ],
   magazziniere: [
     { area: "oggi", label: "Oggi", icon: LayoutGrid },
-    { area: "ricambi", label: "Ricambi", icon: Boxes },
+    { href: "/inventario", label: "Inventario", icon: ClipboardList },
     { href: "/scansione", label: "Scansiona", icon: ScanLine },
-    { href: "/magazzino", label: "Ubicazioni", icon: MapIcon },
+    { area: "ricambi", label: "Ricambi", icon: Boxes },
   ],
   responsabile: [
     { area: "oggi", label: "Oggi", icon: LayoutGrid },

@@ -149,7 +149,18 @@ export function PartDetailSheet({
                   <Row k="Identificazione"><span className={`font-semibold ${v.verification === "verificato" ? "text-ok" : "text-warn"}`}>{v.verification}</span></Row>
                 </>
               ) : (
-                <p className="text-danger">Veicolo di provenienza non trovato.</p>
+                p.pastDossier ? (
+                  <>
+                    <Row k="Pratica">
+                      <span className="code font-semibold">{p.pastDossier.number}</span> <span className="text-ink-3">· archivio precedente</span>
+                    </Row>
+                    {p.pastDossier.plate && <Row k="Targa"><span className="code">{p.pastDossier.plate}</span></Row>}
+                    {p.pastDossier.vin && <Row k="Telaio (VIN)"><span className="code">{p.pastDossier.vin}</span></Row>}
+                    {p.pastDossier.model && <Row k="Modello">{p.pastDossier.model}</Row>}
+                  </>
+                ) : (
+                  <Row k="Origine"><span className="text-warn">Non documentata · magazzino preesistente</span></Row>
+                )
               )}
             </Section>
 

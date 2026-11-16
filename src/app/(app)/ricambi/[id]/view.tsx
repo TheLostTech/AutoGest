@@ -87,9 +87,9 @@ export default function SchedaRicambio() {
           {editLoc && (
             <Panel title="Posizione di magazzino">
               <div className="space-y-4 p-4">
-                <LocationPicker value={loc ?? firstFreeSlot(warehouseFor(t.category, t.shippable), s.parts)!} onChange={setLoc} typeId={p.typeId} />
+                <LocationPicker value={loc ?? firstFreeSlot(warehouseFor(t.category, t.shippable, s.warehouses), s.parts)!} onChange={setLoc} typeId={p.typeId} />
                 <div className="flex gap-2">
-                  <Button onClick={() => { const l = loc ?? firstFreeSlot(warehouseFor(t.category, t.shippable), s.parts)!; s.setLocation(p.id, l); setEditLoc(false); flash("ok", `Posizione ${locToString(l)} registrata`); }}>Conferma posizione</Button>
+                  <Button onClick={() => { const l = loc ?? firstFreeSlot(warehouseFor(t.category, t.shippable, s.warehouses), s.parts)!; s.setLocation(p.id, l); setEditLoc(false); flash("ok", `Posizione ${locToString(l)} registrata`); }}>Conferma posizione</Button>
                   <Button variant="quiet" onClick={() => setEditLoc(false)}>Annulla</Button>
                 </div>
               </div>
@@ -117,7 +117,7 @@ export default function SchedaRicambio() {
                 </dl>
               </Link>
             ) : (
-              <p className="p-4 text-danger">Veicolo di provenienza non trovato.</p>
+              <PastOrigin p={p} />
             )}
           </Panel>
         </div>
@@ -257,5 +257,24 @@ export default function SchedaRicambio() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Pezzo dal magazzino preesistente: pratica passata (vecchio archivio) o provenienza non documentata
+function PastOrigin({ p }: { p: import("@/lib/types").Part }) {
+  if (!p.pastDossier)
+    return <p className="p-4 text-[15px] text-warn">Provenienza non documentata: pezzo trovato nel magazzino preesistente{p.legacyCode ? ` (vecchio codice ${p.legacyCode})` : ""}.</p>;
+  const d = p.pastDossier;
+  return (
+    <dl className="grid grid-cols-[110px_1fr] gap-y-1.5 p-4 text-[15px]">
+      <dt className="text-ink-3">Pratica</dt>
+      <dd className="code font-semibold">{d.number} <span className="font-sans font-normal text-ink-3">· archivio precedente</span></dd>
+      <dt className="text-ink-3">Targa</dt>
+      <dd className="code">{d.plate || "—"}</dd>
+      <dt className="text-ink-3">Telaio</dt>
+      <dd className="code">{d.vin || "—"}</dd>
+      <dt className="text-ink-3">Modello</dt>
+      <dd>{d.model || "—"}</dd>
+    </dl>
   );
 }

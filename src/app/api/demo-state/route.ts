@@ -9,8 +9,8 @@ const FILE = path.join(DIR, "state.json");
 
 // Collezioni con ID: il server fonde per ID invece di sovrascrivere
 const PREPEND = ["vehicles", "parts", "orders", "docs", "firs"] as const; // i nuovi in cima
-const APPEND = ["audit", "wasteMoves"] as const; // i nuovi in fondo (cronologici)
-const WHOLE = ["rules", "listini"] as const; // piccole: si sostituiscono intere
+const APPEND = ["audit", "wasteMoves", "inventory"] as const; // i nuovi in fondo (cronologici)
+const WHOLE = ["rules", "listini", "warehouses"] as const; // piccole: si sostituiscono intere
 
 type Rec = Record<string, unknown> & { id?: string; typeId?: string };
 interface Stored {

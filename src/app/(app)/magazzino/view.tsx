@@ -5,7 +5,7 @@ import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { corsiaId, locLong, sameShelf, scaffaleId, slotCapacity, WAREHOUSES } from "@/lib/warehouse";
+import { corsiaId, locLong, sameShelf, scaffaleId, slotCapacity } from "@/lib/warehouse";
 import { PageTitle, Panel, PartImage, StatusChip } from "@/components/ui";
 import type { Part } from "@/lib/types";
 
@@ -22,6 +22,7 @@ const present = (p: Part) => !!p.location && p.status !== "venduto" && p.status 
 function Mappa() {
   const sp = useSearchParams();
   const parts = useStore((s) => s.parts);
+  const WAREHOUSES = useStore((s) => s.warehouses);
   const stocked = useMemo(() => parts.filter(present), [parts]);
   const [mag, setMag] = useState(sp.get("mag") ?? "1");
   const [sel, setSel] = useState<{ corsia: string; scaffale: string } | null>(null);
@@ -29,7 +30,7 @@ function Mappa() {
   const [found, setFound] = useState<Part | null>(null);
   const [miss, setMiss] = useState(false);
 
-  const w = WAREHOUSES.find((x) => x.id === mag)!;
+  const w = WAREHOUSES.find((x) => x.id === mag) ?? WAREHOUSES[0];
   const cap = slotCapacity(w);
   const inMag = stocked.filter((p) => p.location!.mag === mag);
   const count = (c: string, s: string) => inMag.filter((p) => sameShelf(p.location, mag, c, s)).length;

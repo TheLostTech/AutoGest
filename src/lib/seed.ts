@@ -6,6 +6,7 @@ import type {
   AuditEvent,
   Condition,
   Fir,
+  InventoryCount,
   Order,
   SalesDoc,
   Part,
@@ -338,7 +339,8 @@ export function buildSeed() {
     wasteMoves,
     firs,
     docs,
-    counters: { vehicle: 118, part: pn, order: on, event: an, move: wasteMoves.length, fir: fn, docs: dn },
+    inventory: [] as InventoryCount[],
+    counters: { vehicle: 118, part: pn, order: on, event: an, move: wasteMoves.length, fir: fn, docs: dn, inventory: 0 },
   };
 }
 

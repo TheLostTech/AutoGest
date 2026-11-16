@@ -4,7 +4,7 @@ Il prototipo diventa un prodotto da vendere ad altre autodemolizioni. Obiettivo:
 
 Data: 16 novembre 2026. Stato: proposta da validare.
 
-**Già nel prototipo (in forma dimostrativa, servizi esterni simulati):** H1 coda "Da fare", H2 ricerca globale, H4 navigazione per aree; C1–C2 conferente e documenti, C4 visura con fermo, C6 presa in carico e certificato, C8 radiazione, C9 fascicolo, C10 peso in ingresso; D1–D3 bonifica e registro automatico, D4 trasmissione RENTRI, D5–D7 formulari e uscite, D8 limiti dell'autorizzazione; E4 prezzo del nuovo e suggerito, E5 listini; F2 preventivi, F3 scontrino o fattura al banco, F6 nota di credito sul reso; G1 documenti.
+**Già nel prototipo (in forma dimostrativa, servizi esterni simulati):** H1 coda "Da fare", H2 ricerca globale, H4 navigazione per aree; C1–C2 conferente e documenti, C4 visura con fermo, C6 presa in carico e certificato, C8 radiazione, C9 fascicolo, C10 peso in ingresso; D1–D3 bonifica e registro automatico, D4 trasmissione RENTRI, D5–D7 formulari e uscite, D8 limiti dell'autorizzazione; E4 prezzo del nuovo e suggerito, E5 listini, E9 inventario a rotazione (con creazione magazzini e provenienza da pratiche passate), B7 inventario di avvio; F2 preventivi, F3 scontrino o fattura al banco, F6 nota di credito sul reso; G1 documenti.
 
 ---
 

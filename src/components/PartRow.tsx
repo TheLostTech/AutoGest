@@ -1,5 +1,6 @@
 "use client";
 
+import { originLabel } from "@/lib/warehouse";
 import Link from "next/link";
 import type { Part } from "@/lib/types";
 import { euro } from "@/lib/logic";
@@ -15,7 +16,7 @@ export function PartRow({ part, href, right }: { part: Part; href?: string; righ
         <span className="code block text-[20px] font-bold leading-none md:hidden">{part.id}</span>
         <span className="block truncate font-semibold">{part.description}</span>
         <span className="mt-0.5 flex flex-wrap items-center gap-x-3 text-sm text-ink-3">
-          <span>da {part.vehicleId}</span>
+          <span>da {originLabel(part)}</span>
           {part.legacyCode && <span className="code">{part.legacyCode}</span>}
           {part.oem && <span className="code">OE {part.oem}</span>}
           <ListingChip listing={part.listing} />

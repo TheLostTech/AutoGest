@@ -77,7 +77,11 @@ export function publishChecks(p: Part, v?: Vehicle): Check[] {
     { label: "Condizioni registrate", ok: !!p.condition, blocking: true },
     { label: "Ricambio disponibile in magazzino", ok: p.status === "disponibile", blocking: true, hint: `Stato attuale: ${p.status}` },
     { label: "Posizione di magazzino assegnata", ok: !!p.location, blocking: true },
-    { label: "Provenienza veicolo verificata", ok: v?.verification === "verificato", blocking: true, hint: "Veicolo in stato «da verificare»" },
+    !p.vehicleId && p.pastDossier
+      ? { label: `Provenienza: pratica di demolizione ${p.pastDossier.number}`, ok: true, blocking: false }
+      : p.origin === "inventario" && !p.vehicleId
+        ? { label: "Provenienza non documentata (magazzino preesistente)", ok: false, blocking: false, hint: "Indica la pratica di demolizione passata se è nel vecchio archivio" }
+        : { label: "Provenienza veicolo verificata", ok: v?.verification === "verificato", blocking: true, hint: "Veicolo in stato «da verificare»" },
     { label: t.shippable ? "Spedibile con corriere" : "Solo ritiro in sede", ok: true, blocking: false },
     { label: p.compat?.verified ? `Compatibilità verificata su ${p.compat.platforms.length} modelli` : p.oem ? "Codice OEM non verificato: compatibilità non dichiarata" : "Nessun codice OEM: compatibilità non dichiarata", ok: !!p.compat?.verified, blocking: false },
   ];

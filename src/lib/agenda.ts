@@ -180,6 +180,18 @@ export function buildAgenda(
       href: `/ricambi/${noLabel[0].id}`,
       roles: ["magazziniere", "smontatore"],
     });
+  const lost = parts.filter((p) => p.missingSince && p.status !== "venduto" && p.status !== "scartato");
+  if (lost.length)
+    items.push({
+      id: "mancanti",
+      kind: "ricambi",
+      title: `Cerca ${lost.length} ${lost.length === 1 ? "ricambio non trovato" : "ricambi non trovati"} all'inventario`,
+      detail: lost.slice(0, 3).map((p) => p.id).join(", ") + (lost.length > 3 ? "…" : "") + " · registrati ma non al loro posto",
+      action: "Cerca",
+      href: `/ricambi/${lost[0].id}`,
+      due: addDays(lost.map((p) => p.missingSince!).sort()[0], 3),
+      roles: ["magazziniere", "responsabile"],
+    });
   const offline = parts.filter((p) => p.status === "disponibile" && p.listing !== "pubblicato");
   if (offline.length)
     items.push({

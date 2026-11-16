@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { buildSeed, pad } from "./seed";
-import { locToString } from "./warehouse";
+import { locToString, WAREHOUSES, type Warehouse } from "./warehouse";
 import { FIR_NEXT, movesForBonifica, movesForIntake } from "./ambiente";
 import { DEFAULT_LISTINI, type Listino } from "./pricing";
 import type {
@@ -13,6 +13,7 @@ import type {
   DocType,
   SalesDoc,
   Fir,
+  InventoryCount,
   Location,
   Order,
   Part,
@@ -40,6 +41,7 @@ interface Counters {
   move: number;
   fir: number;
   docs: Record<"P" | "DC" | "FT" | "NC", number>;
+  inventory: number;
 }
 
 interface State {
@@ -53,6 +55,8 @@ interface State {
   firs: Fir[];
   docs: SalesDoc[];
   listini: Listino[];
+  warehouses: Warehouse[];
+  inventory: InventoryCount[];
   counters: Counters;
   activeVehicleId?: string;
 }
@@ -85,6 +89,8 @@ interface Actions {
   issueDoc: (orderId: string, type: "documento commerciale" | "fattura", customer: SalesDoc["customer"], prices?: Record<string, number>, listino?: string) => string;
   convertQuote: (docId: string, type: "documento commerciale" | "fattura") => Result<string>;
   saveListini: (l: Listino[]) => void;
+  addWarehouse: (w: Warehouse) => void;
+  closeCount: (c: Omit<InventoryCount, "id" | "at" | "by">) => string;
   log: (e: Omit<AuditEvent, "id" | "at" | "user" | "role" | "device"> & Partial<Pick<AuditEvent, "user" | "role" | "device">>) => void;
   reset: () => void;
 }
@@ -92,7 +98,7 @@ interface Actions {
 const now = () => new Date().toISOString();
 
 // Chiave dei dati salvati: cambia quando cambia la struttura dei dati demo
-export const STORE_SCHEMA = "gestionale-demolizione-demo-v8";
+export const STORE_SCHEMA = "gestionale-demolizione-demo-v9";
 
 function initial(): State {
   const s = buildSeed();
@@ -107,6 +113,8 @@ function initial(): State {
     firs: s.firs,
     docs: s.docs,
     listini: DEFAULT_LISTINI,
+    warehouses: WAREHOUSES,
+    inventory: s.inventory,
     counters: s.counters,
     activeVehicleId: "V-000118",
   };
@@ -388,6 +396,28 @@ export const useStore = create<State & Actions>()(
         saveListini: (listini) => {
           set({ listini });
           push(event({ entity: "regola", entityId: "listini", action: "Listini aggiornati", detail: listini.map((l) => `${l.name} ${l.pct > 0 ? "+" : ""}${l.pct}%`).join(" · ") }));
+        },
+
+        addWarehouse: (w) => {
+          set((s) => ({ warehouses: [...s.warehouses, w] }));
+          push(event({ entity: "regola", entityId: `MAG-${w.id}`, action: "Magazzino creato", detail: `${w.name} · ${w.corsie} corsie × ${w.scaffali} scaffali × ${w.ripiani.length} ripiani` }));
+        },
+
+        closeCount: (c) => {
+          const n = get().counters.inventory + 1;
+          const id = `I-${pad(n)}`;
+          const at = now();
+          const by = ROLE_USER[get().role].user;
+          set((s) => ({
+            inventory: [...s.inventory, { ...c, id, at, by }],
+            counters: { ...s.counters, inventory: n },
+            // Chi manca all'appello resta segnalato finché non viene ritrovato
+            parts: s.parts.map((p) =>
+              c.missing.includes(p.id) ? { ...p, missingSince: p.missingSince ?? at } : c.found.includes(p.id) && p.missingSince ? { ...p, missingSince: undefined } : p,
+            ),
+          }));
+          push(event({ entity: "ricambio", entityId: id, action: "Ripiano contato", detail: `${c.mag}/${c.corsia}-${c.scaffale}-${c.ripiano} · ${c.found.length} trovati · ${c.missing.length} mancanti · ${c.added.length} nuovi` }));
+          return id;
         },
 
         reset: () => set(initial()),

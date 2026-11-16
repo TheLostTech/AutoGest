@@ -6,7 +6,6 @@ import { useStore } from "@/lib/store";
 import { PageTitle, Panel, Empty } from "@/components/ui";
 import { PartRow } from "@/components/PartRow";
 import { PART_TYPES } from "@/lib/catalog";
-import { WAREHOUSES } from "@/lib/warehouse";
 import type { PartStatus } from "@/lib/types";
 
 const STATUSES: (PartStatus | "tutti")[] = ["tutti", "disponibile", "bozza", "riservato", "venduto", "invendibile", "scartato"];
@@ -21,7 +20,7 @@ export default function Page() {
 
 function Magazzino() {
   const sp = useSearchParams();
-  const { parts, vehicles } = useStore();
+  const { parts, vehicles, warehouses } = useStore();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<PartStatus | "tutti">("tutti");
   const [type, setType] = useState("");
@@ -54,7 +53,7 @@ function Magazzino() {
         </select>
         <select className="field" value={area} onChange={(e) => setArea(e.target.value)} aria-label="Magazzino">
           <option value="">Tutti i magazzini</option>
-          {WAREHOUSES.map((w) => <option key={w.id} value={w.id}>{w.name} · {w.desc}</option>)}
+          {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name} · {w.desc}</option>)}
         </select>
       </div>
       <label className="mb-4 inline-flex min-h-11 items-center gap-2 font-medium text-ink-2">

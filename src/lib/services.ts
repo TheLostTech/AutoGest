@@ -52,6 +52,15 @@ export async function suggestComponent(hintTypeId: string | undefined, candidate
   return { typeId: pick, confidence: 0.58 };
 }
 
+// Riconoscimento del pezzo da foto per l'inventario (SIMULATO): tre proposte ordinate per probabilità,
+// scelte tra le tipologie che il magazzino contiene. Nel reale: modello di visione addestrato sui ricambi.
+export async function identifyFromPhoto(candidates: string[]): Promise<{ typeId: string; confidence: number }[]> {
+  await sleep(1200);
+  const pool = [...candidates].sort(() => Math.random() - 0.5).slice(0, 3);
+  const conf = [0.74, 0.17, 0.06];
+  return pool.map((typeId, i) => ({ typeId, confidence: conf[i] }));
+}
+
 export const PLATE_RE = /^[A-Z]{2}\d{3}[A-Z]{2}$/;
 export const VIN_RE = /^[A-HJ-NPR-Z0-9]{17}$/;
 
