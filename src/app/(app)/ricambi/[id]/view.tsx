@@ -10,6 +10,8 @@ import { dateIt, euro, publishChecks } from "@/lib/logic";
 import { firstFreeSlot, locLong, locToString, warehouseFor } from "@/lib/warehouse";
 import { LocationPicker } from "@/components/LocationPicker";
 import { CatalogPanel } from "@/components/CatalogPanel";
+import { catalogFor } from "@/lib/partsdb";
+import { listPrice, suggestUsedPrice } from "@/lib/pricing";
 import type { Location } from "@/lib/types";
 import { PartLabel } from "@/components/PartLabel";
 import { Lifecycle } from "@/components/Lifecycle";
@@ -32,6 +34,10 @@ export default function SchedaRicambio() {
   const blocking = checks.filter((c) => c.blocking && !c.ok);
   const history = s.audit.filter((e) => e.entityId === p.id || e.detail?.includes(p.id)).reverse();
   const order = s.orders.find((o) => o.partIds.includes(p.id) && o.status !== "annullato");
+  const cat = v ? catalogFor(p.typeId, v.platform, p.side) : null;
+  const rule = s.rules.find((r) => r.typeId === p.typeId);
+  const inStock = s.parts.filter((x) => x.typeId === p.typeId && x.status === "disponibile" && x.id !== p.id).length;
+  const suggested = cat ? suggestUsedPrice(cat.newPrice, p.condition, inStock, rule?.max ?? 99) : undefined;
 
   const flash = (tone: "ok" | "danger", text: string) => {
     setMsg({ tone, text });
@@ -145,6 +151,34 @@ export default function SchedaRicambio() {
                   <Button size="sm" onClick={() => { s.updatePart(p.id, { price: price ? Number(price) : undefined }, "Prezzo modificato", `${euro(p.price)} → ${euro(Number(price))}`); flash("ok", "Prezzo aggiornato"); }}>Salva</Button>
                 )}
               </dd>
+              {cat && (
+                <>
+                  <dt className="text-ink-3">Nuovo originale</dt>
+                  <dd>
+                    <span className="code text-[18px]">{euro(cat.newPrice)}</span>
+                    {suggested !== undefined && (
+                      <span className="text-sm text-ink-2">
+                        {" "}· suggerito <b className="code">{euro(suggested)}</b>
+                        {String(suggested) !== price && (
+                          <button className="ml-2 font-semibold text-band underline" onClick={() => setPrice(String(suggested))}>usa</button>
+                        )}
+                      </span>
+                    )}
+                  </dd>
+                </>
+              )}
+              {p.price !== undefined && (
+                <>
+                  <dt className="text-ink-3">Listini</dt>
+                  <dd className="flex flex-wrap gap-x-4 gap-y-1">
+                    {s.listini.map((l) => (
+                      <span key={l.id} className="text-sm">
+                        <span className="text-ink-2">{l.name}</span> <b className="code text-[16px]">{euro(listPrice(p.price, l))}</b>
+                      </span>
+                    ))}
+                  </dd>
+                </>
+              )}
               {order && (
                 <>
                   <dt className="text-ink-3">Ordine</dt>

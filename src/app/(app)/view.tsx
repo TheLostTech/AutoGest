@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowRight, Boxes, CarFront, CircleCheck, FileText, PackageCheck, TrendingDown, type LucideIcon } from "lucide-react";
+import { ArrowRight, Boxes, CarFront, CircleCheck, FileText, Leaf, PackageCheck, TrendingDown, type LucideIcon } from "lucide-react";
 import { ROLE_USER, useStore } from "@/lib/store";
 import { ButtonLink, Panel, PageTitle, Plate } from "@/components/ui";
 import { buildAgenda, urgencyOf, type AgendaItem, type Urgency } from "@/lib/agenda";
@@ -22,6 +22,7 @@ const KIND_ICON: Record<AgendaItem["kind"], LucideIcon> = {
   ricambi: Boxes,
   ordine: PackageCheck,
   scorte: TrendingDown,
+  ambiente: Leaf,
 };
 
 const PRIMARY: Record<Role, { href: string; label: string }> = {
@@ -172,8 +173,8 @@ function AgendaRow({ item, urgency }: { item: AgendaItem; urgency: Urgency }) {
       <DueStamp due={item.due} urgency={urgency} icon={Icon} />
       <span className="min-w-0">
         <span className="block font-semibold leading-snug">
-          {/* Gli ID (V-000117, R-002301, O-000012) non vanno spezzati sul trattino */}
-          {item.title.split(/([VRO]-\d{6})/).map((part, i) => (i % 2 ? <span key={i} className="whitespace-nowrap">{part}</span> : part))}
+          {/* Gli ID (V-000117, R-002301, O-000012, F-000141) non vanno spezzati sul trattino */}
+          {item.title.split(/([VROF]-\d{6}|[A-Z]{1,2}-2026-\d{4})/).map((part, i) => (i % 2 ? <span key={i} className="whitespace-nowrap">{part}</span> : part))}
         </span>
         <span className="block truncate text-sm text-ink-2">{item.detail}</span>
       </span>

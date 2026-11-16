@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Boxes, Briefcase, CarFront, LayoutGrid, Map as MapIcon, ScanLine, ShoppingCart, Wrench, type LucideIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Boxes, Briefcase, CarFront, LayoutGrid, Leaf, Map as MapIcon, Menu, ScanLine, ShoppingCart, Wrench, X, type LucideIcon } from "lucide-react";
 import { ROLE_USER, useStore } from "@/lib/store";
 import type { Role } from "@/lib/types";
 import { BRAND, DEMO_NOTICE } from "@/lib/config";
+import { GlobalSearch } from "./GlobalSearch";
 
 // Navigazione per aree di lavoro: poche voci, le sottosezioni compaiono solo dentro l'area aperta.
-// Un'area senza sottosezioni visibili per il ruolo (o un modulo non attivo, es. Ambiente) non compare.
+// Un'area senza sottosezioni visibili per il ruolo (o un modulo non attivo) non compare.
 const ALL_ROLES: Role[] = ["accettazione", "smontatore", "magazziniere", "responsabile", "vendite"];
 
 interface Sub {
@@ -52,14 +54,27 @@ const AREAS: Area[] = [
     icon: ShoppingCart,
     subs: [
       { href: "/vendite", label: "Banco e ordini", roles: ["vendite", "responsabile"] },
+      { href: "/vendite/documenti", label: "Documenti", roles: ["vendite", "responsabile"] },
       { href: "/negozio", label: "Negozio online", roles: ["vendite", "responsabile"] },
+    ],
+  },
+  {
+    id: "ambiente",
+    label: "Ambiente",
+    icon: Leaf,
+    subs: [
+      { href: "/ambiente", label: "Registro rifiuti", roles: ["accettazione", "responsabile"] },
+      { href: "/ambiente/formulari", label: "Formulari", roles: ["accettazione", "responsabile"] },
     ],
   },
   {
     id: "ufficio",
     label: "Ufficio",
     icon: Briefcase,
-    subs: [{ href: "/registro", label: "Registro attività", roles: ["accettazione", "magazziniere", "responsabile"] }],
+    subs: [
+      { href: "/registro", label: "Registro attività", roles: ["accettazione", "magazziniere", "responsabile"] },
+      { href: "/listini", label: "Listini", roles: ["responsabile"] },
+    ],
   },
 ];
 
@@ -69,7 +84,7 @@ const MOBILE_TABS: Record<Role, Tab[]> = {
   accettazione: [
     { area: "oggi", label: "Oggi", icon: LayoutGrid },
     { area: "veicoli", label: "Veicoli", icon: CarFront },
-    { href: "/scansione", label: "Scansiona", icon: ScanLine },
+    { area: "ambiente", label: "Ambiente", icon: Leaf },
     { area: "ufficio", label: "Ufficio", icon: Briefcase },
   ],
   smontatore: [
@@ -128,6 +143,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const cur = currentSub(path, areas);
   const tabs = MOBILE_TABS[role];
   const hasScanTab = tabs.some((t) => "href" in t && t.href === "/scansione");
+  // Aree che non stanno nella barra inferiore: finiscono sotto "Altro"
+  const tabAreas = new Set(tabs.flatMap((t) => ("area" in t ? [t.area] : [])));
+  const moreAreas = areas.filter((a) => !tabAreas.has(a.id));
+  const [more, setMore] = useState(false);
+  const moreRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = moreRef.current;
+    if (!d) return;
+    if (more && !d.open) d.showModal();
+    if (!more && d.open) d.close();
+  }, [more]);
   const subTabs = cur?.area && cur.area.subs.length > 1 ? cur.area.subs : [];
 
   // Nella barra inferiore vince la voce più specifica: se una scheda punta proprio a questa pagina, l'area non si accende
@@ -143,7 +169,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="code text-[26px] font-bold uppercase leading-none tracking-wide">{BRAND.azienda}</div>
           <div className="mt-1 text-[13px] font-medium text-white/75">Gestionale autodemolizione</div>
         </div>
-        <div className="px-3 pb-4">
+        <div className="space-y-2 px-3 pb-4">
+          <GlobalSearch variant="sidebar" />
           <Link
             href="/scansione"
             className={`flex min-h-11 items-center justify-center gap-2 rounded-md text-[15px] font-semibold transition-colors ${matches(path, "/scansione") ? "bg-white text-band" : "bg-band-deep text-white hover:bg-white hover:text-band"}`}
@@ -198,6 +225,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center justify-between gap-3 px-4 py-2.5">
             <Link href="/" className="code truncate text-[20px] font-bold uppercase tracking-wide">{BRAND.azienda}</Link>
             <div className="flex shrink-0 items-center gap-2">
+              <GlobalSearch variant="icon" />
               {!hasScanTab && (
                 <Link href="/scansione" className="grid size-10 place-items-center rounded border border-white/40" aria-label="Scansiona etichetta">
                   <ScanLine className="size-5" aria-hidden />
@@ -244,7 +272,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="flex-1 px-4 pb-28 pt-5 md:px-8 md:pb-12 md:pt-7">{children}</main>
 
         {/* Barra inferiore mobile: bersagli grandi, usabili coi guanti */}
-        <nav className="no-print fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-hair bg-label pb-[env(safe-area-inset-bottom)] md:hidden" aria-label="Aree">
+        <nav className={`no-print fixed inset-x-0 bottom-0 z-30 grid border-t border-hair bg-label pb-[env(safe-area-inset-bottom)] md:hidden ${moreAreas.length ? "grid-cols-5" : "grid-cols-4"}`} aria-label="Aree">
           {tabs.map((t) => {
             const on = tabActive(t);
             return (
@@ -261,7 +289,54 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
+          {moreAreas.length > 0 && (
+            <button
+              onClick={() => setMore(true)}
+              className={`flex min-h-16 flex-col items-center justify-center gap-1 text-[12px] font-semibold ${moreAreas.some((a) => a.id === cur?.areaId) ? "text-band" : "text-ink-2"}`}
+            >
+              <span className={`grid h-8 w-14 place-items-center rounded-full ${moreAreas.some((a) => a.id === cur?.areaId) ? "bg-band-tint" : ""}`}>
+                <Menu className="size-[22px]" strokeWidth={2} aria-hidden />
+              </span>
+              Altro
+            </button>
+          )}
         </nav>
+
+        {/* Foglio "Altro": le aree che non stanno nella barra */}
+        <dialog
+          ref={moreRef}
+          onClose={() => setMore(false)}
+          onClick={(e) => e.target === e.currentTarget && setMore(false)}
+          aria-label="Altre aree"
+          className="sheet m-0 mt-auto w-full max-w-full rounded-t-xl bg-label p-0 text-ink backdrop:bg-ink/50 md:hidden"
+        >
+          <div className="flex items-center justify-between border-b border-hair-soft px-4 py-3">
+            <span className="code text-[15px] font-bold uppercase tracking-wide text-ink-2">Altre aree</span>
+            <button onClick={() => setMore(false)} className="grid size-10 place-items-center text-ink-3" aria-label="Chiudi">
+              <X className="size-5" aria-hidden />
+            </button>
+          </div>
+          <ul className="px-2 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
+            {moreAreas.map((a) => (
+              <li key={a.id} className="mb-2">
+                <p className="flex items-center gap-2 px-2 py-1 font-semibold"><a.icon className="size-5 text-ink-3" aria-hidden /> {a.label}</p>
+                <ul className="grid grid-cols-2 gap-1.5 px-2">
+                  {a.subs.map((sub) => (
+                    <li key={sub.href}>
+                      <Link
+                        href={sub.href}
+                        onClick={() => setMore(false)}
+                        className={`flex min-h-12 items-center rounded-md border px-3 text-[15px] font-semibold ${cur?.subHref === sub.href ? "border-band bg-band-tint text-band" : "border-hair text-ink"}`}
+                      >
+                        {sub.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </dialog>
       </div>
     </div>
   );

@@ -1,24 +1,22 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
-import { BadgeCheck, Wrench } from "lucide-react";
+import { BadgeCheck, Leaf, Wrench } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { Button, ButtonLink, Empty, Field, Notice, Panel, Plate } from "@/components/ui";
+import { Button, ButtonLink, Empty, Notice, Panel, Plate } from "@/components/ui";
 import { RecoveryList } from "@/components/RecoveryList";
+import { PraticaPanel } from "@/components/PraticaPanel";
 import { PartRow } from "@/components/PartRow";
 import { dateIt } from "@/lib/logic";
 import { platformById } from "@/lib/catalog";
-import type { DossierStatus } from "@/lib/types";
+import { fmtKg, itemKg } from "@/lib/ambiente";
 
 export default function SchedaVeicolo() {
   const { id } = useParams<{ id: string }>();
   const v = useStore((s) => s.vehicles.find((x) => x.id === id));
   const parts = useStore((s) => s.parts).filter((p) => p.vehicleId === id);
   const { updateVehicle, setActiveVehicle, audit } = useStore();
-  const [editDossier, setEditDossier] = useState(false);
-  const [dn, setDn] = useState(v?.dossier.number ?? "");
-  const [ds, setDs] = useState<DossierStatus>(v?.dossier.status ?? "in corso");
 
   if (!v) return <Empty title={`Veicolo ${id} non trovato`} />;
   const platform = platformById(v.platform);
@@ -70,6 +68,8 @@ export default function SchedaVeicolo() {
               <dd>{v.year || "—"} · {v.fuel}</dd>
               <dt className="text-ink-3">Chilometri</dt>
               <dd className="code text-[18px]">{v.km?.toLocaleString("it-IT") ?? "—"}</dd>
+              <dt className="text-ink-3">Peso ingresso</dt>
+              <dd className="code text-[18px]">{v.weightKg ? fmtKg(v.weightKg) : "—"}</dd>
               <dt className="text-ink-3">Colore</dt>
               <dd>{v.color || "—"}</dd>
               <dt className="text-ink-3">Piattaforma</dt>
@@ -81,44 +81,27 @@ export default function SchedaVeicolo() {
             </dl>
           </Panel>
 
-          <Panel
-            title="Pratica di demolizione"
-            action={!editDossier && <button className="text-sm font-semibold text-band" onClick={() => setEditDossier(true)}>{v.dossier.number ? "Modifica" : "Associa pratica"}</button>}
-          >
-            {editDossier ? (
-              <div className="space-y-3 p-4">
-                <Field label="Numero pratica / certificato" hint="Numero ufficiale, distinto dall'ID interno">
-                  <input className="field code" value={dn} onChange={(e) => setDn(e.target.value)} />
-                </Field>
-                <Field label="Stato">
-                  <select className="field" value={ds} onChange={(e) => setDs(e.target.value as DossierStatus)}>
-                    <option value="in corso">In corso</option>
-                    <option value="completata">Completata</option>
-                  </select>
-                </Field>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => {
-                      updateVehicle(v.id, { dossier: { ...v.dossier, number: dn.trim(), status: dn.trim() ? ds : "da registrare" } }, "Pratica aggiornata", `${dn.trim() || "rimossa"} · ${ds}`);
-                      setEditDossier(false);
-                    }}
-                  >
-                    Salva pratica
-                  </Button>
-                  <Button variant="quiet" onClick={() => setEditDossier(false)}>Annulla</Button>
-                </div>
-              </div>
-            ) : (
+          <Panel title="Bonifica" action={v.bonifica && <Link href={`/veicoli/${v.id}/bonifica`} className="text-sm font-semibold text-band">Dettaglio</Link>}>
+            {v.bonifica ? (
               <dl className="grid grid-cols-[130px_1fr] gap-x-4 gap-y-2.5 p-4 text-[15px]">
-                <dt className="text-ink-3">Numero</dt>
-                <dd className="code text-[18px] font-semibold">{v.dossier.number || <span className="text-warn">da registrare</span>}</dd>
-                <dt className="text-ink-3">Tipo</dt>
-                <dd>{v.dossier.kind}</dd>
-                <dt className="text-ink-3">Stato</dt>
-                <dd>{v.dossier.status}</dd>
+                <dt className="text-ink-3">Eseguita</dt>
+                <dd>{dateIt(v.bonifica.at, true)} · {v.bonifica.by}</dd>
+                <dt className="text-ink-3">Rimossi</dt>
+                <dd className="code text-[18px]">{fmtKg(v.bonifica.items.reduce((a, i) => a + itemKg(i), 0))}</dd>
+                <dt className="text-ink-3">Carcassa</dt>
+                <dd className="code text-[18px]">{fmtKg(v.bonifica.residualKg)} <span className="font-sans text-sm text-ink-3">· EER 16 01 06</span></dd>
               </dl>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+                <p className="text-[15px] text-ink-2">Da fare prima dello smontaggio: liquidi, batteria, airbag, catalizzatore, pneumatici.</p>
+                <ButtonLink href={`/veicoli/${v.id}/bonifica`} size="sm"><Leaf className="size-4" aria-hidden /> Registra bonifica</ButtonLink>
+              </div>
             )}
           </Panel>
+
+          <div id="pratica">
+            <PraticaPanel v={v} />
+          </div>
 
           <Panel title="Storico veicolo">
             <ul className="divide-y divide-hair-soft text-[15px]">

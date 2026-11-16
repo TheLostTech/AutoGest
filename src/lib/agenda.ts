@@ -1,7 +1,8 @@
 // Coda "Da fare": le attività nascono dai dati, non da una lista compilata a mano.
 // Ogni voce ha un ruolo destinatario, una scadenza (se esiste) e porta all'azione.
 import { typeById } from "./catalog";
-import type { Order, Part, Role, StockRule, Vehicle } from "./types";
+import { eerByCode, fmtKg, stockByEer } from "./ambiente";
+import type { Fir, Order, Part, Role, SalesDoc, StockRule, Vehicle, WasteMove } from "./types";
 
 export type Urgency = "scaduto" | "oggi" | "settimana" | "quando-puoi";
 
@@ -13,7 +14,7 @@ export interface AgendaItem {
   href: string;
   due?: string; // ISO
   roles: Role[];
-  kind: "veicolo" | "pratica" | "ricambi" | "ordine" | "scorte";
+  kind: "veicolo" | "pratica" | "ricambi" | "ordine" | "scorte" | "ambiente";
 }
 
 // Termini dimostrativi, da configurare per impianto e da validare con il consulente.
@@ -25,6 +26,9 @@ export const TERMS = {
   posizione: 1,
   pagamento: 2, // dopo questo termine la riserva va rivista
   spedizione: 1,
+  preventivo: 5, // giorni dopo i quali richiamare il cliente
+  bonifica: 10,
+  rentri: 2,
 };
 
 const DAY = 864e5;
@@ -45,7 +49,16 @@ export function urgencyOf(due: string | undefined, now = new Date()): Urgency {
 }
 
 export function buildAgenda(
-  { vehicles, parts, orders, rules, activeVehicleId }: { vehicles: Vehicle[]; parts: Part[]; orders: Order[]; rules: StockRule[]; activeVehicleId?: string },
+  {
+    vehicles,
+    parts,
+    orders,
+    rules,
+    activeVehicleId,
+    wasteMoves = [],
+    firs = [],
+    docs = [],
+  }: { vehicles: Vehicle[]; parts: Part[]; orders: Order[]; rules: StockRule[]; activeVehicleId?: string; wasteMoves?: WasteMove[]; firs?: Fir[]; docs?: SalesDoc[] },
   role: Role,
 ): AgendaItem[] {
   const items: AgendaItem[] = [];
@@ -64,29 +77,51 @@ export function buildAgenda(
         due: addDays(v.intakeAt, TERMS.verificaIdentita),
         roles: ["accettazione", "responsabile"],
       });
-    if (v.dossier.status === "da registrare")
+    if (v.visura?.fermo)
+      items.push({
+        id: `fermo-${v.id}`,
+        kind: "pratica",
+        title: `Fermo amministrativo su ${v.id}`,
+        detail: `${name(v)} · presa in carico bloccata: contatta chi conferisce`,
+        action: "Apri pratica",
+        href: `/veicoli/${v.id}#pratica`,
+        due: v.visura.at,
+        roles: ["accettazione", "responsabile"],
+      });
+    else if (!v.presaInCarico)
       items.push({
         id: `pratica-${v.id}`,
         kind: "pratica",
-        title: `Registra la pratica di ${v.id}`,
-        detail: `${name(v)} · numero del certificato non ancora inserito`,
-        action: "Registra",
-        href: `/veicoli/${v.id}`,
+        title: `Completa la presa in carico di ${v.id}`,
+        detail: `${name(v)} · ${!v.conferente ? "conferente e documenti da registrare" : !v.visura ? "visura PRA da fare" : "certificato da generare"}`,
+        action: "Apri pratica",
+        href: `/veicoli/${v.id}#pratica`,
         due: addDays(v.intakeAt, TERMS.registraPratica),
         roles: ["accettazione", "responsabile"],
       });
-    if (v.dossier.status === "in corso")
+    else if (v.radiazione?.stato !== "completata")
       items.push({
         id: `radiazione-${v.id}`,
         kind: "pratica",
-        title: `Completa la radiazione di ${v.id}`,
+        title: v.radiazione?.stato === "richiesta" ? `Registra l'esito della radiazione di ${v.id}` : `Richiedi la radiazione di ${v.id}`,
         detail: `${name(v)} · pratica ${v.dossier.number}`,
         action: "Apri pratica",
-        href: `/veicoli/${v.id}`,
+        href: `/veicoli/${v.id}#pratica`,
         due: addDays(v.intakeAt, TERMS.radiazione),
         roles: ["accettazione", "responsabile"],
       });
-    if (v.work === "accettato")
+    if (!v.bonifica)
+      items.push({
+        id: `bonifica-${v.id}`,
+        kind: "ambiente",
+        title: `Bonifica ${v.id}`,
+        detail: `${name(v)} · liquidi, batteria, airbag, catalizzatore, pneumatici`,
+        action: "Bonifica",
+        href: `/veicoli/${v.id}/bonifica`,
+        due: addDays(v.intakeAt, TERMS.bonifica),
+        roles: ["smontatore", "responsabile"],
+      });
+    if (v.work === "accettato" && v.bonifica)
       items.push({
         id: `smonta-${v.id}`,
         kind: "veicolo",
@@ -195,6 +230,67 @@ export function buildAgenda(
         roles: ["vendite", "magazziniere", "responsabile"],
       });
   }
+
+  for (const d of docs.filter((x) => x.type === "preventivo" && x.status === "aperto"))
+    items.push({
+      id: `preventivo-${d.id}`,
+      kind: "ordine",
+      title: `Richiama ${d.customer.name} per il preventivo`,
+      detail: `${d.id} · ${d.lines.length} ${d.lines.length === 1 ? "pezzo" : "pezzi"} · ${d.total} € · i pezzi non sono riservati`,
+      action: "Apri",
+      href: "/vendite/documenti",
+      due: addDays(d.at, TERMS.preventivo),
+      roles: ["vendite", "responsabile"],
+    });
+
+  // Ambiente: registro, formulari e limiti dell'autorizzazione
+  const pending = wasteMoves.filter((m) => m.rentri === "da trasmettere");
+  if (pending.length)
+    items.push({
+      id: "rentri",
+      kind: "ambiente",
+      title: `Trasmetti ${pending.length} movimenti al RENTRI`,
+      detail: "Generati da ingressi, bonifiche e formulari: controlla e invia",
+      action: "Trasmetti",
+      href: "/ambiente",
+      due: addDays(pending.map((m) => m.at).sort()[0], TERMS.rentri),
+      roles: ["accettazione", "responsabile"],
+    });
+  for (const f of firs) {
+    if (f.status === "da firmare")
+      items.push({
+        id: `firma-${f.id}`,
+        kind: "ambiente",
+        title: `Firma il formulario ${f.id}`,
+        detail: `${eerByCode(f.eer)?.short} · ${fmtKg(f.kg)} → ${f.destinatario}`,
+        action: "Firma",
+        href: "/ambiente/formulari",
+        due: f.at,
+        roles: ["accettazione", "responsabile"],
+      });
+    if (f.status === "firmato")
+      items.push({
+        id: `fir-rentri-${f.id}`,
+        kind: "ambiente",
+        title: `Trasmetti il formulario ${f.id}`,
+        detail: `${eerByCode(f.eer)?.short} · ${fmtKg(f.kg)} · ${f.destinatario}`,
+        action: "Trasmetti",
+        href: "/ambiente/formulari",
+        due: addDays(f.at, 1),
+        roles: ["accettazione", "responsabile"],
+      });
+  }
+  for (const st of stockByEer(wasteMoves).filter((x) => x.pct >= 0.8 && x.code !== "16 01 04*"))
+    items.push({
+      id: `limite-${st.code}`,
+      kind: "ambiente",
+      title: `Programma il ritiro: ${st.short.toLowerCase()} al ${Math.round(st.pct * 100)}% del limite`,
+      detail: `${fmtKg(st.kg)} su ${fmtKg(st.limitKg)} autorizzati · ${st.code}`,
+      action: "Formulario",
+      href: `/ambiente/formulari?eer=${encodeURIComponent(st.code)}`,
+      due: addDays(new Date().toISOString(), st.pct >= 0.95 ? 0 : 3),
+      roles: ["accettazione", "responsabile"],
+    });
 
   const rank: Record<Urgency, number> = { scaduto: 0, oggi: 1, settimana: 2, "quando-puoi": 3 };
   return items

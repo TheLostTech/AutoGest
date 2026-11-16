@@ -1,14 +1,18 @@
 import { PART_TYPES, typeById } from "./catalog";
 import { catalogFor, CATALOG_SOURCE } from "./partsdb";
 import { corsiaId, locToString, scaffaleId, warehouseFor } from "./warehouse";
+import { movesForBonifica, movesForIntake, typicalBonifica } from "./ambiente";
 import type {
   AuditEvent,
   Condition,
+  Fir,
   Order,
+  SalesDoc,
   Part,
   PartStatus,
   StockRule,
   Vehicle,
+  WasteMove,
 } from "./types";
 
 // Tutti i dati qui sono sintetici (targhe, telai, pratiche, prezzi).
@@ -84,6 +88,20 @@ export const SEED_VEHICLES: Vehicle[] = [
 ];
 
 const OPERATORS = ["Marco (smontaggio)", "Luca (smontaggio)", "Davide (smontaggio)"];
+
+// Pesi in ordine di marcia (demo) per piattaforma
+const WEIGHTS: Record<string, number> = {
+  "fiat-panda-319": 975,
+  "vw-golf-6": 1260,
+  "fiat-punto-199": 1080,
+  "renault-clio-3": 1050,
+  "alfa-giulietta-940": 1320,
+  "ford-fiesta-7": 1040,
+  "lancia-ypsilon-846": 965,
+  "opel-corsa-d": 1060,
+  "toyota-yaris-2": 1010,
+  "peugeot-208": 1050,
+};
 
 export const SEED_RULES: StockRule[] = PART_TYPES.map((t) => ({
   typeId: t.id,
@@ -221,8 +239,107 @@ export function buildSeed() {
     log({ at, user: channel === "banco" ? "Anna (vendite)" : "Sistema", role: channel === "banco" ? "vendite" : "sistema", device: channel === "banco" ? "PC banco" : channel, entity: "ordine", entityId: id, action: sold ? "Vendita registrata" : "Ricambio riservato", detail: p.id });
   }
 
+  // ——— Ambiente: pesi, bonifiche, registro di carico e scarico, formulari ———
+  const hours = (iso: string, h: number) => new Date(new Date(iso).getTime() + h * 36e5).toISOString();
+  const vehicles: Vehicle[] = SEED_VEHICLES.map((v, i) => {
+    const base: Vehicle = { ...v, weightKg: WEIGHTS[v.platform] ?? 1000 };
+    if (!v.dossier.number) return base; // V-000115: pratica ancora da avviare
+    const dealer = i % 4 === 2;
+    const conferente = dealer ? { tipo: "concessionaria" as const, nome: "Concessionaria Demo Auto" } : { tipo: "privato" as const, nome: `Detentore demo ${v.id.slice(-3)}` };
+    const documenti = ["libretto", "proprieta", "identita", "targa-ant", "targa-post", ...(dealer ? ["delega"] : [])];
+    const done = v.dossier.status === "completata";
+    return {
+      ...base,
+      conferente,
+      documenti,
+      visura: { at: v.intakeAt, fermo: false, intestatario: conferente.nome },
+      presaInCarico: { at: v.intakeAt, by: "Giulia (accettazione)" },
+      radiazione: done
+        ? { stato: "completata", richiestaAt: hours(v.intakeAt, 24), completataAt: hours(v.intakeAt, 24 * 6), estremi: `RAD-${v.dossier.number.slice(-6)}` }
+        : v.id === "V-000117"
+          ? { stato: "richiesta", richiestaAt: hours(v.intakeAt, 20) }
+          : { stato: "da richiedere" },
+    };
+  });
+  const raw: Omit<WasteMove, "id">[] = [];
+  for (const v of vehicles) {
+    raw.push(...movesForIntake(v, v.intakeAt));
+    if (v.work === "accettato") continue;
+    const at = hours(v.intakeAt, 3);
+    const items = typicalBonifica(v).map((it) => ({ ...it, qty: it.key === "carburante" ? Math.round(2 + r() * 12) : it.key === "oli" ? Math.round((3.5 + r() * 2.5) * 10) / 10 : it.qty }));
+    const { moves, residualKg } = movesForBonifica(v, items, at);
+    v.bonifica = { at, by: "Davide (smontaggio)", items, residualKg };
+    raw.push(...moves);
+    log({ at, user: "Davide (smontaggio)", role: "smontatore", device: "Smartphone campo 2", entity: "veicolo", entityId: v.id, action: "Bonifica registrata", detail: `${moves.length} movimenti nel registro rifiuti` });
+  }
+
+  // Uscite già avvenute: carcasse e oli dei veicoli più vecchi, catalizzatori; batterie in attesa di firma
+  const firs: Fir[] = [];
+  let fn = 140;
+  const oldOnes = vehicles.filter((v) => v.bonifica && v.intakeAt < daysAgo(30));
+  const sumOf = (vs: Vehicle[], pick: (v: Vehicle) => number) => Math.round(vs.reduce((a, v) => a + pick(v), 0) * 10) / 10;
+  const itemKgOf = (v: Vehicle, key: string, kgPer: number) => (v.bonifica?.items.find((i) => i.key === key)?.qty ?? 0) * kgPer;
+  const plannedFirs: { eer: string; kg: number; at: string; status: Fir["status"]; dest: string }[] = [
+    { eer: "16 01 06", kg: sumOf(oldOnes, (v) => v.bonifica!.residualKg), at: daysAgo(25, 10), status: "accettato", dest: "Frantumazione Demo Srl" },
+    { eer: "13 02 08*", kg: sumOf(oldOnes, (v) => itemKgOf(v, "oli", 0.9)), at: daysAgo(20, 11), status: "accettato", dest: "Recupero Oli Demo" },
+    { eer: "16 08 01", kg: sumOf(vehicles.filter((v) => v.bonifica && v.intakeAt < daysAgo(5)), () => 5), at: daysAgo(2, 15), status: "firmato", dest: "Recupero Catalizzatori Demo" },
+  ];
+  for (const f of plannedFirs) {
+    const id = `F-${pad(++fn)}`;
+    const history: Fir["history"] = [{ at: f.at, status: "da firmare", by: "Sara (responsabile)" }, { at: hours(f.at, 1), status: "firmato", by: "Sara (responsabile)" }];
+    if (f.status === "accettato") history.push({ at: hours(f.at, 2), status: "trasmesso", by: "Sistema" }, { at: hours(f.at, 30), status: "accettato", by: f.dest });
+    firs.push({ id, at: f.at, eer: f.eer, kg: f.kg, destinatario: f.dest, trasportatore: "Trasporti Demo Snc", status: f.status, history });
+    raw.push({ at: hours(f.at, 1), kind: "scarico", eer: f.eer, kg: f.kg, origin: id, note: `Uscita verso ${f.dest}`, rentri: "da trasmettere" });
+  }
+  const batt = sumOf(vehicles.filter((v) => v.bonifica), () => 14);
+  firs.push({ id: `F-${pad(++fn)}`, at: daysAgo(0, 7), eer: "16 06 01*", kg: batt, destinatario: "Raccolta Batterie Demo", trasportatore: "Autotrasporti Esempio Srl", status: "da firmare", history: [{ at: daysAgo(0, 7), status: "da firmare", by: "Sara (responsabile)" }] });
+
+  raw.sort((a, b) => a.at.localeCompare(b.at));
+  const wasteMoves: WasteMove[] = raw.map((m, i) => {
+    const sent = m.at < daysAgo(2);
+    return { ...m, id: `M-${pad(i + 1)}`, rentri: sent ? "trasmesso" : "da trasmettere", rentriAt: sent ? hours(m.at, 20) : undefined };
+  });
+
+  // ——— Documenti di vendita: scontrini e una fattura per le vendite al banco, un preventivo aperto ———
+  const docs: SalesDoc[] = [];
+  const dn = { P: 0, DC: 0, FT: 0, NC: 0 };
+  const num = (k: keyof typeof dn) => `${k}-2026-${String(++dn[k]).padStart(4, "0")}`;
+  const line = (p: Part) => ({ partId: p.id, description: `${p.id} · ${p.description}`, price: p.price ?? 0 });
+  const officina = { name: "Officina Demo Snc", taxId: "IT00000000001" };
+  orders
+    .filter((o) => o.channel === "banco" && o.status === "consegnato")
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .forEach((o, i) => {
+      const ps = o.partIds.map((pid) => parts.find((p) => p.id === pid)!);
+      const invoice = i === 0;
+      docs.push({
+        id: num(invoice ? "FT" : "DC"),
+        type: invoice ? "fattura" : "documento commerciale",
+        at: o.createdAt,
+        customer: invoice ? officina : { name: o.customer },
+        lines: ps.map(line),
+        total: o.amount,
+        orderId: o.id,
+        status: invoice ? "inviata allo SdI" : "emesso",
+      });
+      if (invoice) o.customer = officina.name;
+    });
+  const quoted = parts.filter((p) => p.status === "disponibile" && p.price && p.typeId === "faro").slice(0, 2);
+  if (quoted.length) docs.push({ id: num("P"), type: "preventivo", at: daysAgo(3, 15), customer: officina, lines: quoted.map(line), total: quoted.reduce((a, p) => a + (p.price ?? 0), 0), status: "aperto" });
+  docs.sort((a, b) => b.at.localeCompare(a.at));
+
   audit.sort((a, b) => a.at.localeCompare(b.at));
-  return { vehicles: SEED_VEHICLES, parts, orders, audit, rules: SEED_RULES, counters: { vehicle: 118, part: pn, order: on, event: an } };
+  return {
+    vehicles,
+    parts,
+    orders,
+    audit,
+    rules: SEED_RULES,
+    wasteMoves,
+    firs,
+    docs,
+    counters: { vehicle: 118, part: pn, order: on, event: an, move: wasteMoves.length, fir: fn, docs: dn },
+  };
 }
 
 export { locToString };

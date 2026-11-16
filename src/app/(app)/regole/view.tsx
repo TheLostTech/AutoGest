@@ -13,7 +13,7 @@ export default function Regole() {
         sub="Prima versione: soglia minima e massima per tipologia, per piattaforma di veicolo. Sotto il minimo il pezzo viene suggerito allo smontatore; dal massimo in su non conviene recuperarlo."
       />
       <Panel>
-        <div className="grid grid-cols-[1fr_90px_90px_90px] gap-3 border-b border-hair-soft px-4 py-2.5 text-[13px] font-semibold uppercase tracking-wide text-ink-3 code">
+        <div className="grid grid-cols-[minmax(0,1fr)_64px_64px_56px] gap-2 border-b sm:grid-cols-[1fr_90px_90px_90px] sm:gap-3 border-hair-soft px-4 py-2.5 text-[13px] font-semibold uppercase tracking-wide text-ink-3 code">
           <span>Tipologia</span>
           <span className="text-center">Minimo</span>
           <span className="text-center">Massimo</span>
@@ -24,7 +24,7 @@ export default function Regole() {
             const r = rules.find((x) => x.typeId === t.id)!;
             const stock = parts.filter((p) => p.typeId === t.id && (p.status === "disponibile" || p.status === "bozza")).length;
             return (
-              <li key={t.id} className="grid grid-cols-[1fr_90px_90px_90px] items-center gap-3 px-4 py-2.5">
+              <li key={t.id} className="grid grid-cols-[minmax(0,1fr)_64px_64px_56px] items-center gap-2 px-4 sm:grid-cols-[1fr_90px_90px_90px] sm:gap-3 py-2.5">
                 <span>
                   <span className="font-semibold">{t.name}</span>
                   <span className="block text-sm text-ink-3">{t.category}</span>

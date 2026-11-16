@@ -92,6 +92,7 @@ export interface CatalogInfo {
   platforms: string[];
   note?: string;
   source: string;
+  newPrice: number; // prezzo di listino del ricambio nuovo (simulato)
 }
 
 export function catalogFor(typeId: string, platformId: string, side?: string): CatalogInfo | null {
@@ -109,6 +110,7 @@ export function catalogFor(typeId: string, platformId: string, side?: string): C
     platforms: g.platforms,
     note: g.platforms.length > 1 ? `${t.name} intercambiabile su ${g.platforms.length} modelli` : "Specifico del modello",
     source: CATALOG_SOURCE,
+    newPrice: Math.round((t.basePrice * (2.6 + (h % 15) / 10)) / 5) * 5,
   };
 }
 

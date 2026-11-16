@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Info, Trash2, Zap } from "lucide-react";
+import { FileText, Info, Trash2, Zap } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Button, Field, Notice, OrderChip, PageTitle, Panel, PartImage } from "@/components/ui";
 import { dateIt, euro } from "@/lib/logic";
 import { PartDetailSheet } from "@/components/PartDetailSheet";
+import { listPrice } from "@/lib/pricing";
 import type { Order } from "@/lib/types";
 
 export default function Page() {
@@ -28,23 +29,47 @@ function Vendite() {
   const [raceId, setRaceId] = useState("");
   const [chan, setChan] = useState<"tutti" | Order["channel"]>("tutti");
   const [detail, setDetail] = useState<string | null>(null);
+  const [docType, setDocType] = useState<"documento commerciale" | "fattura">("documento commerciale");
+  const [taxId, setTaxId] = useState("");
+  const [listinoId, setListinoId] = useState("base");
 
   const avail = s.parts.filter((p) => p.status === "disponibile");
   const query = q.trim().toUpperCase();
   const results = query ? avail.filter((p) => !cart.includes(p.id) && (p.id.includes(query) || p.description.toUpperCase().includes(query))).slice(0, 6) : [];
   const cartParts = cart.map((id) => s.parts.find((p) => p.id === id)!).filter(Boolean);
-  const total = cartParts.reduce((a, p) => a + (p.price ?? 0), 0);
+  const listino = s.listini.find((l) => l.id === listinoId) ?? s.listini[0];
+  const priceOf = (p: { price?: number }) => listPrice(p.price, listino);
+  const prices = Object.fromEntries(cartParts.filter((p) => p.price).map((p) => [p.id, priceOf(p)!]));
+  const total = cartParts.reduce((a, p) => a + (priceOf(p) ?? 0), 0);
+  // Un pezzo senza prezzo non si vende né si preventiva: va prezzato dalla sua scheda
+  const unpriced = cartParts.filter((p) => !p.price);
+  const blocked = !cart.length || unpriced.length > 0;
+
+  const needTax = docType === "fattura";
+  const taxOk = !needTax || /^(IT)?\d{11}$|^[A-Z0-9]{16}$/i.test(taxId.replace(/\s/g, ""));
+  const who = () => ({ name: customer.trim() || "Cliente al banco", taxId: needTax ? taxId.replace(/\s/g, "").toUpperCase() : undefined });
+  const docLink = (id: string) => <Link href={`/documento/${id}`} target="_blank" className="code font-semibold underline">{id}</Link>;
 
   function checkout(payNow: boolean) {
-    const r = s.createOrder("banco", cart, customer.trim() || "Cliente al banco");
+    const r = s.createOrder("banco", cart, who().name, undefined, prices);
     if (!r.ok) {
       setMsg({ tone: "danger", text: `Vendita bloccata: ${r.conflicts?.join(", ")} non più disponibile. Nessun pezzo è stato venduto due volte.` });
       return;
     }
-    if (payNow) s.payOrder(r.value, true);
-    setMsg({ tone: "ok", text: <>Ordine <b className="code">{r.value}</b> {payNow ? "incassato: pezzi venduti" : "creato: pezzi riservati in attesa di pagamento"}.</> });
+    if (payNow) {
+      s.payOrder(r.value, true);
+      const doc = s.issueDoc(r.value, docType, who(), prices, listino?.name);
+      setMsg({ tone: "ok", text: <>Ordine <b className="code">{r.value}</b> incassato: pezzi venduti. {docType === "fattura" ? "Fattura" : "Scontrino"} {docLink(doc)}{docType === "fattura" ? " inviata allo SdI (simulato)" : ""}.</> });
+    } else setMsg({ tone: "ok", text: <>Ordine <b className="code">{r.value}</b> creato: pezzi riservati in attesa di pagamento.</> });
     setCart([]);
     setCustomer("");
+    setTaxId("");
+  }
+
+  function quote() {
+    const id = s.createQuote(cart, who(), prices, listino?.name);
+    setMsg({ tone: "ok", text: <>Preventivo {docLink(id)} creato. I pezzi restano disponibili: la riserva scatta solo quando il cliente conferma.</> });
+    setCart([]);
   }
 
   function race() {
@@ -83,7 +108,7 @@ function Vendite() {
                     <button onClick={() => { setCart([...cart, p.id]); setQ(""); }} className="grid min-w-0 flex-1 grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-2 text-left hover:bg-carton" aria-label={`Aggiungi ${p.id} al conto`}>
                       <span className="code text-[18px] font-bold">{p.id}</span>
                       <span className="truncate">{p.description}</span>
-                      <span className="code font-bold">{euro(p.price)}</span>
+                      <span className={`code font-bold ${p.price ? "" : "text-danger"}`}>{p.price ? euro(p.price) : "senza prezzo"}</span>
                     </button>
                     <button onClick={() => setDetail(p.id)} className="grid w-12 shrink-0 place-items-center border-l border-hair-soft text-band hover:bg-band-tint" aria-label={`Dettagli di ${p.id}`}>
                       <Info className="size-5" aria-hidden />
@@ -104,9 +129,13 @@ function Vendite() {
                       </span>
                       <span className="block truncate text-sm text-ink-2">{p.description}</span>
                       {p.status !== "disponibile" && <span className="text-sm font-semibold text-danger">non più disponibile ({p.status})</span>}
+                    {!p.price && <span className="text-sm font-semibold text-danger">prezzo mancante: assegnalo dalla scheda</span>}
                     </span>
                   </button>
-                  <span className="code text-[18px] font-bold">{euro(p.price)}</span>
+                  <span className="text-right">
+                    <span className="code block text-[18px] font-bold">{euro(priceOf(p))}</span>
+                    {listino && listino.pct !== 0 && p.price && <span className="block text-[13px] text-ink-3 line-through">{euro(p.price)}</span>}
+                  </span>
                   <button onClick={() => setCart(cart.filter((x) => x !== p.id))} className="grid size-10 place-items-center text-ink-3 hover:text-danger" aria-label={`Togli ${p.id}`}>
                     <Trash2 className="size-5" />
                   </button>
@@ -114,20 +143,47 @@ function Vendite() {
               ))}
               {cartParts.length === 0 && <li className="py-4 text-ink-3">Nessun pezzo nel conto.</li>}
             </ul>
-            <Field label="Cliente">
-              <input className="field" value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="Nome o ragione sociale (facoltativo)" />
+            <Field label="Listino" hint={listino && listino.pct !== 0 ? `${listino.pct > 0 ? "+" : ""}${listino.pct}% sul prezzo base` : "Prezzo base"}>
+              <select className="field" value={listinoId} onChange={(e) => setListinoId(e.target.value)}>
+                {s.listini.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
             </Field>
+            <Field label="Cliente">
+              <input className="field" value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder={needTax ? "Ragione sociale o nome" : "Nome o ragione sociale (facoltativo)"} />
+            </Field>
+            <div>
+              <span className="mb-1.5 block text-sm font-semibold text-ink">Documento all&apos;incasso</span>
+              <div className="inline-flex rounded-md border border-hair bg-carton p-1" role="radiogroup" aria-label="Documento all'incasso">
+                {(["documento commerciale", "fattura"] as const).map((t) => (
+                  <button
+                    key={t}
+                    role="radio"
+                    aria-checked={docType === t}
+                    onClick={() => setDocType(t)}
+                    className={`min-h-10 rounded px-4 text-[15px] font-semibold ${docType === t ? "bg-label text-ink shadow-sm" : "text-ink-2"}`}
+                  >
+                    {t === "fattura" ? "Fattura" : "Scontrino"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {needTax && (
+              <Field label="Partita IVA o codice fiscale" error={taxId && !taxOk ? "11 cifre per la partita IVA, 16 caratteri per il codice fiscale" : undefined}>
+                <input className="field code uppercase" value={taxId} onChange={(e) => setTaxId(e.target.value)} placeholder="IT00000000001" />
+              </Field>
+            )}
             <div className="flex items-end justify-between gap-3 border-t border-hair-soft pt-4">
               <div>
                 <span className="text-sm text-ink-3">Totale</span>
                 <div className="code text-[36px] font-bold leading-none">{euro(total)}</div>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
-                <Button variant="secondary" disabled={!cart.length} onClick={() => checkout(false)}>Prenota</Button>
-                <Button disabled={!cart.length} onClick={() => checkout(true)}>Incassa e vendi</Button>
+                <Button variant="quiet" disabled={blocked} onClick={quote}><FileText className="size-5" aria-hidden /> Preventivo</Button>
+                <Button variant="secondary" disabled={blocked} onClick={() => checkout(false)}>Prenota</Button>
+                <Button disabled={blocked || !taxOk || (needTax && !customer.trim())} onClick={() => checkout(true)}>Incassa e vendi</Button>
               </div>
             </div>
-            <p className="text-[13px] text-ink-3">Documenti fiscali e IVA da definire con il cliente: qui si registra solo la vendita.</p>
+            <p className="text-[13px] text-ink-3">Scontrino e fattura sono simulati: registratore telematico, invio allo SdI e regime IVA da definire con il commercialista.</p>
           </div>
         </Panel>
 
@@ -169,7 +225,12 @@ function Vendite() {
                 {o.partIds.map((pid) => (
                   <Link key={pid} href={`/ricambi/${pid}`} className="code mr-2 font-semibold text-band underline">{pid}</Link>
                 ))}
-                <span className="block text-sm text-ink-3">{o.customer} · {dateIt(o.createdAt, true)}{o.paymentRef ? ` · ${o.paymentRef}` : ""}</span>
+                <span className="block text-sm text-ink-3">
+                  {o.customer} · {dateIt(o.createdAt, true)}
+                  {s.docs.filter((d) => d.orderId === o.id && d.type !== "preventivo").map((d) => (
+                    <span key={d.id}> · <Link href={`/documento/${d.id}`} target="_blank" className="code font-semibold text-band underline">{d.id}</Link></span>
+                  ))}
+                </span>
               </span>
               <span className="code text-[20px] font-bold">{euro(o.amount)}</span>
               <span className="flex flex-wrap items-center gap-2">

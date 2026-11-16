@@ -22,7 +22,7 @@ export default function NuovoVeicolo() {
   const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "notfound" | "error">("idle");
   const [lookupError, setLookupError] = useState("");
   const [simulateFail, setSimulateFail] = useState(false);
-  const [f, setF] = useState({ make: "", model: "", version: "", platform: "", year: "", fuel: "Benzina", vin: "", color: "", km: "", dossier: "", dossierStatus: "in corso" as DossierStatus, notes: "" });
+  const [f, setF] = useState({ make: "", model: "", version: "", platform: "", year: "", fuel: "Benzina", vin: "", color: "", km: "", weight: "", dossier: "", dossierStatus: "in corso" as DossierStatus, notes: "" });
   const [touched, setTouched] = useState(false);
 
   const normPlate = plate.replace(/\s+/g, "").toUpperCase();
@@ -78,6 +78,7 @@ export default function NuovoVeicolo() {
       year: Number(f.year) || 0,
       fuel: f.fuel,
       km: f.km ? Number(f.km) : undefined,
+      weightKg: f.weight ? Number(f.weight) : undefined,
       color: f.color,
       dossier: { number: f.dossier.trim(), kind: "Certificato di rottamazione", status: f.dossier.trim() ? f.dossierStatus : "da registrare" },
       verification: verified ? "verificato" : "da verificare",
@@ -195,6 +196,9 @@ export default function NuovoVeicolo() {
             </Field>
             <Field label="Chilometri">
               <input className="field code" inputMode="numeric" value={f.km} onChange={set("km")} />
+            </Field>
+            <Field label="Peso in ingresso (kg)" hint="Dalla pesata: entra da solo nel registro rifiuti">
+              <input className="field code" inputMode="numeric" value={f.weight} onChange={set("weight")} />
             </Field>
           </div>
         </div>

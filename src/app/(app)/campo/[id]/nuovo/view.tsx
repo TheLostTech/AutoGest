@@ -9,6 +9,7 @@ import { CONDITIONS, PART_TYPES, SIDES, typeById } from "@/lib/catalog";
 import { compressImage, suggestComponent } from "@/lib/services";
 import { recoveryList } from "@/lib/logic";
 import { catalogFor, platformLabel } from "@/lib/partsdb";
+import { suggestUsedPrice } from "@/lib/pricing";
 import type { Condition } from "@/lib/types";
 import { Button, ButtonLink, Empty, Field, Plate } from "@/components/ui";
 import { PartLabel } from "@/components/PartLabel";
@@ -61,6 +62,10 @@ function NuovoPezzo() {
   }
 
   const cat = t ? catalogFor(t.id, v.platform, side || undefined) : null;
+  // Prezzo suggerito: quota del nuovo per condizione, più basso se la tipologia è già oltre la scorta massima
+  const rule = t && store.rules.find((r) => r.typeId === t.id);
+  const inStock = t ? store.parts.filter((p) => p.typeId === t.id && p.status === "disponibile").length : 0;
+  const suggested = cat && condition ? suggestUsedPrice(cat.newPrice, condition, inStock, rule?.max ?? 99) : undefined;
   const description = t ? `${t.name} ${v.make} ${v.model}${side ? ` ${side.toLowerCase()}` : ""}` : "";
   const valid = !!t && !!condition && (!t.sided || !!side);
 
@@ -259,8 +264,15 @@ function NuovoPezzo() {
             <Field label="Difetti">
               <input className="field" value={defects} onChange={(e) => setDefects(e.target.value)} />
             </Field>
-            <Field label="Prezzo proposto (€)" hint={t ? `Riferimento tipologia: ${t.basePrice} €` : undefined}>
-              <input className="field code" inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ""))} />
+            <Field label="Prezzo proposto (€)" hint={cat ? `Nuovo originale ≈ ${cat.newPrice} € (catalogo simulato)` : t ? `Riferimento tipologia: ${t.basePrice} €` : undefined}>
+              <span className="flex items-center gap-2">
+                <input className="field code" inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ""))} />
+                {suggested !== undefined && String(suggested) !== price && (
+                  <button type="button" onClick={() => setPrice(String(suggested))} className="min-h-12 shrink-0 rounded-md border border-band/40 bg-band-tint px-3 text-[15px] font-semibold text-band">
+                    Usa {suggested} €
+                  </button>
+                )}
+              </span>
             </Field>
           </div>
         </details>

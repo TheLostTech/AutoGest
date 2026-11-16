@@ -42,6 +42,13 @@ export default function SmontaggioVeicolo() {
         </div>
       </header>
 
+      {!v.bonifica && (
+        <Link href={`/veicoli/${v.id}/bonifica`} className="mb-5 flex items-center justify-between gap-3 rounded-md bg-warn-bg px-4 py-3 font-semibold text-warn">
+          <span>Bonifica non ancora registrata: falla prima di smontare</span>
+          <span className="shrink-0 underline">Bonifica</span>
+        </Link>
+      )}
+
       <Panel title="Cosa recuperare">
         <RecoveryList vehicle={v} addHref={(t) => `/campo/${v.id}/nuovo?tipo=${t}`} />
       </Panel>
