@@ -29,7 +29,9 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="it" className={`${barlow.variable} ${barlowCondensed.variable} h-full antialiased`}>
+    // suppressHydrationWarning: alcuni browser (es. Chrome su iPhone) aggiungono attributi propri a <html>
+    // prima che React si attivi; vale solo per gli attributi di questo tag, non per il contenuto.
+    <html lang="it" className={`${barlow.variable} ${barlowCondensed.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="min-h-full">
         <Hydrator>{children}</Hydrator>
       </body>
