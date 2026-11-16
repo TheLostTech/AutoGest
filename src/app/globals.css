@@ -1,0 +1,157 @@
+@import "tailwindcss";
+
+/* Mondo: scatola ricambio originale. Bianco cartone, blu di stampa, etichetta adesiva. */
+:root {
+  --ground: #eef0ee;
+  --carton: #f7f8f6;
+  --label: #ffffff;
+  --ink: #111418;
+  --ink-2: #454c55;
+  --ink-3: #6b727b;
+  --hair: #c6cbd0;
+  --hair-soft: #dde1e4;
+  --band: #1240a8;
+  --band-deep: #0b2d7a;
+  --band-ink: #ffffff;
+  --band-tint: #e3e9f7;
+  --ok: #17763a;
+  --ok-bg: #dcf1e3;
+  --warn: #8a5a00;
+  --warn-bg: #ffe9a8;
+  --danger: #b3261e;
+  --danger-bg: #fbe1de;
+  --draft: #5b636c;
+}
+
+@theme inline {
+  --color-ground: var(--ground);
+  --color-carton: var(--carton);
+  --color-label: var(--label);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-hair: var(--hair);
+  --color-hair-soft: var(--hair-soft);
+  --color-band: var(--band);
+  --color-band-deep: var(--band-deep);
+  --color-band-tint: var(--band-tint);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --color-draft: var(--draft);
+  --font-sans: var(--font-barlow), system-ui, sans-serif;
+  --font-code: var(--font-barlow-condensed), var(--font-barlow), sans-serif;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html {
+  background: var(--ground);
+  color: var(--ink);
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1;
+}
+
+::selection {
+  background: var(--band);
+  color: var(--band-ink);
+}
+
+:focus-visible {
+  outline: 3px solid var(--band);
+  outline-offset: 2px;
+}
+
+* {
+  scrollbar-color: var(--hair) transparent;
+  scrollbar-width: thin;
+}
+
+input,
+select,
+textarea {
+  caret-color: var(--band);
+}
+
+a {
+  text-underline-offset: 3px;
+}
+
+@layer components {
+/* Codici: cifre condensate, tabellari, come stampate sull'etichetta */
+.code {
+  font-family: var(--font-code);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* Etichetta adesiva: bianco pieno, filo sottile, angoli fustellati */
+.label-sheet {
+  background: var(--label);
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  box-shadow: 0 1px 0 rgb(17 20 24 / 0.04), 0 6px 18px -10px rgb(17 20 24 / 0.25);
+}
+
+.field {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--hair);
+  background: var(--label);
+  border-radius: 6px;
+  padding: 0 14px;
+  font-size: 1rem;
+  color: var(--ink);
+}
+.field::placeholder {
+  color: var(--ink-3);
+}
+textarea.field {
+  padding: 12px 14px;
+  min-height: 88px;
+}
+.field:focus {
+  outline: 3px solid var(--band);
+  outline-offset: 0;
+  border-color: var(--band);
+}
+}
+
+@keyframes stamp-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+.stamp-in {
+  animation: stamp-in 520ms var(--ease-out-expo) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stamp-in {
+    animation: none;
+  }
+}
+
+@media print {
+  body {
+    background: white;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

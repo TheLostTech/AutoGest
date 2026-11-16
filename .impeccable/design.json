@@ -1,0 +1,457 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-16T17:50:44+00:00",
+  "title": "Design System: Gestionale demolizione",
+  "extensions": {
+    "colorMeta": {
+      "band": {
+        "role": "primary",
+        "displayName": "Blu Ricambi",
+        "tonalRamp": [
+          "oklch(15% 0.140 263)",
+          "oklch(26% 0.140 263)",
+          "oklch(37% 0.140 263)",
+          "oklch(48% 0.140 263)",
+          "oklch(59% 0.140 263)",
+          "oklch(70% 0.140 263)",
+          "oklch(82% 0.140 263)",
+          "oklch(95% 0.140 263)"
+        ]
+      },
+      "band-deep": {
+        "role": "primary",
+        "displayName": "Deep Print Blue",
+        "tonalRamp": [
+          "oklch(15% 0.137 263)",
+          "oklch(26% 0.137 263)",
+          "oklch(37% 0.137 263)",
+          "oklch(48% 0.137 263)",
+          "oklch(59% 0.137 263)",
+          "oklch(70% 0.137 263)",
+          "oklch(82% 0.137 263)",
+          "oklch(95% 0.137 263)"
+        ]
+      },
+      "band-tint": {
+        "role": "primary",
+        "displayName": "Blue Wash",
+        "tonalRamp": [
+          "oklch(15% 0.020 267)",
+          "oklch(26% 0.020 267)",
+          "oklch(37% 0.020 267)",
+          "oklch(48% 0.020 267)",
+          "oklch(59% 0.020 267)",
+          "oklch(70% 0.020 267)",
+          "oklch(82% 0.020 267)",
+          "oklch(95% 0.020 267)"
+        ]
+      },
+      "ground": {
+        "role": "neutral",
+        "displayName": "Carton Ground",
+        "tonalRamp": [
+          "oklch(15% 0.003 146)",
+          "oklch(26% 0.003 146)",
+          "oklch(37% 0.003 146)",
+          "oklch(48% 0.003 146)",
+          "oklch(59% 0.003 146)",
+          "oklch(70% 0.003 146)",
+          "oklch(82% 0.003 146)",
+          "oklch(95% 0.003 146)"
+        ]
+      },
+      "carton": {
+        "role": "neutral",
+        "displayName": "Carton Face",
+        "tonalRamp": [
+          "oklch(15% 0.003 128)",
+          "oklch(26% 0.003 128)",
+          "oklch(37% 0.003 128)",
+          "oklch(48% 0.003 128)",
+          "oklch(59% 0.003 128)",
+          "oklch(70% 0.003 128)",
+          "oklch(82% 0.003 128)",
+          "oklch(95% 0.003 128)"
+        ]
+      },
+      "label": {
+        "role": "neutral",
+        "displayName": "Label White",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(26% 0.000 90)",
+          "oklch(37% 0.000 90)",
+          "oklch(48% 0.000 90)",
+          "oklch(59% 0.000 90)",
+          "oklch(70% 0.000 90)",
+          "oklch(82% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Print Ink",
+        "tonalRamp": [
+          "oklch(15% 0.009 256)",
+          "oklch(26% 0.009 256)",
+          "oklch(37% 0.009 256)",
+          "oklch(48% 0.009 256)",
+          "oklch(59% 0.009 256)",
+          "oklch(70% 0.009 256)",
+          "oklch(82% 0.009 256)",
+          "oklch(95% 0.009 256)"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink Second",
+        "tonalRamp": [
+          "oklch(15% 0.018 255)",
+          "oklch(26% 0.018 255)",
+          "oklch(37% 0.018 255)",
+          "oklch(48% 0.018 255)",
+          "oklch(59% 0.018 255)",
+          "oklch(70% 0.018 255)",
+          "oklch(82% 0.018 255)",
+          "oklch(95% 0.018 255)"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Ink Third",
+        "tonalRamp": [
+          "oklch(15% 0.016 255)",
+          "oklch(26% 0.016 255)",
+          "oklch(37% 0.016 255)",
+          "oklch(48% 0.016 255)",
+          "oklch(59% 0.016 255)",
+          "oklch(70% 0.016 255)",
+          "oklch(82% 0.016 255)",
+          "oklch(95% 0.016 255)"
+        ]
+      },
+      "hair": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "tonalRamp": [
+          "oklch(15% 0.009 248)",
+          "oklch(26% 0.009 248)",
+          "oklch(37% 0.009 248)",
+          "oklch(48% 0.009 248)",
+          "oklch(59% 0.009 248)",
+          "oklch(70% 0.009 248)",
+          "oklch(82% 0.009 248)",
+          "oklch(95% 0.009 248)"
+        ]
+      },
+      "hair-soft": {
+        "role": "neutral",
+        "displayName": "Soft Hairline",
+        "tonalRamp": [
+          "oklch(15% 0.006 240)",
+          "oklch(26% 0.006 240)",
+          "oklch(37% 0.006 240)",
+          "oklch(48% 0.006 240)",
+          "oklch(59% 0.006 240)",
+          "oklch(70% 0.006 240)",
+          "oklch(82% 0.006 240)",
+          "oklch(95% 0.006 240)"
+        ]
+      },
+      "ok": {
+        "role": "semantic",
+        "displayName": "Disponibile Green",
+        "tonalRamp": [
+          "oklch(15% 0.126 150)",
+          "oklch(26% 0.126 150)",
+          "oklch(37% 0.126 150)",
+          "oklch(48% 0.126 150)",
+          "oklch(59% 0.126 150)",
+          "oklch(70% 0.126 150)",
+          "oklch(82% 0.126 150)",
+          "oklch(95% 0.126 150)"
+        ]
+      },
+      "ok-bg": {
+        "role": "semantic",
+        "displayName": "Disponibile Wash",
+        "tonalRamp": [
+          "oklch(15% 0.029 157)",
+          "oklch(26% 0.029 157)",
+          "oklch(37% 0.029 157)",
+          "oklch(48% 0.029 157)",
+          "oklch(59% 0.029 157)",
+          "oklch(70% 0.029 157)",
+          "oklch(82% 0.029 157)",
+          "oklch(95% 0.029 157)"
+        ]
+      },
+      "warn": {
+        "role": "semantic",
+        "displayName": "Riservato Amber",
+        "tonalRamp": [
+          "oklch(15% 0.108 73)",
+          "oklch(26% 0.108 73)",
+          "oklch(37% 0.108 73)",
+          "oklch(48% 0.108 73)",
+          "oklch(59% 0.108 73)",
+          "oklch(70% 0.108 73)",
+          "oklch(82% 0.108 73)",
+          "oklch(95% 0.108 73)"
+        ]
+      },
+      "warn-bg": {
+        "role": "semantic",
+        "displayName": "Riservato Wash",
+        "tonalRamp": [
+          "oklch(15% 0.086 92)",
+          "oklch(26% 0.086 92)",
+          "oklch(37% 0.086 92)",
+          "oklch(48% 0.086 92)",
+          "oklch(59% 0.086 92)",
+          "oklch(70% 0.086 92)",
+          "oklch(82% 0.086 92)",
+          "oklch(95% 0.086 92)"
+        ]
+      },
+      "danger": {
+        "role": "semantic",
+        "displayName": "Invendibile Red",
+        "tonalRamp": [
+          "oklch(15% 0.140 29)",
+          "oklch(26% 0.140 29)",
+          "oklch(37% 0.140 29)",
+          "oklch(48% 0.140 29)",
+          "oklch(59% 0.140 29)",
+          "oklch(70% 0.140 29)",
+          "oklch(82% 0.140 29)",
+          "oklch(95% 0.140 29)"
+        ]
+      },
+      "danger-bg": {
+        "role": "semantic",
+        "displayName": "Invendibile Wash",
+        "tonalRamp": [
+          "oklch(15% 0.029 26)",
+          "oklch(26% 0.029 26)",
+          "oklch(37% 0.029 26)",
+          "oklch(48% 0.029 26)",
+          "oklch(59% 0.029 26)",
+          "oklch(70% 0.029 26)",
+          "oklch(82% 0.029 26)",
+          "oklch(95% 0.029 26)"
+        ]
+      },
+      "draft": {
+        "role": "semantic",
+        "displayName": "Bozza Grey",
+        "tonalRamp": [
+          "oklch(15% 0.017 251)",
+          "oklch(26% 0.017 251)",
+          "oklch(37% 0.017 251)",
+          "oklch(48% 0.017 251)",
+          "oklch(59% 0.017 251)",
+          "oklch(70% 0.017 251)",
+          "oklch(82% 0.017 251)",
+          "oklch(95% 0.017 251)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "code-display": {
+        "displayName": "Code Display",
+        "purpose": "Vehicle and part IDs as headline; label ID; large prices."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page titles; 28px mobile, 34px desktop; shop hero 48px."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Part names in lists, vehicle make/model."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Running UI copy, 70ch max for supporting paragraphs."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "Inline codes: OE numbers, locations, counts, plates, dossier numbers."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase condensed column heads, panel headers, status chips, label top strip, demo strip."
+      }
+    },
+    "shadows": [
+      {
+        "name": "label-lift",
+        "value": "0 1px 0 rgb(17 20 24 / 0.04), 0 6px 18px -10px rgb(17 20 24 / 0.25)",
+        "purpose": "Adhesive label sheets (part label, selectable vehicle cards)."
+      },
+      {
+        "name": "floating-bar",
+        "value": "0 8px 24px -12px rgb(17 20 24 / 0.35)",
+        "purpose": "Sticky save bars floating over form content."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out-expo",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Lifecycle line fill (700ms) and stamp-in entrance (520ms, translateY 14px + scale 0.98 + blur 4px), disabled under reduced motion."
+      },
+      {
+        "name": "color-150",
+        "value": "150ms",
+        "purpose": "Button and nav colour transitions."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px",
+        "purpose": "Shell switches to 232px sidebar + content."
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      }
+    ],
+    "focus": {
+      "value": "outline: 3px solid var(--band); outline-offset: 2px",
+      "purpose": "Global focus-visible ring; fields use offset 0 plus blue border."
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Main action; blue fill, glove-sized.",
+      "html": "<button class=\"ds-btn-primary\">Aggiungi pezzo</button>",
+      "css": ".ds-btn-primary { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:48px; padding:0 20px; border-radius:6px; font-weight:600; font-size:16px; font-family: var(--font-barlow), system-ui, sans-serif; cursor:pointer; transition: background-color 150ms, border-color 150ms, color 150ms; background: var(--band); color: #fff; border: none; } .ds-btn-primary:hover, .ds-btn-primary:active { background: var(--band-deep); } .ds-btn-primary:focus-visible { outline:3px solid var(--band); outline-offset:2px; } .ds-btn-primary:disabled { background: var(--hair); color: var(--ink-3); cursor:not-allowed; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Neutral action on a white label surface with hairline frame.",
+      "html": "<button class=\"ds-btn-secondary\">Stampa etichetta</button>",
+      "css": ".ds-btn-secondary { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:48px; padding:0 20px; border-radius:6px; font-weight:600; font-size:16px; font-family: var(--font-barlow), system-ui, sans-serif; cursor:pointer; transition: background-color 150ms, border-color 150ms, color 150ms; background: var(--label); color: var(--ink); border: 1px solid var(--hair); } .ds-btn-secondary:hover { border-color: var(--ink-3); } .ds-btn-secondary:active { background: var(--carton); } .ds-btn-secondary:focus-visible { outline:3px solid var(--band); outline-offset:2px; }"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Low-emphasis blue text action.",
+      "html": "<button class=\"ds-btn-quiet\">Azzera filtri</button>",
+      "css": ".ds-btn-quiet { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:48px; padding:0 20px; border-radius:6px; font-weight:600; font-size:16px; font-family: var(--font-barlow), system-ui, sans-serif; cursor:pointer; transition: background-color 150ms, border-color 150ms, color 150ms; background: transparent; color: var(--band); border: none; } .ds-btn-quiet:hover, .ds-btn-quiet:active { background: var(--band-tint); } .ds-btn-quiet:focus-visible { outline:3px solid var(--band); outline-offset:2px; }"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "48px text field; blue border and 3px outline on focus.",
+      "html": "<input class=\"ds-field\" placeholder=\"Targa o codice\">",
+      "css": ".ds-field { width:100%; min-height:48px; border:1px solid var(--hair); background: var(--label); border-radius:6px; padding:0 14px; font-size:16px; color: var(--ink); caret-color: var(--band); font-family: var(--font-barlow), system-ui, sans-serif; } .ds-field::placeholder { color: var(--ink-3); } .ds-field:focus { outline:3px solid var(--band); outline-offset:0; border-color: var(--band); }"
+    },
+    {
+      "name": "Status Chips",
+      "kind": "chip",
+      "refersTo": "status-chip-disponibile",
+      "description": "Part states as condensed uppercase state pairs; draft is dashed.",
+      "html": "<span class=\"ds-chip ds-chip-ok\">disponibile</span> <span class=\"ds-chip ds-chip-warn\">riservato</span> <span class=\"ds-chip ds-chip-sold\">venduto</span> <span class=\"ds-chip ds-chip-draft\">bozza</span> <span class=\"ds-chip ds-chip-danger\">invendibile</span>",
+      "css": ".ds-chip { display:inline-flex; align-items:center; height:28px; padding:0 10px; border-radius:4px; font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:0.025em; font-family: var(--font-barlow-condensed), var(--font-barlow), sans-serif; font-variant-numeric: tabular-nums; } .ds-chip-ok { background: var(--ok-bg); color: var(--ok); } .ds-chip-warn { background: var(--warn-bg); color: var(--warn); } .ds-chip-sold { background: var(--ink); color:#fff; } .ds-chip-draft { background: var(--label); color: var(--draft); border:1px dashed var(--draft); } .ds-chip-danger { background: var(--danger-bg); color: var(--danger); }"
+    },
+    {
+      "name": "Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "White label surface with hairline frame and condensed uppercase header; rows divided by soft hairlines.",
+      "html": "<section class=\"ds-panel\"><header class=\"ds-panel-h\">Cosa recuperare</header><div class=\"ds-panel-row\"><span class=\"ds-panel-t\">Faro anteriore sx</span><span class=\"ds-panel-n\">3</span></div><div class=\"ds-panel-row\"><span class=\"ds-panel-t\">Alternatore</span><span class=\"ds-panel-n\">0</span></div></section>",
+      "css": ".ds-panel { background: var(--label); border:1px solid var(--hair); border-radius:6px; font-family: var(--font-barlow), system-ui, sans-serif; color: var(--ink); max-width:420px; } .ds-panel-h { padding:12px 16px; border-bottom:1px solid var(--hair-soft); font-size:15px; font-weight:700; text-transform:uppercase; letter-spacing:0.025em; color: var(--ink-2); font-family: var(--font-barlow-condensed), var(--font-barlow), sans-serif; font-variant-numeric: tabular-nums; } .ds-panel-row { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; } .ds-panel-row + .ds-panel-row { border-top:1px solid var(--hair-soft); } .ds-panel-t { font-size:17px; font-weight:600; } .ds-panel-n { font-size:17px; font-weight:700; font-family: var(--font-barlow-condensed), var(--font-barlow), sans-serif; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "nav-sidebar",
+      "description": "Desktop blue band column; active item inverts to white.",
+      "html": "<nav class=\"ds-nav\"><div class=\"ds-nav-brand\">Autodemolizioni</div><a class=\"ds-nav-i ds-nav-on\" href=\"#\">Oggi</a><a class=\"ds-nav-i\" href=\"#\">Veicoli</a><a class=\"ds-nav-i\" href=\"#\">Ricambi</a></nav>",
+      "css": ".ds-nav { width:232px; background: var(--band); color:#fff; padding:24px 8px 16px; font-family: var(--font-barlow), system-ui, sans-serif; } .ds-nav-brand { padding:0 12px 20px; font-size:26px; font-weight:700; text-transform:uppercase; letter-spacing:0.025em; line-height:1; font-family: var(--font-barlow-condensed), var(--font-barlow), sans-serif; font-variant-numeric: tabular-nums; } .ds-nav-i { display:flex; align-items:center; min-height:44px; padding:0 12px; border-radius:4px; font-size:15px; font-weight:600; color: rgb(255 255 255 / 0.9); text-decoration:none; transition: background-color 150ms; } .ds-nav-i:hover { background: rgb(255 255 255 / 0.12); } .ds-nav-on, .ds-nav-on:hover { background:#fff; color: var(--band); } .ds-nav-i:focus-visible { outline:3px solid #fff; outline-offset:2px; }"
+    },
+    {
+      "name": "Part Label",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "Signature: the part record as the printed box-end label: blue strip, huge condensed ID, provenance, QR, location.",
+      "html": "<article class=\"ds-lbl\"><div class=\"ds-lbl-strip\"><span>Autodemolizioni</span><span>Illuminazione</span></div><div class=\"ds-lbl-body\"><div class=\"ds-lbl-main\"><div class=\"ds-lbl-id\">R-00042</div><div class=\"ds-lbl-desc\">Faro anteriore sinistro</div><dl class=\"ds-lbl-dl\"><dt>Da</dt><dd>V-0001 · Fiat Panda</dd><dt>Stato</dt><dd>B · buono</dd></dl></div><div class=\"ds-lbl-qr\"><svg width=\"84\" height=\"84\" viewBox=\"0 0 7 7\" shape-rendering=\"crispEdges\"><rect width=\"7\" height=\"7\" fill=\"#fff\"/><path fill=\"#111418\" d=\"M0 0h3v3H0zM4 0h3v3H4zM0 4h3v3H0zM4 4h1v1H4zM6 4h1v1H6zM5 5h1v1H5zM4 6h1v1H4zM6 6h1v1H6z\"/><path fill=\"#fff\" d=\"M1 1h1v1H1zM5 1h1v1H5zM1 5h1v1H1z\"/></svg><span class=\"ds-lbl-loc\">A-03-2</span></div></div></article>",
+      "css": ".ds-lbl { background: var(--label); border:1px solid var(--hair); border-radius:6px; box-shadow: 0 1px 0 rgb(17 20 24 / 0.04), 0 6px 18px -10px rgb(17 20 24 / 0.25); overflow:hidden; max-width:420px; font-family: var(--font-barlow), system-ui, sans-serif; color: var(--ink); } .ds-lbl-strip { display:flex; justify-content:space-between; background: var(--band); color:#fff; padding:6px 16px; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; font-family: var(--font-barlow-condensed), var(--font-barlow), sans-serif; font-variant-numeric: tabular-nums; } .ds-lbl-body { display:flex; gap:12px; padding:12px 16px 16px; } .ds-lbl-main { flex:1; min-width:0; } .ds-lbl-id { font-size:56px; font-weight:700; line-height:0.9; letter-spacing:-0.01em; font-family: var(--font-barlow-condensed), var(--font-barlow), sans-serif; font-variant-numeric: tabular-nums; } .ds-lbl-desc { margin-top:4px; font-size:17px; font-weight:600; } .ds-lbl-dl { display:grid; grid-template-columns:auto 1fr; gap:0 8px; margin:8px 0 0; font-size:13px; color: var(--ink-2); } .ds-lbl-dl dt { font-weight:600; color: var(--ink-3); } .ds-lbl-dl dd { margin:0; font-weight:600; color: var(--ink); font-family: var(--font-barlow-condensed), var(--font-barlow), sans-serif; font-variant-numeric: tabular-nums; } .ds-lbl-qr { display:flex; flex-direction:column; align-items:center; } .ds-lbl-loc { font-size:18px; font-weight:700; font-family: var(--font-barlow-condensed), var(--font-barlow), sans-serif; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Lifecycle Route Line",
+      "kind": "custom",
+      "description": "Signature: part lifecycle as a transit line with stations; blue fills to the current stop.",
+      "html": "<div class=\"ds-route\"><div class=\"ds-route-track\"></div><div class=\"ds-route-fill\"></div><ol class=\"ds-route-ol\"><li><span class=\"ds-st ds-st-on\"></span>Catalogato</li><li><span class=\"ds-st ds-st-on\"></span>Etichettato</li><li><span class=\"ds-st ds-st-cur\"><i></i></span>In magazzino</li><li><span class=\"ds-st\"></span>Online</li><li><span class=\"ds-st\"></span>Riservato</li><li><span class=\"ds-st\"></span>Venduto</li></ol></div>",
+      "css": ".ds-route { position:relative; max-width:560px; font-family: var(--font-barlow), system-ui, sans-serif; } .ds-route-track, .ds-route-fill { position:absolute; top:11px; left:8.33%; height:4px; border-radius:4px; } .ds-route-track { right:8.33%; background: var(--hair-soft); } .ds-route-fill { width:33.33%; background: var(--band); transition: width 700ms cubic-bezier(0.16,1,0.3,1); } .ds-route-ol { position:relative; display:grid; grid-template-columns:repeat(6,1fr); list-style:none; margin:0; padding:0; } .ds-route-ol li { display:flex; flex-direction:column; align-items:center; text-align:center; font-size:12px; font-weight:600; color: var(--ink); } .ds-st { display:grid; place-items:center; width:26px; height:26px; box-sizing:border-box; border-radius:50%; border:4px solid var(--hair); background:#fff; margin-bottom:6px; } .ds-st-on { border-color: var(--band); background: var(--band); } .ds-st-cur { border-color: var(--band); } .ds-st-cur i { width:8px; height:8px; border-radius:50%; background: var(--band); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Box-End Label",
+    "overview": "Every recovered part is shown the way it will be printed and stuck on it: an original-equipment spare-part carton, box-white and cool, with one saturated print blue owning the band across the top, and a white adhesive label carrying a huge condensed ID, a QR code, a barcode and a provenance line. The interface is that carton and that label. Screens are cool off-white ground with white label surfaces on it. The blue band marks the shell, the vehicle-in-work header and the primary action. Codes (vehicle IDs, part IDs, plates, OE numbers, locations, prices, counts) are set in condensed tabular numerals and carry the hierarchy.\n\nDensity is operational: yard staff work on phones outdoors in sunlight, often with gloves, and counter and warehouse staff work on desktops. Targets are large (48px default, 56px for the primary yard action, 64px bottom-bar cells), contrast is high, the theme is light only, and nothing depends on hover. Colour beyond blue, ink and grey appears only when it means a state.\n\nRendered packshots of parts sit on white like a parts catalogue. They are procedural Blender renders, and each one ships with a provenance sidecar.",
+    "keyCharacteristics": [
+      "Cool box-white ground, white adhesive-label surfaces, 1px hairline frames.",
+      "One print blue (\"blu ricambi\") for the shell band, primary actions, the lifecycle line and focus.",
+      "Condensed tabular numerals for every code; the ID is the headline.",
+      "State colours carry meaning only: available green, reserved amber, sold ink, draft dashed grey, unsellable red.",
+      "Large, glove-sized targets and a sticky bottom primary action on mobile."
+    ],
+    "rules": [
+      {
+        "name": "The One Print Blue Rule",
+        "body": "Blue is the only brand colour. It marks the shell, the primary action, progress and focus. Do not add a second accent.",
+        "section": "colors"
+      },
+      {
+        "name": "The Meaning-Only State Rule",
+        "body": "Green, amber and red appear only as a state pair (strong text on its pale background) bound to a real status. They are never used as decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The ID-Is-the-Headline Rule",
+        "body": "When a screen is about one vehicle or one part, its internal ID in Code Display is the largest thing on the screen. Descriptive names sit below it.",
+        "section": "typography"
+      },
+      {
+        "name": "The Condensed-Means-Code Rule",
+        "body": "Barlow Condensed is for things that would be printed on a label: codes, numbers, states and column heads. Sentences and button labels stay in Barlow.",
+        "section": "typography"
+      },
+      {
+        "name": "The Only-Labels-Lift Rule",
+        "body": "Only label sheets and floating action bars cast shadows. Panels, chips and buttons sit flat.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** make the internal ID (V-0001, part IDs) the largest type on any single-record screen, set in Barlow Condensed 700.",
+      "**Do** set every code, count, price, plate and location in the condensed tabular face.",
+      "**Do** keep primary actions at 48px or taller, and the yard's main action at 56px, full width and sticky above the bottom bar on mobile.",
+      "**Do** use the 3px Blu Ricambi focus outline everywhere. Do not replace it with a glow.",
+      "**Do** keep ink-third text on label white or carton surfaces. On the carton ground it falls just under 4.5:1.",
+      "**Do** ship every raster render with a provenance sidecar naming its source script."
+    ],
+    "donts": [
+      "**Don't** introduce a second accent colour or use the state colours decoratively.",
+      "**Don't** fall back to the category default this world refuses: a grey sidebar with generic data cards, each carrying a badge.",
+      "**Don't** add shadows to panels, chips or buttons. Lift belongs to label sheets and floating bars.",
+      "**Don't** use dark mode or low-contrast greys on the yard surfaces. The light, high-contrast carton is a field-use requirement.",
+      "**Don't** rely on hover to reveal actions or state.",
+      "**Don't** set sentences or button labels in the condensed face."
+    ]
+  }
+}
