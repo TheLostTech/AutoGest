@@ -9,6 +9,63 @@ Ricerca del 16 novembre 2026. Ogni dato ha la sua fonte; **(da confermare)** = t
 
 ---
 
+## 0. Riepilogo: chi paga cosa e come si entra (17/11/2026)
+
+Tutti i collegamenti nell'app sono oggi **simulati**. Costi e fonti nelle sezioni 1–5.
+
+**Come si entra**
+- **SPID titolare**: SPID, CIE o CNS **personale** del titolare o legale rappresentante dell'autodemolizione. Il portale controlla la carica sul Registro Imprese, poi il titolare abilita i collaboratori. Non serve uno SPID intestato alla società.
+- **Registrazione**: account online con email, dati della società e partita IVA. Per incassi e WhatsApp anche verifica dell'azienda con documenti (non SPID).
+- **Contratto**: preventivo e licenza firmata con il fornitore.
+
+**Chi si registra**: *Tu* = chi sviluppa il gestionale (account tecnico, unico per tutti i clienti). *Cliente* = l'autodemolizione, che resta titolare dei dati e degli obblighi di legge.
+
+### A. Obbligatori per legge (si pagano comunque, con o senza gestionale)
+| Servizio | Nell'app | Costo | Accesso | Chi |
+|---|---|---|---|---|
+| RVFU (presa in carico, CRD, radiazione) | Pratica | 32 € bollo + 13,50 € emolumenti per radiazione (+10,20 € diritti MIT, da confermare); VPN e firma remota ACI: costo non pubblicato | SPID titolare, accreditamento per sede | Cliente. API riservate: Tu le chiedi ad ACI |
+| RENTRI (registro e formulari) | Ambiente | Iscrizione 10 €; 100 € il primo anno, poi 60 €/anno per sede. **API gratuite** | SPID titolare + certificato .p12 per le API | Cliente (certificato suo). Tu: ambiente demo |
+| MUD | Ambiente | 10 €/anno | SPID titolare + firma digitale (o consulente con delega) | Cliente. Il gestionale prepara il file |
+| Firma digitale qualificata (RVFU, MUD, formulari) | — | Da 29 € il certificato (Openapi); quella ACI per RVFU non ha prezzo pubblico | Riconoscimento dal prestatore | Cliente (la persona che firma) |
+| Fatture e Corrispettivi (Agenzia Entrate) | Vendite | **Gratis**, anche la conservazione delle fatture | SPID titolare o incaricato | Cliente |
+| Registratore telematico | Scontrino | 150–600 € o canone | Rivenditore e tecnico abilitato | Cliente |
+| O.R.S.O. (regionale) | Ambiente | Gratis (da verificare per regione) | SPID o credenziali regionali | Cliente |
+
+### B. A consumo, con registrazione normale
+| Servizio | Nell'app | Costo | Chi |
+|---|---|---|---|
+| Openapi, dati tecnici da targa | Accettazione | 0,40 €/chiamata (fino a 0,18 € con abbonamento); sandbox gratis | Tu |
+| Openapi, visura PRA | Pratica | 10,90 o 16,70 € (da confermare) | Tu |
+| *Alternativa*: ACI Visurenet | Pratica | 6 € | Chiunque con SPID, max 3 al giorno, **senza API**: solo a mano |
+| Plate Recognizer, targa da foto | Accettazione | Gratis 2.500/mese (prova), poi da 50 $/mese | Tu |
+| Modello IA con visione, pezzo da foto | Campo, inventario | A consumo, pochi centesimi a foto (da stimare) | Tu |
+| Fattura elettronica: Openapi o Invoicetronic | Vendite | 0,02–0,10 € a fattura | Tu. Il cliente imposta il codice destinatario sul portale Agenzia (SPID titolare) |
+| Openapi eSignature | Firma documenti | Firma avanzata 0,69 € | Tu |
+| Sendcloud | Spedizioni | 28 €/mese + 0,10 € a etichetta | Cliente (con i suoi contratti BRT, GLS, Poste) |
+| WhatsApp (Meta) | Avvisi ai clienti | Circa 0,03 $ ad avviso | Tu: verifica aziendale Meta. Cliente: suo numero e carta |
+
+### C. Entrata gratuita, si paga una commissione sul venduto
+| Servizio | Nell'app | Costo | Chi |
+|---|---|---|---|
+| Stripe Connect + Terminal | Incassi banco e online | Nessun canone; 1,5% + 0,25 € online, 1,4% + 0,10 € al POS; lettori da 59 € | Tu (piattaforma) + Cliente (account collegato, verifica con documento del legale rappresentante) |
+| eBay | Marketplace | Sviluppatore gratis; vendita 12,5% + 0,35 € a ordine; negozio facoltativo da 24,95 €/mese | Tu: Developers Program. Cliente: account venditore professionale |
+| Ovoko | Marketplace | Nessun canone; commissione (circa 10%, da confermare) | Cliente |
+| Google Merchant Center | Negozio online | Schede gratuite; annunci a pagamento | Cliente (account Google e dominio) |
+
+### D. Solo su contratto o preventivo
+- **Catalogo ricambi e prezzo del nuovo** (oggi "catalogo simulato"): Kromeda, Infocar, TecDoc, DAT. Licenza per uso multi-cliente da negoziare.
+- **Altri marketplace**: B-Parts (rete chiusa), RicambiPro, Multibreves.
+- **Dati in blocco**: ACI forniture PRA, MIT Archivio Nazionale Veicoli (contratto e VPN), COBAT.
+- partslink24 (23–29 €/mese) si usa solo a mano: non ha API.
+
+### Regole per restare a norma
+1. **Credenziali del cliente, non tue.** RVFU, RENTRI, Agenzia Entrate ed eBay agiscono a nome dell'autodemolizione: tu non usi il tuo SPID per i loro adempimenti. Serve un contratto che lo autorizzi.
+2. **Non automatizzare portali fatti per l'uso a mano**: Visurenet (3 al giorno), "Documento commerciale online" (i "velocizzatori" saranno bloccati dal MEF), portale RVFU senza le specifiche ufficiali.
+3. **GDPR**: tu sei responsabile del trattamento per ogni cliente (art. 28). Accordo sui dati (DPA) con Openapi, Plate Recognizer, firma, Meta e fornitore IA; per i fornitori extra UE va verificato il trasferimento dei dati.
+4. **Conservazione**: RENTRI non conserva i documenti; registri, formulari e CRD vanno conservati a norma.
+
+---
+
 ## 1. Pratiche veicolo
 
 ### RVFU – Registro unico telematico dei veicoli fuori uso (CRD e radiazione)

@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Boxes, Briefcase, CarFront, ClipboardList, LayoutGrid, Leaf, Menu, ScanLine, ShoppingCart, Wrench, X, type LucideIcon } from "lucide-react";
+import { Boxes, Briefcase, CarFront, ClipboardList, LayoutGrid, Leaf, Menu, ScanLine, Settings, ShoppingCart, Wrench, X, type LucideIcon } from "lucide-react";
 import { ROLE_USER, useDeviceStorageFull, useStore } from "@/lib/store";
 import type { Role } from "@/lib/types";
 import { BRAND, DEMO_NOTICE } from "@/lib/config";
 import { GlobalSearch } from "./GlobalSearch";
+import { LostarCredit } from "./Lostar";
 import { resetShared } from "@/lib/sync";
 
 // Navigazione per aree di lavoro: poche voci, le sottosezioni compaiono solo dentro l'area aperta.
@@ -78,6 +79,12 @@ const AREAS: Area[] = [
       { href: "/registro", label: "Registro attività", roles: ["accettazione", "magazziniere", "responsabile"] },
       { href: "/listini", label: "Listini", roles: ["responsabile"] },
     ],
+  },
+  {
+    id: "impostazioni",
+    label: "Impostazioni",
+    icon: Settings,
+    subs: [{ href: "/impostazioni/collegamenti", label: "Collegamenti", roles: ["responsabile"] }],
   },
 ];
 
@@ -170,7 +177,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Fascia blu: come la stampa sulla scatola */}
       <aside className="no-print hidden bg-band text-white md:sticky md:top-0 md:flex md:h-dvh md:flex-col">
         <div className="px-5 pb-4 pt-6">
-          <div className="code text-[26px] font-bold uppercase leading-none tracking-wide">{BRAND.azienda}</div>
+          <div className="code text-[26px] font-bold uppercase leading-none tracking-wide">
+            {BRAND.azienda.replace(/\s*4\.0$/, "")} <span className="text-[#F4B500]">4.0</span>
+          </div>
           <div className="mt-1 text-[13px] font-medium text-white/75">Gestionale autodemolizione</div>
         </div>
         <div className="space-y-2 px-3 pb-4">
@@ -221,13 +230,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <RoleSwitch role={role} setRole={setRole} />
+        <div className="border-t border-white/20 px-4 py-3">
+          <LostarCredit className="text-white/75 hover:text-white" />
+        </div>
       </aside>
 
       <div className="flex min-h-dvh min-w-0 flex-col">
         {/* Testata mobile */}
         <header className="no-print sticky top-0 z-30 bg-band text-white md:hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-            <Link href="/" className="code truncate text-[20px] font-bold uppercase tracking-wide">{BRAND.azienda}</Link>
+            <Link href="/" className="code min-w-0 text-[17px] font-bold uppercase leading-[1.05] tracking-normal" aria-label={BRAND.azienda}>
+              <span className="block truncate">{BRAND.azienda.replace(/\s*4\.0$/, "")}</span>
+              <span className="block text-[#F4B500]">4.0</span>
+            </Link>
             <div className="flex shrink-0 items-center gap-2">
               <GlobalSearch variant="icon" />
               {!hasScanTab && (
@@ -278,7 +293,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <b>Memoria di questo dispositivo piena.</b> Il lavoro si salva sul server dell&apos;azienda: tieni il telefono collegato alla rete.
           </p>
         )}
-        <main className="flex-1 px-4 pb-28 pt-5 md:px-8 md:pb-12 md:pt-7">{children}</main>
+        <main className="flex-1 px-4 pb-6 pt-5 md:px-8 md:pb-12 md:pt-7">{children}</main>
+        <footer className="no-print flex justify-center px-4 pb-28 md:hidden">
+          <LostarCredit className="text-ink-3" />
+        </footer>
 
         {/* Barra inferiore mobile: bersagli grandi, usabili coi guanti */}
         <nav className={`no-print fixed inset-x-0 bottom-0 z-30 grid border-t border-hair bg-label pb-[env(safe-area-inset-bottom)] md:hidden ${moreAreas.length ? "grid-cols-5" : "grid-cols-4"}`} aria-label="Aree">

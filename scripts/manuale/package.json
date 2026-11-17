@@ -1,0 +1,11 @@
+{
+  "name": "manuale-screenshot",
+  "private": true,
+  "description": "Cattura gli screenshot del manuale operativo di Autodemolizione 4.0",
+  "scripts": {
+    "cattura": "node cattura.js"
+  },
+  "dependencies": {
+    "playwright-core": "1.49.1"
+  }
+}

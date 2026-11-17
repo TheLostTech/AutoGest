@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ShoppingBag } from "lucide-react";
 import { useCart } from "@/lib/cart";
 import { BRAND, DEMO_NOTICE } from "@/lib/config";
+import { LostarCredit } from "@/components/Lostar";
 
 export default function ShopLayout({ children }: { children: React.ReactNode }) {
   const n = useCart((s) => s.ids.length);
@@ -28,6 +29,9 @@ export default function ShopLayout({ children }: { children: React.ReactNode }) 
       <main className="mx-auto max-w-6xl px-4 pb-16 pt-6">{children}</main>
       <footer className="border-t border-hair bg-label px-4 py-6 text-center text-sm text-ink-3">
         {BRAND.azienda} · {BRAND.sede} · Ogni ricambio ha un codice univoco e la provenienza dal veicolo d&apos;origine.
+        <div className="mt-3">
+          <LostarCredit className="text-ink-3 hover:text-ink" />
+        </div>
       </footer>
     </div>
   );
