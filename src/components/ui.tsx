@@ -38,7 +38,7 @@ export function ButtonLink({
   ...props
 }: ComponentProps<typeof Link> & { variant?: Variant; size?: "md" | "lg" | "sm" }) {
   const sz = size === "lg" ? "min-h-14 px-6 text-lg" : size === "sm" ? "min-h-9 px-3 text-sm" : "min-h-12 px-5 text-base";
-  return <Link {...props} className={`inline-flex items-center justify-center gap-2 rounded-md font-semibold transition-colors duration-150 ${sz} ${BTN[variant]} ${className}`} />;
+  return <Link {...props} className={`press inline-flex items-center justify-center gap-2 rounded-md font-semibold transition-colors duration-150 ${sz} ${BTN[variant]} ${className}`} />;
 }
 
 const PART_STATUS: Record<PartStatus, string> = {

@@ -9,6 +9,7 @@ import { openOrderFor } from "@/lib/logic";
 import { locToString, onLabel, parseShelf, shelfCode } from "@/lib/warehouse";
 import { Button, ButtonLink, Notice, PageTitle } from "@/components/ui";
 import type { Location, Order, Part } from "@/lib/types";
+import { beep, buzz, unlockAudio } from "@/lib/feedback";
 
 type Detector = { detect: (src: HTMLVideoElement) => Promise<{ rawValue: string }[]> };
 type DetectorClass = { new (o: { formats: string[] }): Detector; getSupportedFormats?: () => Promise<string[]> };
@@ -68,6 +69,18 @@ export default function Scansione() {
   const pendingAt = useRef(0);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [conflict, setConflict] = useState<{ part: Part; loc: Location } | null>(null);
+  // Ogni lettura riuscita: vibrazione, bip, lampo verde sul mirino e riquadro dell'esito che "batte"
+  const [hit, setHit] = useState(0);
+  const signal = (ok: boolean) => {
+    if (ok) {
+      buzz(60);
+      beep("ok");
+      setHit((h) => h + 1);
+    } else {
+      buzz([40, 60, 40]);
+      beep("warn");
+    }
+  };
 
   const findPart = (raw: string) => {
     const id = extractId(raw);
@@ -178,6 +191,7 @@ export default function Scansione() {
         setOutcome(null);
         setConflict(null);
       }
+      signal(true);
       return true;
     }
     const p = findPart(raw);
@@ -188,9 +202,11 @@ export default function Scansione() {
         setOutcome(null);
         setConflict(null);
       }
+      signal(true);
       return true;
     }
     setError(`Codice «${raw.trim()}» non riconosciuto: né un ricambio né uno scaffale.`);
+    signal(false);
     return false;
   }
 
@@ -201,6 +217,7 @@ export default function Scansione() {
   });
 
   async function start() {
+    unlockAudio();
     setError("");
     // La fotocamera nel browser si apre solo da un indirizzo sicuro (https) o dal computer stesso
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
@@ -236,7 +253,7 @@ export default function Scansione() {
         // Lo stesso codice inquadrato di continuo conta una volta sola
         if (raw && (raw !== lastRef.current.raw || Date.now() - lastRef.current.at > 2500)) {
           lastRef.current = { raw, at: Date.now() };
-          if (handleRef.current(raw)) navigator.vibrate?.(60);
+          handleRef.current(raw);
         }
       } catch {}
       // Il lettore del browser regge ogni fotogramma; il nostro legge circa 6 volte al secondo per non scaldare il telefono
@@ -274,6 +291,7 @@ export default function Scansione() {
       <div className="relative aspect-[4/3] overflow-hidden rounded-md bg-ink">
         <video ref={videoRef} className={`size-full object-cover ${camera === "on" ? "" : "hidden"}`} playsInline muted />
         {camera === "on" && <div className="pointer-events-none absolute inset-[18%] rounded-lg border-4 border-white/90" aria-hidden />}
+        {camera === "on" && hit > 0 && <div key={hit} className="scan-hit pointer-events-none absolute inset-0 bg-ok" aria-hidden />}
         {camera !== "on" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center text-white">
             {camera === "off" && (
@@ -300,7 +318,7 @@ export default function Scansione() {
 
       {/* Primo codice letto: cosa aspettiamo adesso */}
       {pending && (
-        <section className="mt-4 rounded-md border-2 border-band bg-label" aria-live="polite">
+        <section key={`p${hit}`} className="pop-in mt-4 rounded-md border-2 border-band bg-label" aria-live="polite">
           <div className="flex items-start justify-between gap-3 px-4 pt-3">
             {pending.kind === "part" ? (
               <div className="min-w-0">
@@ -389,7 +407,7 @@ export default function Scansione() {
 
       {/* Esito: grande, con Annulla finché non si scansiona altro */}
       {outcome && (
-        <section className={`mt-4 rounded-md border-2 px-4 py-3 ${outcome.tone === "ok" ? "border-ok bg-ok-bg" : "border-warn bg-warn-bg"}`} aria-live="polite">
+        <section key={`o${hit}`} className={`pop-in mt-4 rounded-md border-2 px-4 py-3 ${outcome.tone === "ok" ? "border-ok bg-ok-bg" : "border-warn bg-warn-bg"}`} aria-live="polite">
           {outcome.verb && <p className={`code text-[13px] font-bold uppercase tracking-wide ${outcome.tone === "ok" ? "text-ok" : "text-warn"}`}>{outcome.verb === "carico" ? "Messo a scaffale" : outcome.verb === "scarto" ? "Scartato" : "Preso dallo scaffale"}</p>}
           <p className="code text-[24px] font-bold leading-tight">{outcome.title}</p>
           {outcome.detail && <p className="mt-0.5 text-ink-2">{outcome.detail}</p>}
@@ -418,6 +436,7 @@ export default function Scansione() {
         className="mt-5 flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
+          unlockAudio();
           if (code.trim() && handle(code)) setCode("");
         }}
       >

@@ -3,6 +3,8 @@ import { Barlow, Barlow_Condensed } from "next/font/google";
 import "./globals.css";
 import { Hydrator } from "@/components/Hydrator";
 import { BRAND } from "@/lib/config";
+import { PressFeedback } from "@/components/PressFeedback";
+import { Conferme } from "@/components/Conferme";
 
 const barlow = Barlow({
   variable: "--font-barlow",
@@ -33,7 +35,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     // prima che React si attivi; vale solo per gli attributi di questo tag, non per il contenuto.
     <html lang="it" className={`${barlow.variable} ${barlowCondensed.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="min-h-full">
-        <Hydrator>{children}</Hydrator>
+        <PressFeedback />
+        <Hydrator>
+          {children}
+          <Conferme />
+        </Hydrator>
       </body>
     </html>
   );

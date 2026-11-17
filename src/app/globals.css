@@ -177,3 +177,82 @@ dialog.sheet[open] {
     display: none !important;
   }
 }
+
+/* Risposta alla pressione: ogni tocco si vede subito. [data-pressed] lo tiene visibile almeno un attimo
+   anche con un tocco rapido (components/PressFeedback.tsx). Fuori dai layer: vale sopra le utility. */
+button,
+a[href],
+[role="button"],
+summary,
+select {
+  touch-action: manipulation;
+}
+button:not(:disabled),
+a[href],
+[role="button"],
+summary,
+label:has(input[type="checkbox"], input[type="radio"], input[type="file"]) {
+  transition-property: color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, box-shadow, opacity, scale, filter;
+  transition-duration: 180ms;
+  transition-timing-function: var(--ease-out-expo);
+}
+button:not(:disabled):active,
+button:not(:disabled)[data-pressed],
+[role="button"]:active,
+[role="button"][data-pressed],
+summary[data-pressed],
+label[data-pressed],
+a[href].press:active,
+a[href].press[data-pressed] {
+  scale: 0.96;
+  filter: brightness(0.88);
+  transition-duration: 40ms;
+}
+a[href]:not(.press):active,
+a[href]:not(.press)[data-pressed] {
+  opacity: 0.6;
+  transition-duration: 40ms;
+}
+
+/* Conferma a comparsa */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+.toast-in {
+  animation: toast-in 260ms var(--ease-out-expo) both;
+}
+
+/* Esito della scansione: lampo verde sul mirino e riquadro che "batte" a ogni lettura */
+@keyframes scan-hit {
+  0% { opacity: 0.55; }
+  100% { opacity: 0; }
+}
+.scan-hit {
+  animation: scan-hit 450ms ease-out both;
+}
+@keyframes pop-in {
+  0% { transform: scale(0.96); opacity: 0.4; }
+  60% { transform: scale(1.015); opacity: 1; }
+  100% { transform: none; }
+}
+.pop-in {
+  animation: pop-in 320ms var(--ease-out-expo) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):active,
+  button:not(:disabled)[data-pressed],
+  [role="button"]:active,
+  [role="button"][data-pressed],
+  summary[data-pressed],
+  label[data-pressed],
+  a[href].press:active,
+  a[href].press[data-pressed] {
+    scale: none;
+  }
+  .toast-in,
+  .pop-in {
+    animation: none;
+  }
+}
