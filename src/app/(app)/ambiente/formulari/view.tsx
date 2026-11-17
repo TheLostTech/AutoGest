@@ -27,7 +27,12 @@ export default function Page() {
 function Formulari() {
   const sp = useSearchParams();
   const { firs, wasteMoves, createFir, advanceFir } = useStore();
-  const stock = stockByEer(wasteMoves).filter((s) => s.kg > 0 && s.code !== "16 01 04*");
+  // Disponibile = giacenza meno i formulari già pronti e non ancora firmati (lo scarico avviene alla firma)
+  const reserved = (code: string) => firs.filter((f) => f.status === "da firmare" && f.eer === code).reduce((a, f) => a + f.kg, 0);
+  const stock = stockByEer(wasteMoves)
+    .filter((s) => s.code !== "16 01 04*")
+    .map((s) => ({ ...s, reserved: reserved(s.code), kg: Math.max(0, Math.round((s.kg - reserved(s.code)) * 10) / 10) }))
+    .filter((s) => s.kg > 0);
   const pre = sp.get("eer");
   const [open, setOpen] = useState(!!pre);
   const [eer, setEer] = useState(pre && stock.some((s) => s.code === pre) ? pre : (stock[0]?.code ?? ""));
@@ -55,17 +60,21 @@ function Formulari() {
         sub="Ogni uscita di rifiuti ha il suo formulario. Con la firma il rifiuto lascia l'impianto e lo scarico entra da solo nel registro."
         actions={!open && <Button onClick={() => setOpen(true)}><FilePlus2 className="size-5" aria-hidden /> Nuovo formulario</Button>}
       />
-      {msg && <div className="mb-5"><Notice tone="ok">{msg}</Notice></div>}
+      {msg && <div className="mb-5"><Notice tone={msg.startsWith("In giacenza") ? "danger" : "ok"}>{msg}</Notice></div>}
 
       {open && (
         <Panel title="Nuovo formulario" className="mb-6">
           <div className="grid gap-4 p-4 sm:grid-cols-2">
             <Field label="Rifiuto">
               <select className="field" value={eer} onChange={(e) => pick(e.target.value)}>
-                {stock.map((s) => <option key={s.code} value={s.code}>{s.code} · {s.short} · {fmtKg(s.kg)} in giacenza</option>)}
+                {stock.map((s) => <option key={s.code} value={s.code}>{s.code} · {s.short} · {fmtKg(s.kg)} disponibili</option>)}
               </select>
             </Field>
-            <Field label="Quantità" hint={cur ? `In giacenza ${fmtKg(cur.kg)}` : undefined} error={tooMuch ? "Più della giacenza registrata" : undefined}>
+            <Field
+              label="Quantità"
+              hint={cur ? `Disponibili ${fmtKg(cur.kg)}${cur.reserved ? ` (altri ${fmtKg(cur.reserved)} già in un formulario da firmare)` : ""}` : undefined}
+              error={tooMuch ? "Più di quanto disponibile" : undefined}
+            >
               <span className="flex items-center gap-2">
                 <input className="field code text-[18px] font-bold" inputMode="decimal" value={kg} onChange={(e) => setKg(e.target.value.replace(/[^0-9.,]/g, ""))} />
                 <span className="text-ink-3">kg</span>
@@ -116,7 +125,14 @@ function Formulari() {
                   <p className="text-sm text-ink-2">{f.destinatario} · trasporto {f.trasportatore}</p>
                 </div>
                 {next && (
-                  <Button size="sm" variant={f.status === "da firmare" ? "primary" : "secondary"} onClick={() => advanceFir(f.id)}>
+                  <Button
+                    size="sm"
+                    variant={f.status === "da firmare" ? "primary" : "secondary"}
+                    onClick={() => {
+                      const r = advanceFir(f.id);
+                      setMsg(r.ok ? null : r.error);
+                    }}
+                  >
                     {next.label}
                   </Button>
                 )}

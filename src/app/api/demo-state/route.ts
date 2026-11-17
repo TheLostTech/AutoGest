@@ -45,12 +45,15 @@ async function save(s: Stored) {
 }
 
 const keyOf = (r: Rec) => r.id ?? r.typeId ?? "";
+// Registro attività e movimenti: due dispositivi possono generare lo stesso numero nello stesso istante,
+// quindi la chiave comprende anche l'ora, così nessuna riga va persa
+const keyOfLog = (r: Rec) => `${r.id ?? ""}|${String((r as { at?: string }).at ?? "")}`;
 
-function mergeList(cur: Rec[] = [], changed: Rec[] = [], prepend: boolean) {
-  const byId = new Map(changed.map((r) => [keyOf(r), r]));
-  const next = cur.map((r) => byId.get(keyOf(r)) ?? r);
-  const known = new Set(cur.map(keyOf));
-  const added = changed.filter((r) => !known.has(keyOf(r)));
+function mergeList(cur: Rec[] = [], changed: Rec[] = [], prepend: boolean, key: (r: Rec) => string = keyOf) {
+  const byId = new Map(changed.map((r) => [key(r), r]));
+  const next = cur.map((r) => byId.get(key(r)) ?? r);
+  const known = new Set(cur.map(key));
+  const added = changed.filter((r) => !known.has(key(r)));
   return prepend ? [...added, ...next] : [...next, ...added];
 }
 
@@ -80,7 +83,7 @@ export async function PUT(req: Request) {
     }
     const st = { ...s.state };
     for (const k of PREPEND) if (body.changes?.[k]?.length) st[k] = mergeList(st[k] as Rec[], body.changes[k], true);
-    for (const k of APPEND) if (body.changes?.[k]?.length) st[k] = mergeList(st[k] as Rec[], body.changes[k], false);
+    for (const k of APPEND) if (body.changes?.[k]?.length) st[k] = mergeList(st[k] as Rec[], body.changes[k], false, k === "inventory" ? keyOf : keyOfLog);
     for (const k of WHOLE) if (body.whole?.[k] !== undefined) st[k] = body.whole[k];
     if (body.counters) st.counters = maxCounters(st.counters, body.counters);
     return save({ schema: s.schema, version: s.version + 1, state: st });

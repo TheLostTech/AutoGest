@@ -173,7 +173,7 @@ export function buildSeed() {
       const oemRead = !!cat && r() > 0.25;
       const verified = oemRead && r() > 0.35;
       const legacy = v.intakeAt < daysAgo(60) ? `K000${"ABCDEFGHJKLMNPRSTUVWXYZ"[Math.floor(r() * 23)]}${"ABCDEFGHJKLMNPRSTUVWXYZ"[Math.floor(r() * 23)]}${Math.floor(r() * 10)}${String(Math.floor(r() * 99)).padStart(2, "0")}` : undefined;
-      const published = (status === "disponibile" || status === "riservato" || status === "venduto") && hasPhoto && !!price && !fresh;
+      const published = (status === "disponibile" || status === "riservato") && hasPhoto && !!price && !fresh;
       const p: Part = {
         id,
         vehicleId: v.id,

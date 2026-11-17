@@ -1,7 +1,9 @@
+import { locToString } from "./warehouse";
 // Coda "Da fare": le attività nascono dai dati, non da una lista compilata a mano.
 // Ogni voce ha un ruolo destinatario, una scadenza (se esiste) e porta all'azione.
 import { typeById } from "./catalog";
 import { eerByCode, fmtKg, stockByEer } from "./ambiente";
+import { identOk } from "./pratica";
 import type { Fir, Order, Part, Role, SalesDoc, StockRule, Vehicle, WasteMove } from "./types";
 
 export type Urgency = "scaduto" | "oggi" | "settimana" | "quando-puoi";
@@ -93,7 +95,7 @@ export function buildAgenda(
         id: `pratica-${v.id}`,
         kind: "pratica",
         title: `Completa la presa in carico di ${v.id}`,
-        detail: `${name(v)} · ${!v.conferente ? "conferente e documenti da registrare" : !v.visura ? "visura PRA da fare" : "certificato da generare"}`,
+        detail: `${name(v)} · ${!v.conferente ? "chi consegna e documenti da registrare" : !v.visura ? "visura PRA da fare" : !identOk(v) ? "manca il telaio verificato" : "CRD da generare"}`,
         action: "Apri pratica",
         href: `/veicoli/${v.id}#pratica`,
         due: addDays(v.intakeAt, TERMS.registraPratica),
@@ -107,7 +109,7 @@ export function buildAgenda(
         detail: `${name(v)} · pratica ${v.dossier.number}`,
         action: "Apri pratica",
         href: `/veicoli/${v.id}#pratica`,
-        due: addDays(v.intakeAt, TERMS.radiazione),
+        due: addDays(v.presaInCarico?.at ?? v.intakeAt, TERMS.radiazione),
         roles: ["accettazione", "responsabile"],
       });
     if (!v.bonifica)
@@ -131,7 +133,7 @@ export function buildAgenda(
         href: `/campo/${v.id}`,
         roles: ["smontatore", "responsabile"],
       });
-    if (v.work === "in smontaggio" && v.id === activeVehicleId)
+    if (v.work === "in smontaggio")
       items.push({
         id: `riprendi-${v.id}`,
         kind: "veicolo",
@@ -139,7 +141,7 @@ export function buildAgenda(
         detail: `${name(v)} · ${parts.filter((p) => p.vehicleId === v.id).length} pezzi catalogati finora`,
         action: "Riprendi",
         href: `/campo/${v.id}`,
-        due: new Date().toISOString(),
+        due: v.id === activeVehicleId ? new Date().toISOString() : undefined,
         roles: ["smontatore"],
       });
   }
@@ -157,7 +159,7 @@ export function buildAgenda(
       due: addDays(oldest(drafts), TERMS.bozza),
       roles: ["responsabile"],
     });
-  const noLoc = parts.filter((p) => p.status === "disponibile" && !p.location);
+  const noLoc = parts.filter((p) => (p.status === "disponibile" || p.status === "bozza") && !p.location);
   if (noLoc.length)
     items.push({
       id: "posizioni",
@@ -177,7 +179,7 @@ export function buildAgenda(
       title: `Stampa ${noLabel.length} ${noLabel.length === 1 ? "etichetta" : "etichette"}`,
       detail: noLabel.slice(0, 3).map((p) => p.id).join(", ") + (noLabel.length > 3 ? "…" : ""),
       action: "Stampa",
-      href: `/ricambi/${noLabel[0].id}`,
+      href: "/ricambi?filtro=senza-etichetta",
       roles: ["magazziniere", "smontatore"],
     });
   const lost = parts.filter((p) => p.missingSince && p.status !== "venduto" && p.status !== "scartato");
@@ -188,11 +190,11 @@ export function buildAgenda(
       title: `Cerca ${lost.length} ${lost.length === 1 ? "ricambio non trovato" : "ricambi non trovati"} all'inventario`,
       detail: lost.slice(0, 3).map((p) => p.id).join(", ") + (lost.length > 3 ? "…" : "") + " · registrati ma non al loro posto",
       action: "Cerca",
-      href: `/ricambi/${lost[0].id}`,
+      href: "/ricambi?filtro=mancanti",
       due: addDays(lost.map((p) => p.missingSince!).sort()[0], 3),
       roles: ["magazziniere", "responsabile"],
     });
-  const offline = parts.filter((p) => p.status === "disponibile" && p.listing !== "pubblicato");
+  const offline = parts.filter((p) => p.status === "disponibile" && p.listing === "non pubblicato");
   if (offline.length)
     items.push({
       id: "online",
@@ -201,7 +203,7 @@ export function buildAgenda(
       detail: "Sono in magazzino ma non si vedono sul negozio",
       action: "Pubblica",
       href: "/pubblicazione",
-      roles: ["responsabile", "vendite"],
+      roles: ["responsabile"],
     });
 
   // Scorte sotto la soglia minima
@@ -223,7 +225,10 @@ export function buildAgenda(
       items.push({
         id: `paga-${o.id}`,
         kind: "ordine",
-        title: `Incassa l'ordine ${o.id}`,
+        title:
+          new Date(addDays(o.createdAt, TERMS.pagamento)) < new Date()
+            ? `Riserva scaduta su ${o.id}: incassa o annulla`
+            : `Incassa l'ordine ${o.id}`,
         detail: `${o.customer} · ${o.partIds.length} ${o.partIds.length === 1 ? "pezzo riservato" : "pezzi riservati"} · ${o.channel}`,
         action: "Apri",
         href: "/vendite",
@@ -234,26 +239,28 @@ export function buildAgenda(
       items.push({
         id: `spedisci-${o.id}`,
         kind: "ordine",
-        title: o.channel === "banco" ? `Consegna l'ordine ${o.id}` : `Prepara e spedisci ${o.id}`,
-        detail: `${o.customer} · ${o.partIds.join(", ")}`,
-        action: o.channel === "banco" ? "Consegna" : "Spedisci",
+        title: o.channel === "banco" ? `Consegna l'ordine ${o.id}` : o.delivery === "ritiro" ? `Prepara ${o.id} per il ritiro in sede` : `Prepara e spedisci ${o.id}`,
+        detail: `${o.customer} · ${o.partIds.map((pid) => { const l = parts.find((p) => p.id === pid)?.location; return l ? `${pid} in ${locToString(l)}` : `${pid} prelevato`; }).join(", ")}`,
+        action: o.channel === "banco" || o.delivery === "ritiro" ? "Consegna" : "Spedisci",
         href: "/vendite",
         due: addDays(o.createdAt, TERMS.spedizione),
-        roles: ["vendite", "magazziniere", "responsabile"],
+        roles: ["vendite", "responsabile"],
       });
   }
 
-  for (const d of docs.filter((x) => x.type === "preventivo" && x.status === "aperto"))
+  for (const d of docs.filter((x) => x.type === "preventivo" && x.status === "aperto")) {
+    const gone = d.lines.filter((l) => l.partId && parts.find((p) => p.id === l.partId)?.status !== "disponibile").length;
     items.push({
       id: `preventivo-${d.id}`,
       kind: "ordine",
-      title: `Richiama ${d.customer.name} per il preventivo`,
-      detail: `${d.id} · ${d.lines.length} ${d.lines.length === 1 ? "pezzo" : "pezzi"} · ${d.total} € · i pezzi non sono riservati`,
+      title: gone ? `Preventivo ${d.id}: ${gone} ${gone === 1 ? "pezzo non più disponibile" : "pezzi non più disponibili"}` : `Richiama ${d.customer.name} per il preventivo`,
+      detail: gone ? `${d.customer.name} · aggiorna o annulla il preventivo` : `${d.id} · ${d.lines.length} ${d.lines.length === 1 ? "pezzo" : "pezzi"} · ${d.total} € · i pezzi non sono riservati`,
       action: "Apri",
       href: "/vendite/documenti",
       due: addDays(d.at, TERMS.preventivo),
       roles: ["vendite", "responsabile"],
     });
+  }
 
   // Ambiente: registro, formulari e limiti dell'autorizzazione
   const pending = wasteMoves.filter((m) => m.rentri === "da trasmettere");
@@ -292,7 +299,8 @@ export function buildAgenda(
         roles: ["accettazione", "responsabile"],
       });
   }
-  for (const st of stockByEer(wasteMoves).filter((x) => x.pct >= 0.8 && x.code !== "16 01 04*"))
+  const pendingFir = new Set(firs.filter((f) => f.status === "da firmare").map((f) => f.eer));
+  for (const st of stockByEer(wasteMoves).filter((x) => x.pct >= 0.8 && x.code !== "16 01 04*" && !pendingFir.has(x.code)))
     items.push({
       id: `limite-${st.code}`,
       kind: "ambiente",

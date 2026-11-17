@@ -39,3 +39,8 @@ export function Barcode({ value, height = 40, className }: { value: string; heig
   }, [value, height]);
   return <svg ref={ref} className={className} preserveAspectRatio="none" aria-label={`Codice a barre ${value}`} />;
 }
+
+export function absUrl(path: string) {
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  return `${origin}${path}`;
+}

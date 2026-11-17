@@ -14,7 +14,8 @@ export default function Pubblicazione() {
     .filter((p) => (p.status === "bozza" || p.status === "disponibile") && p.listing !== "pubblicato")
     .map((p) => ({ p, missing: publishChecks(p, vById.get(p.vehicleId)).filter((c) => c.blocking && !c.ok) }))
     .sort((a, b) => a.missing.length - b.missing.length);
-  const ready = queue.filter((x) => x.missing.length === 0);
+  // In blocco si pubblicano solo i pezzi mai ritirati: quelli tolti dal negozio a mano tornano online solo uno per uno
+  const ready = queue.filter((x) => x.missing.length === 0 && x.p.status === "disponibile" && x.p.listing === "non pubblicato");
 
   return (
     <div className="mx-auto max-w-6xl">

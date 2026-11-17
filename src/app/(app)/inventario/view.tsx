@@ -15,7 +15,7 @@ export default function Inventario() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
-  const missing = parts.filter((p) => p.missingSince).length;
+  const missing = parts.filter((p) => p.missingSince && p.status !== "venduto" && p.status !== "scartato").length;
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -28,7 +28,7 @@ export default function Inventario() {
         <div className="mb-5">
           <Notice tone="warn">
             {missing} {missing === 1 ? "ricambio registrato non è stato trovato" : "ricambi registrati non sono stati trovati"} al suo posto durante le conte.{" "}
-            <Link href="/ricambi" className="font-semibold underline">Cercali nel magazzino</Link>
+            <Link href="/ricambi?filtro=mancanti" className="font-semibold underline">Vedi quali sono</Link>
           </Notice>
         </div>
       )}
@@ -75,6 +75,7 @@ function NewWarehouse({ existing, onSave, onCancel }: { existing: Warehouse[]; o
   const [corsie, setCorsie] = useState("10");
   const [scaffali, setScaffali] = useState("20");
   const [ripiani, setRipiani] = useState("6");
+  const [withDims, setWithDims] = useState(false);
   const num = (x: string, min: number, max: number) => Math.min(max, Math.max(min, Number(x) || min));
   const code = id.trim().toUpperCase();
   const taken = existing.some((w) => w.id.toUpperCase() === code);
@@ -84,11 +85,13 @@ function NewWarehouse({ existing, onSave, onCancel }: { existing: Warehouse[]; o
     name: name.trim() || `Magazzino ${code}`,
     desc: "Magazzino",
     categories: [],
-    corsie: num(corsie, 1, 99),
-    scaffali: num(scaffali, 1, 999),
-    ripiani: LETTERS.slice(0, num(ripiani, 1, 10)),
+    // Senza dimensioni la mappa si compone dalle ubicazioni scritte sui ricambi
+    corsie: withDims ? num(corsie, 1, 99) : 0,
+    scaffali: withDims ? num(scaffali, 1, 999) : 0,
+    primoScaffale: 1,
+    ripiani: withDims ? LETTERS.slice(0, num(ripiani, 1, 10)) : "",
     contenitori: 0,
-    perSlot: 50,
+    perSlot: withDims ? 50 : 0,
   };
 
   return (
@@ -100,7 +103,7 @@ function NewWarehouse({ existing, onSave, onCancel }: { existing: Warehouse[]; o
         <Field label="Nome (facoltativo)">
           <input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder={`Magazzino ${code || "…"}`} />
         </Field>
-        <details className="sm:col-span-2">
+        <details className="sm:col-span-2" onToggle={(e) => setWithDims(e.currentTarget.open)}>
           <summary className="flex min-h-10 cursor-pointer list-none items-center gap-1.5 text-[15px] font-semibold text-band">Dimensioni per la mappa (facoltative)</summary>
           <div className="mt-2 grid grid-cols-3 gap-3">
             {(
@@ -115,7 +118,7 @@ function NewWarehouse({ existing, onSave, onCancel }: { existing: Warehouse[]; o
               </Field>
             ))}
           </div>
-          <p className="mt-1 text-sm text-ink-3">Servono solo a disegnare la mappa delle ubicazioni: i ricambi si inseriscono comunque con l&apos;ubicazione che scrivete.</p>
+          <p className="mt-1 text-sm text-ink-3">Disegnano in anticipo la mappa, con scaffali numerati da 1. Se non le indicate, la mappa si compone da sola con le ubicazioni che scrivete inserendo i ricambi.</p>
         </details>
         <div className="flex flex-wrap gap-2 sm:col-span-2">
           <Button disabled={!valid} onClick={() => onSave(w)}>Crea e apri</Button>

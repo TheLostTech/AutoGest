@@ -7,14 +7,14 @@ import { ButtonLink, PageTitle, Plate, Panel } from "@/components/ui";
 import { dateIt } from "@/lib/logic";
 
 export default function Veicoli() {
-  const { vehicles, parts } = useStore();
+  const { vehicles, parts, role } = useStore();
   const [q, setQ] = useState("");
   const query = q.trim().toUpperCase();
   const list = vehicles.filter((v) => !query || [v.id, v.plate, v.vin, v.make, v.model, v.dossier.number].some((x) => x.toUpperCase().includes(query)));
 
   return (
     <div className="mx-auto max-w-6xl">
-      <PageTitle title="Veicoli" sub="Ogni veicolo è la scheda madre dei suoi ricambi." actions={<ButtonLink href="/veicoli/nuovo">Nuovo ingresso</ButtonLink>} />
+      <PageTitle title="Veicoli" sub="Ogni veicolo è la scheda madre dei suoi ricambi." actions={(role === "accettazione" || role === "responsabile") && <ButtonLink href="/veicoli/nuovo">Nuovo ingresso</ButtonLink>} />
       <input className="field mb-4 max-w-md" placeholder="Cerca per targa, telaio, ID, pratica, modello…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Cerca veicoli" />
       <Panel>
         <div className="hidden grid-cols-[130px_120px_1fr_150px_120px_90px] gap-4 border-b border-hair-soft px-4 py-2.5 text-[13px] font-semibold uppercase tracking-wide text-ink-3 code xl:grid">

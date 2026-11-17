@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
 import { ArrowLeft, Camera, Check, Loader2, Printer, X } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { CONDITIONS, PART_TYPES, SIDES, typeById } from "@/lib/catalog";
+import { CONDITIONS, PART_TYPES, sidesFor, typeById } from "@/lib/catalog";
 import { compressImage, identifyFromPhoto } from "@/lib/services";
 import { locLong, locToString, normLoc } from "@/lib/warehouse";
 import { Button, Empty, Field, Notice } from "@/components/ui";
@@ -210,7 +210,7 @@ export default function AggiungiRicambio() {
               <Field label="Lato" error={tried && !side ? "Indica il lato" : undefined}>
                 <select className="field" value={side} onChange={(e) => setSide(e.target.value)}>
                   <option value="">Scegli…</option>
-                  {SIDES.map((x) => <option key={x}>{x}</option>)}
+                  {sidesFor(t!.id).map((x) => <option key={x}>{x}</option>)}
                 </select>
               </Field>
             ) : (
@@ -252,7 +252,7 @@ export default function AggiungiRicambio() {
             {(
               [
                 ["corsia", "Corsia", "3 o T03"],
-                ["scaffale", "Scaffale", "104"],
+                ["scaffale", "Scaffale", "4 o 104"],
                 ["ripiano", "Ripiano", "B"],
                 ["contenitore", "Contenitore", "facolt."],
               ] as const

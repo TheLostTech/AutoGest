@@ -153,7 +153,7 @@ export default function SchedaVeicolo() {
             )}
           </Panel>
           <Panel title="Analisi recupero vs scorte">
-            <RecoveryList vehicle={v} addHref={(t) => `/campo/${v.id}/nuovo?tipo=${t}`} />
+            <RecoveryList vehicle={v} addHref={v.work === "smontato" ? undefined : (t) => `/campo/${v.id}/nuovo?tipo=${t}`} />
           </Panel>
         </div>
       </div>

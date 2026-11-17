@@ -61,8 +61,13 @@ export function CatalogPanel({ part, vehicle }: { part: Part; vehicle?: Vehicle 
           </p>
         )}
 
-        {state === "idle" && (
-          <Button variant="secondary" onClick={search} disabled={!vehicle}>
+        {state === "idle" && !vehicle && (
+          <p className="text-sm text-ink-2">
+            La ricerca nel catalogo parte dal modello del veicolo d&apos;origine, che per questo pezzo non è nel gestionale. Se il codice OE è leggibile sul pezzo, inseriscilo nella scheda.
+          </p>
+        )}
+        {state === "idle" && vehicle && (
+          <Button variant="secondary" onClick={search}>
             <BookOpen className="size-5" aria-hidden /> {part.compat?.verified ? "Riapri scheda catalogo" : "Cerca nel catalogo ricambi"}
           </Button>
         )}

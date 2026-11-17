@@ -154,6 +154,8 @@ export type OrderStatus =
 export interface Order {
   id: string; // O-000000
   channel: Channel;
+  delivery?: "corriere" | "ritiro"; // per gli ordini online
+  prices?: Record<string, number>; // prezzo applicato per pezzo (listino), ripreso dai documenti
   partIds: string[];
   amount: number;
   status: OrderStatus;
@@ -206,7 +208,7 @@ export interface SalesDoc {
   orderId?: string;
   refDocId?: string; // es. nota di credito → fattura
   listino?: string;
-  status: "emesso" | "aperto" | "convertito" | "inviata allo SdI";
+  status: "emesso" | "aperto" | "convertito" | "annullato" | "inviata allo SdI";
 }
 
 // ——— Inventario: conta di un ripiano ———

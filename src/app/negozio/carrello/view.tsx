@@ -29,7 +29,14 @@ export default function Carrello() {
   function placeOrder(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    const r = s.createOrder("negozio", cart.ids, form.nome || "Cliente online", { user: form.nome || "Cliente online", role: "cliente", device: "Negozio online" });
+    const r = s.createOrder(
+      "negozio",
+      cart.ids,
+      form.nome || "Cliente online",
+      { user: form.nome || "Cliente online", role: "cliente", device: "Negozio online" },
+      undefined,
+      form.consegna === "ritiro" || pickupOnly ? "ritiro" : "corriere",
+    );
     if (!r.ok) {
       setError(`Mentre completavi l'ordine, ${r.conflicts?.join(", ")} è stato venduto o riservato su un altro canale. Toglilo dal carrello per continuare.`);
       return;
@@ -42,7 +49,7 @@ export default function Carrello() {
     if (!orderId) return;
     setPaying(true);
     await new Promise((r) => setTimeout(r, 900));
-    s.payOrder(orderId, success);
+    s.payOrder(orderId, success, { user: form.nome || "Cliente online", role: "cliente", device: "Provider di pagamento (simulato)" });
     setPaying(false);
     setStep("esito");
     if (success) cart.clear();
@@ -73,7 +80,7 @@ export default function Carrello() {
       <div className="mx-auto max-w-md rounded-md border border-hair bg-label p-6">
         <Notice tone={ok ? "ok" : "danger"}>{ok ? "Pagamento confermato. Grazie!" : "Pagamento non riuscito. I pezzi sono tornati disponibili."}</Notice>
         <p className="code mt-4 text-[34px] font-bold">{order.id}</p>
-        <p className="text-ink-2">{ok ? "Riceverai il tracking quando il pacco parte. Ogni pezzo è identificato dal suo codice univoco." : "Puoi riprovare dal carrello."}</p>
+        <p className="text-ink-2">{ok ? (order.delivery === "ritiro" ? "Ti avvisiamo quando i pezzi sono pronti per il ritiro in sede." : "Riceverai il tracking quando il pacco parte.") + " Ogni pezzo è identificato dal suo codice univoco." : "Puoi riprovare dal carrello."}</p>
         <div className="mt-5 flex gap-2">
           {ok ? <Link href="/negozio" className="font-semibold text-band">Torna al catalogo</Link> : <Button onClick={() => { setStep("carrello"); setOrderId(undefined); }}>Torna al carrello</Button>}
           <Link href="/vendite" className="ml-auto text-sm font-semibold text-ink-3 underline">Vedi l&apos;ordine nel gestionale</Link>

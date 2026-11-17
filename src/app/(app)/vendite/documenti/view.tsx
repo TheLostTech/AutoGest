@@ -18,14 +18,14 @@ const FILTERS: { value: "tutti" | DocType; label: string }[] = [
 
 
 export default function Documenti() {
-  const { docs, convertQuote } = useStore();
+  const { docs, convertQuote, cancelQuote } = useStore();
   const [f, setF] = useState<(typeof FILTERS)[number]["value"]>("tutti");
   const [msg, setMsg] = useState<{ tone: "ok" | "danger"; text: React.ReactNode } | null>(null);
   const list = docs.filter((d) => f === "tutti" || d.type === f);
 
   return (
     <div className="mx-auto max-w-5xl">
-      <PageTitle title="Documenti" sub="Preventivi, scontrini, fatture e note di credito nascono dalle vendite: niente da ricopiare." />
+      <PageTitle title="Documenti" sub="Preventivi, scontrini, fatture e note di credito: si emettono dalle vendite, con i prezzi dell'ordine. Niente da ricopiare." />
       {msg && <div className="mb-5"><Notice tone={msg.tone}>{msg.text}</Notice></div>}
 
       <div className="mb-4 flex gap-1.5 overflow-x-auto pb-1" role="tablist" aria-label="Tipo di documento">
@@ -71,11 +71,16 @@ export default function Documenti() {
                       setMsg(
                         r.ok
                           ? { tone: "ok", text: <>Preventivo {d.id} venduto: emesso <Link href={`/documento/${r.value}`} target="_blank" className="code font-semibold underline">{r.value}</Link>.</> }
-                          : { tone: "danger", text: `Non convertibile: ${r.conflicts?.join(", ") ?? r.error} non più disponibile.` },
+                          : { tone: "danger", text: r.conflicts?.length ? `Non vendibile: ${r.conflicts.join(", ")} non più disponibile o senza prezzo. Aggiorna o annulla il preventivo.` : r.error },
                       );
                     }}
                   >
                     Vendi
+                  </Button>
+                ) : null}
+                {d.type === "preventivo" && d.status === "aperto" ? (
+                  <Button size="sm" variant="quiet" onClick={() => cancelQuote(d.id)}>
+                    Annulla
                   </Button>
                 ) : (
                   <span className="code text-[13px] font-semibold uppercase tracking-wide text-ink-3">{d.status}</span>

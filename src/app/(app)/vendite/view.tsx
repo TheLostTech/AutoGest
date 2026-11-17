@@ -5,6 +5,7 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { FileText, Info, Trash2, Zap } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { locToString } from "@/lib/warehouse";
 import { Button, Field, Notice, OrderChip, PageTitle, Panel, PartImage } from "@/components/ui";
 import { dateIt, euro } from "@/lib/logic";
 import { PartDetailSheet } from "@/components/PartDetailSheet";
@@ -28,6 +29,7 @@ function Vendite() {
   const [msg, setMsg] = useState<{ tone: "ok" | "danger" | "warn"; text: React.ReactNode } | null>(null);
   const [raceId, setRaceId] = useState("");
   const [chan, setChan] = useState<"tutti" | Order["channel"]>("tutti");
+  const [which, setWhich] = useState<"da-gestire" | "tutti">("da-gestire");
   const [detail, setDetail] = useState<string | null>(null);
   const [docType, setDocType] = useState<"documento commerciale" | "fattura">("documento commerciale");
   const [taxId, setTaxId] = useState("");
@@ -88,7 +90,11 @@ function Vendite() {
     setRaceId("");
   }
 
-  const orders = s.orders.filter((o) => chan === "tutti" || o.channel === chan);
+  // "Da gestire": ordini con un'azione aperta (incasso, consegna/spedizione, documento mancante)
+  const hasDoc = (id: string) => s.docs.some((d) => d.orderId === id && d.type !== "preventivo" && d.type !== "nota di credito");
+  const paidStates: Order["status"][] = ["pagato", "spedito", "consegnato"];
+  const open = (o: Order) => o.status === "in attesa di pagamento" || o.status === "pagato" || (paidStates.includes(o.status) && !hasDoc(o.id));
+  const orders = s.orders.filter((o) => (chan === "tutti" || o.channel === chan) && (which === "tutti" || open(o)));
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -208,23 +214,38 @@ function Vendite() {
         title="Ordini"
         className="mt-6"
         action={
-          <select className="h-10 rounded border border-hair bg-label px-2 text-sm font-semibold" value={chan} onChange={(e) => setChan(e.target.value as typeof chan)} aria-label="Canale">
-            <option value="tutti">Tutti i canali</option>
-            <option value="banco">Banco</option>
-            <option value="negozio">Negozio online</option>
-            <option value="marketplace">Marketplace</option>
-          </select>
+          <span className="flex gap-2">
+            <select className="h-10 rounded border border-hair bg-label px-2 text-sm font-semibold" value={which} onChange={(e) => setWhich(e.target.value as typeof which)} aria-label="Quali ordini">
+              <option value="da-gestire">Da gestire</option>
+              <option value="tutti">Tutti</option>
+            </select>
+            <select className="h-10 rounded border border-hair bg-label px-2 text-sm font-semibold" value={chan} onChange={(e) => setChan(e.target.value as typeof chan)} aria-label="Canale">
+              <option value="tutti">Tutti i canali</option>
+              <option value="banco">Banco</option>
+              <option value="negozio">Negozio online</option>
+              <option value="marketplace">Marketplace</option>
+            </select>
+          </span>
         }
       >
         <ul className="divide-y divide-hair-soft">
-          {orders.slice(0, 40).map((o) => (
+          {orders.length === 0 && <li className="px-4 py-6 text-ink-2">{which === "da-gestire" ? "Nessun ordine da gestire." : "Nessun ordine."}</li>}
+          {orders.slice(0, which === "tutti" ? 60 : 200).map((o) => (
             <li key={o.id} className="grid gap-3 px-4 py-3 md:grid-cols-[120px_110px_1fr_100px_auto] md:items-center">
               <span className="code text-[22px] font-bold leading-none">{o.id}</span>
               <span className="text-sm font-semibold uppercase tracking-wide text-ink-2 code">{o.channel}</span>
               <span className="min-w-0 text-[15px]">
-                {o.partIds.map((pid) => (
-                  <Link key={pid} href={`/ricambi/${pid}`} className="code mr-2 font-semibold text-band underline">{pid}</Link>
-                ))}
+                {o.partIds.map((pid) => {
+                  // Ordine aperto: dove andare a prendere il pezzo (o se è già stato prelevato)
+                  const loc = s.parts.find((x) => x.id === pid)?.location;
+                  const open = o.status === "in attesa di pagamento" || o.status === "pagato";
+                  return (
+                    <span key={pid} className="mr-3 inline-block">
+                      <Link href={`/ricambi/${pid}`} className="code font-semibold text-band underline">{pid}</Link>
+                      {open && <span className="code ml-1 text-sm text-ink-2">{loc ? `in ${locToString(loc)}` : "prelevato"}</span>}
+                    </span>
+                  );
+                })}
                 <span className="block text-sm text-ink-3">
                   {o.customer} · {dateIt(o.createdAt, true)}
                   {s.docs.filter((d) => d.orderId === o.id && d.type !== "preventivo").map((d) => (
@@ -242,7 +263,26 @@ function Vendite() {
                     <Button size="sm" variant="quiet" onClick={() => s.cancelOrder(o.id, "Annullato dall'operatore")}>Annulla</Button>
                   </>
                 )}
-                {o.status === "pagato" && <Button size="sm" onClick={() => s.shipOrder(o.id)}>{o.channel === "banco" ? "Consegnato" : "Spedito"}</Button>}
+                {o.status === "pagato" && <Button size="sm" onClick={() => s.shipOrder(o.id)}>{o.channel === "banco" || o.delivery === "ritiro" ? "Consegnato" : "Spedito"}</Button>}
+                {paidStates.includes(o.status) && !hasDoc(o.id) && (
+                  <>
+                    <Button size="sm" variant="secondary" onClick={() => setMsg({ tone: "ok", text: <>Scontrino {docLink(s.issueDoc(o.id, "documento commerciale", { name: o.customer }))} emesso per {o.id}.</> })}>
+                      Emetti scontrino
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        const tax = prompt(`Partita IVA o codice fiscale di ${o.customer}:`)?.replace(/\s/g, "").toUpperCase();
+                        if (!tax) return;
+                        if (!/^(IT)?\d{11}$|^[A-Z0-9]{16}$/.test(tax)) return setMsg({ tone: "danger", text: "Partita IVA (11 cifre) o codice fiscale (16 caratteri) non valido." });
+                        setMsg({ tone: "ok", text: <>Fattura {docLink(s.issueDoc(o.id, "fattura", { name: o.customer, taxId: tax }))} per {o.id} inviata allo SdI (simulato).</> });
+                      }}
+                    >
+                      Emetti fattura
+                    </Button>
+                  </>
+                )}
                 {(o.status === "spedito" || o.status === "consegnato") && <Button size="sm" variant="secondary" onClick={() => s.returnOrder(o.id)}>Registra reso</Button>}
               </span>
             </li>

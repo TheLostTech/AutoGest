@@ -61,7 +61,7 @@ export default function Prodotto() {
             {p.defects && (<><dt className="text-ink-3">Note</dt><dd>{p.defects}</dd></>)}
             {p.side && (<><dt className="text-ink-3">Lato</dt><dd>{p.side}</dd></>)}
             <dt className="text-ink-3">Proviene da</dt>
-            <dd>{v ? `${v.make} ${v.model} ${v.version}, ${v.year}` : "—"}</dd>
+            <dd>{v ? `${v.make} ${v.model} ${v.version}, ${v.year}` : p.pastDossier?.model ?? "Dal nostro magazzino"}</dd>
             <dt className="text-ink-3">Km del veicolo</dt>
             <dd className="code">{p.km?.toLocaleString("it-IT") ?? "—"}</dd>
             <dt className="text-ink-3">Compatibilità</dt>

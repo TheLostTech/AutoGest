@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useRef, useState } from "react";
 import { Camera, Check, ChevronLeft, ChevronRight, Loader2, Printer, Sparkles, X } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { CONDITIONS, PART_TYPES, SIDES, typeById } from "@/lib/catalog";
+import { CONDITIONS, PART_TYPES, sidesFor, typeById } from "@/lib/catalog";
 import { compressImage, suggestComponent } from "@/lib/services";
 import { recoveryList } from "@/lib/logic";
 import { catalogFor, platformLabel } from "@/lib/partsdb";
@@ -214,7 +214,7 @@ function NuovoPezzo() {
           <fieldset>
             <legend className="mb-1.5 text-sm font-semibold">Lato / posizione</legend>
             <div className="grid grid-cols-2 gap-2">
-              {SIDES.slice(0, 4).map((s) => (
+              {sidesFor(t.id).map((s) => (
                 <button key={s} onClick={() => { setSide(s); setOemOk(false); }} className={`min-h-12 rounded-md border font-semibold ${side === s ? "border-band bg-band text-white" : "border-hair bg-label"}`}>{s}</button>
               ))}
             </div>

@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
-import { BadgeCheck, CircleCheck, CircleX, MapPin, Printer, ShoppingCart, Upload } from "lucide-react";
+import { ArrowUpFromLine, BadgeCheck, CircleCheck, CircleX, MapPin, Printer, ShoppingCart, Upload } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { CONDITIONS, typeById } from "@/lib/catalog";
-import { dateIt, euro, publishChecks } from "@/lib/logic";
-import { firstFreeSlot, locLong, locToString, warehouseFor } from "@/lib/warehouse";
-import { LocationPicker } from "@/components/LocationPicker";
+import { dateIt, euro, openOrderFor, publishChecks } from "@/lib/logic";
+import { firstFreeSlot, locLong, locToString, normLoc, warehouseFor } from "@/lib/warehouse";
+import { LocationPicker, locComplete, startLocation } from "@/components/LocationPicker";
 import { CatalogPanel } from "@/components/CatalogPanel";
 import { catalogFor } from "@/lib/partsdb";
 import { listPrice, suggestUsedPrice } from "@/lib/pricing";
@@ -30,6 +30,8 @@ export default function SchedaRicambio() {
 
   if (!p) return <Empty title={`Ricambio ${id} non trovato`}>Controlla il codice sull&apos;etichetta o cerca nel magazzino.</Empty>;
   const t = typeById(p.typeId);
+  const suggestedWh = warehouseFor(t.category, t.shippable, s.warehouses);
+  const pickLoc = loc ?? firstFreeSlot(suggestedWh, s.parts) ?? startLocation(suggestedWh.id, s.warehouses, s.parts);
   const checks = publishChecks(p, v);
   const blocking = checks.filter((c) => c.blocking && !c.ok);
   const history = s.audit.filter((e) => e.entityId === p.id || e.detail?.includes(p.id)).reverse();
@@ -66,10 +68,28 @@ export default function SchedaRicambio() {
               <Printer className="size-5" aria-hidden />
               {p.labelPrints > 0 ? `Ristampa etichetta (${p.labelPrints})` : "Stampa etichetta"}
             </Button>
-            <Button variant="secondary" onClick={() => setEditLoc(true)}>
-              <MapPin className="size-5" aria-hidden />
-              {p.location ? "Sposta" : "Assegna posizione"}
-            </Button>
+            {p.status !== "venduto" && p.status !== "scartato" && (
+              <Button variant="secondary" onClick={() => setEditLoc(true)}>
+                <MapPin className="size-5" aria-hidden />
+                {p.location ? "Sposta" : "Assegna posizione"}
+              </Button>
+            )}
+            {p.location && (
+              // Scarico manuale: lo stesso della scansione scaffale → pezzo
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  const from = locToString(p.location);
+                  const order = openOrderFor(p.id, s.orders);
+                  s.pickPart(p.id, order ? `per ${order.id}` : "manuale");
+                  setLoc(undefined);
+                  flash("ok", `${p.id} prelevato da ${from}${order ? ` per l'ordine ${order.id}` : ""}`);
+                }}
+              >
+                <ArrowUpFromLine className="size-5" aria-hidden />
+                Preleva dallo scaffale
+              </Button>
+            )}
             {p.status === "disponibile" && (
               <Button variant="secondary" onClick={() => router.push(`/vendite?pezzo=${p.id}`)}>
                 <ShoppingCart className="size-5" aria-hidden />
@@ -87,9 +107,9 @@ export default function SchedaRicambio() {
           {editLoc && (
             <Panel title="Posizione di magazzino">
               <div className="space-y-4 p-4">
-                <LocationPicker value={loc ?? firstFreeSlot(warehouseFor(t.category, t.shippable, s.warehouses), s.parts)!} onChange={setLoc} typeId={p.typeId} />
+                <LocationPicker value={pickLoc} onChange={setLoc} typeId={p.typeId} />
                 <div className="flex gap-2">
-                  <Button onClick={() => { const l = loc ?? firstFreeSlot(warehouseFor(t.category, t.shippable, s.warehouses), s.parts)!; s.setLocation(p.id, l); setEditLoc(false); flash("ok", `Posizione ${locToString(l)} registrata`); }}>Conferma posizione</Button>
+                  <Button disabled={!locComplete(pickLoc)} onClick={() => { const l = normLoc(pickLoc.mag, pickLoc.corsia, pickLoc.scaffale, pickLoc.ripiano, pickLoc.contenitore); s.setLocation(p.id, l); setLoc(l); setEditLoc(false); flash("ok", `Posizione ${locToString(l)} registrata`); }}>Conferma posizione</Button>
                   <Button variant="quiet" onClick={() => setEditLoc(false)}>Annulla</Button>
                 </div>
               </div>

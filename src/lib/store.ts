@@ -3,8 +3,8 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { buildSeed, pad } from "./seed";
-import { locToString, WAREHOUSES, type Warehouse } from "./warehouse";
-import { FIR_NEXT, movesForBonifica, movesForIntake } from "./ambiente";
+import { locToString, originLabel, WAREHOUSES, type Warehouse } from "./warehouse";
+import { FIR_NEXT, movesForBonifica, movesForIntake, stockByEer } from "./ambiente";
 import { DEFAULT_LISTINI, type Listino } from "./pricing";
 import type {
   AuditEvent,
@@ -72,11 +72,19 @@ interface Actions {
   updatePart: (id: string, patch: Partial<Part>, action: string, detail?: string) => void;
   printLabel: (id: string) => void;
   setLocation: (id: string, loc: Location) => void;
+  pickPart: (id: string, detail?: string) => void;
   setPartStatus: (id: string, status: PartStatus, reason?: string) => void;
   publish: (id: string) => Result;
   unpublish: (id: string) => void;
-  createOrder: (channel: Channel, partIds: string[], customer: string, actor?: { user: string; role: AuditEvent["role"]; device: string }, prices?: Record<string, number>) => Result<string>;
-  payOrder: (orderId: string, success: boolean) => void;
+  createOrder: (
+    channel: Channel,
+    partIds: string[],
+    customer: string,
+    actor?: { user: string; role: AuditEvent["role"]; device: string },
+    prices?: Record<string, number>,
+    delivery?: "corriere" | "ritiro",
+  ) => Result<string>;
+  payOrder: (orderId: string, success: boolean, actor?: { user: string; role: AuditEvent["role"]; device: string }) => void;
   cancelOrder: (orderId: string, reason?: string) => void;
   shipOrder: (orderId: string) => void;
   returnOrder: (orderId: string) => void;
@@ -84,10 +92,11 @@ interface Actions {
   saveBonifica: (vehicleId: string, items: BonificaItem[], weightKg: number) => number;
   transmitRentri: () => number;
   createFir: (f: Pick<Fir, "eer" | "kg" | "destinatario" | "trasportatore">) => string;
-  advanceFir: (id: string) => void;
+  advanceFir: (id: string) => Result;
   createQuote: (partIds: string[], customer: SalesDoc["customer"], prices?: Record<string, number>, listino?: string) => string;
   issueDoc: (orderId: string, type: "documento commerciale" | "fattura", customer: SalesDoc["customer"], prices?: Record<string, number>, listino?: string) => string;
   convertQuote: (docId: string, type: "documento commerciale" | "fattura") => Result<string>;
+  cancelQuote: (docId: string) => void;
   saveListini: (l: Listino[]) => void;
   addWarehouse: (w: Warehouse) => void;
   closeCount: (c: Omit<InventoryCount, "id" | "at" | "by">) => string;
@@ -98,7 +107,7 @@ interface Actions {
 const now = () => new Date().toISOString();
 
 // Chiave dei dati salvati: cambia quando cambia la struttura dei dati demo
-export const STORE_SCHEMA = "gestionale-demolizione-demo-v9";
+export const STORE_SCHEMA = "gestionale-demolizione-demo-v10";
 
 function initial(): State {
   const s = buildSeed();
@@ -190,13 +199,23 @@ export const useStore = create<State & Actions>()(
           const n = get().counters.part + 1;
           const id = `R-${pad(n)}`;
           const part: Part = { ...p, id, createdAt: now(), createdBy: ROLE_USER[get().role].user, labelPrints: 0, listing: "non pubblicato" };
-          set((s) => ({ parts: [part, ...s.parts], counters: { ...s.counters, part: n } }));
-          push(event({ entity: "ricambio", entityId: id, action: "Ricambio catalogato", detail: `${p.description} da ${p.vehicleId}${p.aiSuggested ? ` · suggerimento IA ${p.aiSuggested.accepted ? "confermato" : "corretto"}` : ""}` }));
+          const v = get().vehicles.find((x) => x.id === p.vehicleId);
+          // Il primo pezzo catalogato da un veicolo accettato ne avvia lo smontaggio
+          const starts = v?.work === "accettato" && p.origin !== "inventario";
+          set((s) => ({
+            parts: [part, ...s.parts],
+            counters: { ...s.counters, part: n },
+            vehicles: starts ? s.vehicles.map((x) => (x.id === v!.id ? { ...x, work: "in smontaggio" } : x)) : s.vehicles,
+          }));
+          if (starts) push(event({ entity: "veicolo", entityId: v!.id, action: "Smontaggio avviato", detail: `primo pezzo ${id}` }));
+          push(event({ entity: "ricambio", entityId: id, action: "Ricambio catalogato", detail: `${p.description} da ${originLabel(p)}${p.aiSuggested ? ` · suggerimento IA ${p.aiSuggested.accepted ? "confermato" : "corretto"}` : ""}` }));
           return id;
         },
 
         updatePart: (id, patch, action, detail) => {
-          set((s) => ({ parts: s.parts.map((p) => (p.id === id ? { ...p, ...patch } : p)) }));
+          // Un pezzo pubblicato senza prezzo non può restare in vendita online
+          const unpriced = "price" in patch && !patch.price;
+          set((s) => ({ parts: s.parts.map((p) => (p.id === id ? { ...p, ...patch, ...(unpriced && p.listing === "pubblicato" ? { listing: "ritirato" as const } : {}) } : p)) }));
           push(event({ entity: "ricambio", entityId: id, action, detail }));
         },
 
@@ -210,8 +229,16 @@ export const useStore = create<State & Actions>()(
 
         setLocation: (id, loc) => {
           const p = get().parts.find((x) => x.id === id);
-          set((s) => ({ parts: s.parts.map((x) => (x.id === id ? { ...x, location: loc } : x)) }));
+          set((s) => ({ parts: s.parts.map((x) => (x.id === id ? { ...x, location: loc, missingSince: undefined } : x)) }));
           push(event({ entity: "ricambio", entityId: id, action: p?.location ? "Ricambio spostato" : "Posizione assegnata", detail: p?.location ? `${locToString(p.location)} → ${locToString(loc)}` : locToString(loc) }));
+        },
+
+        // Il pezzo esce fisicamente dallo scaffale (prelievo per una vendita, o scansione annullata)
+        pickPart: (id, detail) => {
+          const p = get().parts.find((x) => x.id === id);
+          if (!p?.location) return;
+          set((s) => ({ parts: s.parts.map((x) => (x.id === id ? { ...x, location: undefined, missingSince: undefined } : x)) }));
+          push(event({ entity: "ricambio", entityId: id, action: "Prelevato dallo scaffale", detail: `${locToString(p.location)}${detail ? ` · ${detail}` : ""}` }));
         },
 
         setPartStatus: (id, status, reason) => {
@@ -241,11 +268,11 @@ export const useStore = create<State & Actions>()(
 
         // Riserva atomica: controllo e cambio di stato nello stesso aggiornamento.
         // In produzione: transazione sul database con vincolo sullo stato del pezzo.
-        createOrder: (channel, partIds, customer, actor, prices) => {
+        createOrder: (channel, partIds, customer, actor, prices, delivery) => {
           const s = get();
           const conflicts = partIds.filter((pid) => {
             const p = s.parts.find((x) => x.id === pid);
-            return !p || p.status !== "disponibile" || (channel !== "banco" && p.listing !== "pubblicato");
+            return !p || p.status !== "disponibile" || !(prices?.[pid] ?? p.price) || (channel !== "banco" && p.listing !== "pubblicato");
           });
           if (conflicts.length) {
             push(event({ entity: "ordine", entityId: "—", action: "Riserva rifiutata", detail: `${conflicts.join(", ")} non disponibile (${channel})`, ...actor }));
@@ -257,7 +284,21 @@ export const useStore = create<State & Actions>()(
           const at = now();
           set((st) => ({
             parts: st.parts.map((x) => (partIds.includes(x.id) ? { ...x, status: "riservato" } : x)),
-            orders: [{ id, channel, partIds, amount, status: "in attesa di pagamento", customer, createdAt: at, history: [{ at, status: "in attesa di pagamento" }] }, ...st.orders],
+            orders: [
+              {
+                id,
+                channel,
+                delivery,
+                partIds,
+                amount,
+                prices: Object.fromEntries(partIds.map((pid) => [pid, prices?.[pid] ?? s.parts.find((x) => x.id === pid)?.price ?? 0])),
+                status: "in attesa di pagamento",
+                customer,
+                createdAt: at,
+                history: [{ at, status: "in attesa di pagamento" }],
+              },
+              ...st.orders,
+            ],
             counters: { ...st.counters, order: n },
           }));
           push(
@@ -267,29 +308,34 @@ export const useStore = create<State & Actions>()(
           return { ok: true, value: id };
         },
 
-        payOrder: (orderId, success) => {
+        payOrder: (orderId, success, actor) => {
           const o = get().orders.find((x) => x.id === orderId);
           if (!o || o.status !== "in attesa di pagamento") return;
           const at = now();
           const status = success ? "pagato" : "pagamento fallito";
           set((s) => ({
             orders: s.orders.map((x) => (x.id === orderId ? { ...x, status, paymentRef: success ? `PAY-DEMO-${orderId.slice(2)}` : undefined, history: [...x.history, { at, status, note: success ? "Conferma dal provider (simulata)" : "Rifiuto dal provider (simulato)" }] } : x)),
-            parts: s.parts.map((x) => (o.partIds.includes(x.id) ? { ...x, status: success ? "venduto" : "disponibile" } : x)),
+            // Venduto: esce dal negozio; pagamento fallito: torna disponibile
+            parts: s.parts.map((x) =>
+              o.partIds.includes(x.id) ? { ...x, status: success ? "venduto" : "disponibile", listing: success && x.listing === "pubblicato" ? "ritirato" : x.listing } : x,
+            ),
           }));
           push(
-            event({ entity: "ordine", entityId: orderId, action: success ? "Pagamento confermato" : "Pagamento fallito", detail: success ? "Webhook provider (simulato)" : "Disponibilità ripristinata" }),
-            ...o.partIds.map((pid) => event({ entity: "ricambio", entityId: pid, action: success ? "Stato: riservato → venduto" : "Stato: riservato → disponibile", detail: orderId })),
+            event({ entity: "ordine", entityId: orderId, action: success ? "Pagamento confermato" : "Pagamento fallito", detail: success ? "Webhook provider (simulato)" : "Disponibilità ripristinata", ...actor }),
+            ...o.partIds.map((pid) => event({ entity: "ricambio", entityId: pid, action: success ? "Stato: riservato → venduto" : "Stato: riservato → disponibile", detail: orderId, ...actor })),
           );
         },
 
         cancelOrder: (orderId, reason) => {
           const o = get().orders.find((x) => x.id === orderId);
-          if (!o || o.status === "annullato" || o.status === "reso") return;
-          const wasPaid = o.status !== "in attesa di pagamento" && o.status !== "pagamento fallito";
+          // Si annulla solo un ordine non ancora spedito o consegnato (dopo si gestisce come reso)
+          if (!o || !["in attesa di pagamento", "pagamento fallito", "pagato"].includes(o.status)) return;
+          const wasPaid = o.status === "pagato";
+          const touchesParts = o.status !== "pagamento fallito"; // con pagamento fallito i pezzi sono già tornati disponibili
           const at = now();
           set((s) => ({
             orders: s.orders.map((x) => (x.id === orderId ? { ...x, status: "annullato", history: [...x.history, { at, status: "annullato", note: reason }] } : x)),
-            parts: s.parts.map((x) => (o.partIds.includes(x.id) && (x.status === "riservato" || x.status === "venduto") ? { ...x, status: "disponibile" } : x)),
+            parts: s.parts.map((x) => (touchesParts && o.partIds.includes(x.id) && (x.status === "riservato" || x.status === "venduto") ? { ...x, status: "disponibile" } : x)),
           }));
           push(event({ entity: "ordine", entityId: orderId, action: "Ordine annullato", detail: `${reason ?? ""}${wasPaid ? " · rimborso da gestire" : ""}` }));
         },
@@ -297,14 +343,23 @@ export const useStore = create<State & Actions>()(
         shipOrder: (orderId) => {
           const at = now();
           const o = get().orders.find((x) => x.id === orderId);
-          const status = o?.channel === "banco" ? "consegnato" : "spedito";
-          set((s) => ({ orders: s.orders.map((x) => (x.id === orderId ? { ...x, status, history: [...x.history, { at, status }] } : x)) }));
-          push(event({ entity: "ordine", entityId: orderId, action: status === "spedito" ? "Ordine spedito" : "Consegnato al banco" }));
+          if (!o || o.status !== "pagato") return;
+          const status = o.channel === "banco" || o.delivery === "ritiro" ? "consegnato" : "spedito";
+          // Consegnato o spedito: i pezzi non sono più sullo scaffale, anche se nessuno ha scansionato il prelievo
+          const stillShelved = get().parts.filter((x) => o.partIds.includes(x.id) && x.location);
+          set((s) => ({
+            orders: s.orders.map((x) => (x.id === orderId ? { ...x, status, history: [...x.history, { at, status }] } : x)),
+            parts: s.parts.map((x) => (o.partIds.includes(x.id) && x.location ? { ...x, location: undefined } : x)),
+          }));
+          push(
+            event({ entity: "ordine", entityId: orderId, action: status === "spedito" ? "Ordine spedito" : o.channel === "banco" ? "Consegnato al banco" : "Ritirato in sede" }),
+            ...stillShelved.map((x) => event({ entity: "ricambio", entityId: x.id, action: "Uscito dal magazzino", detail: `${locToString(x.location)} · ${orderId}` })),
+          );
         },
 
         returnOrder: (orderId) => {
           const o = get().orders.find((x) => x.id === orderId);
-          if (!o) return;
+          if (!o || (o.status !== "spedito" && o.status !== "consegnato")) return;
           const at = now();
           set((s) => ({
             orders: s.orders.map((x) => (x.id === orderId ? { ...x, status: "reso", history: [...x.history, { at, status: "reso", note: "Ricambio rientrato: da ricontrollare" }] } : x)),
@@ -327,9 +382,10 @@ export const useStore = create<State & Actions>()(
           const v = get().vehicles.find((x) => x.id === vehicleId);
           if (!v || v.bonifica) return 0;
           const at = now();
-          const withWeight = { ...v, weightKg };
           const hadIntake = get().wasteMoves.some((m) => m.origin === vehicleId && m.eer === "16 01 04*" && m.kind === "carico");
-          const intake = hadIntake ? [] : movesForIntake(withWeight, at);
+          // Se il carico d'ingresso esiste già, il peso è quello registrato: cambiarlo sbilancerebbe il registro
+          const withWeight = { ...v, weightKg: hadIntake && v.weightKg ? v.weightKg : weightKg };
+          const intake = hadIntake ? [] : movesForIntake(withWeight, v.intakeAt);
           const { moves, residualKg } = movesForBonifica(withWeight, items, at);
           set((s) => ({ vehicles: s.vehicles.map((x) => (x.id === vehicleId ? { ...withWeight, bonifica: { at, by: ROLE_USER[s.role].user, items, residualKg } } : x)) }));
           addMoves([...intake, ...moves]);
@@ -359,13 +415,21 @@ export const useStore = create<State & Actions>()(
         advanceFir: (id) => {
           const f = get().firs.find((x) => x.id === id);
           const next = f && FIR_NEXT[f.status];
-          if (!f || !next) return;
+          if (!f || !next) return { ok: false, error: "Formulario non trovato" };
+          if (next.to === "firmato") {
+            const stock = stockByEer(get().wasteMoves).find((x) => x.code === f.eer)?.kg ?? 0;
+            if (f.kg > stock + 0.05) {
+              push(event({ entity: "sistema", entityId: id, action: "Firma bloccata", detail: `${f.kg} kg richiesti, ${stock} kg in giacenza` }));
+              return { ok: false, error: `In giacenza ci sono solo ${stock} kg di ${f.eer}: correggi la quantità del formulario` };
+            }
+          }
           const at = now();
           const by = next.to === "accettato" ? f.destinatario : next.to === "trasmesso" ? "Sistema" : ROLE_USER[get().role].user;
           set((s) => ({ firs: s.firs.map((x) => (x.id === id ? { ...x, status: next.to, history: [...x.history, { at, status: next.to, by }] } : x)) }));
           // Con la firma il rifiuto lascia l'impianto: scarico automatico nel registro
           if (next.to === "firmato") addMoves([{ at, kind: "scarico", eer: f.eer, kg: f.kg, origin: id, note: `Uscita verso ${f.destinatario}`, rentri: "da trasmettere" }]);
           push(event({ entity: "sistema", entityId: id, action: `Formulario ${next.to}`, detail: `${f.eer} · ${f.kg} kg` }));
+          return { ok: true, value: undefined };
         },
 
         createQuote: (partIds, customer, prices, listino) => {
@@ -376,7 +440,9 @@ export const useStore = create<State & Actions>()(
         issueDoc: (orderId, type, customer, prices, listino) => {
           const o = get().orders.find((x) => x.id === orderId);
           if (!o) return "";
-          const lines = linesOf(o.partIds, prices);
+          // Il documento riprende i prezzi dell'ordine (listino compreso); un solo documento per ordine
+          if (get().docs.some((d) => d.orderId === orderId && (d.type === "fattura" || d.type === "documento commerciale"))) return "";
+          const lines = linesOf(o.partIds, prices ?? o.prices ?? (o.partIds.length === 1 ? { [o.partIds[0]]: o.amount } : undefined));
           return newDoc({ type, customer, lines, total: lines.reduce((a, l) => a + l.price, 0), orderId, listino, status: type === "fattura" ? "inviata allo SdI" : "emesso" });
         },
 
@@ -393,6 +459,11 @@ export const useStore = create<State & Actions>()(
           return { ok: true, value: id };
         },
 
+        cancelQuote: (docId) => {
+          set((s) => ({ docs: s.docs.map((d) => (d.id === docId && d.type === "preventivo" && d.status === "aperto" ? { ...d, status: "annullato" } : d)) }));
+          push(event({ entity: "ordine", entityId: docId, action: "Preventivo annullato" }));
+        },
+
         saveListini: (listini) => {
           set({ listini });
           push(event({ entity: "regola", entityId: "listini", action: "Listini aggiornati", detail: listini.map((l) => `${l.name} ${l.pct > 0 ? "+" : ""}${l.pct}%`).join(" · ") }));
@@ -400,7 +471,7 @@ export const useStore = create<State & Actions>()(
 
         addWarehouse: (w) => {
           set((s) => ({ warehouses: [...s.warehouses, w] }));
-          push(event({ entity: "regola", entityId: `MAG-${w.id}`, action: "Magazzino creato", detail: `${w.name} · ${w.corsie} corsie × ${w.scaffali} scaffali × ${w.ripiani.length} ripiani` }));
+          push(event({ entity: "regola", entityId: `MAG-${w.id}`, action: "Magazzino creato", detail: w.corsie ? `${w.name} · ${w.corsie} corsie × ${w.scaffali} scaffali × ${w.ripiani.length} ripiani` : `${w.name} · ubicazioni libere` }));
         },
 
         closeCount: (c) => {

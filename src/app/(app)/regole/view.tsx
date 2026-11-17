@@ -10,7 +10,7 @@ export default function Regole() {
     <div className="mx-auto max-w-4xl">
       <PageTitle
         title="Regole scorte"
-        sub="Prima versione: soglia minima e massima per tipologia, per piattaforma di veicolo. Sotto il minimo il pezzo viene suggerito allo smontatore; dal massimo in su non conviene recuperarlo."
+        sub="Soglia minima e massima per tipologia di pezzo. Nella lista di smontaggio si contano i pezzi compatibili con il veicolo: sotto il minimo il pezzo viene suggerito allo smontatore, dal massimo in su non conviene recuperarlo."
       />
       <Panel>
         <div className="grid grid-cols-[minmax(0,1fr)_64px_64px_56px] gap-2 border-b sm:grid-cols-[1fr_90px_90px_90px] sm:gap-3 border-hair-soft px-4 py-2.5 text-[13px] font-semibold uppercase tracking-wide text-ink-3 code">

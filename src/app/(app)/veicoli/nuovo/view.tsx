@@ -8,7 +8,6 @@ import { useStore } from "@/lib/store";
 import { Button, Field, Notice, PageTitle, Panel, Plate } from "@/components/ui";
 import { PLATFORMS } from "@/lib/catalog";
 import { compressImage, lookupPlate, OCR_SAMPLES, PLATE_RE, simulateOcr, VIN_RE, type OcrResult } from "@/lib/services";
-import type { DossierStatus } from "@/lib/types";
 
 export default function NuovoVeicolo() {
   const router = useRouter();
@@ -22,7 +21,7 @@ export default function NuovoVeicolo() {
   const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "notfound" | "error">("idle");
   const [lookupError, setLookupError] = useState("");
   const [simulateFail, setSimulateFail] = useState(false);
-  const [f, setF] = useState({ make: "", model: "", version: "", platform: "", year: "", fuel: "Benzina", vin: "", color: "", km: "", weight: "", dossier: "", dossierStatus: "in corso" as DossierStatus, notes: "" });
+  const [f, setF] = useState({ make: "", model: "", version: "", platform: "", year: "", fuel: "Benzina", vin: "", color: "", km: "", weight: "", notes: "" });
   const [touched, setTouched] = useState(false);
 
   const normPlate = plate.replace(/\s+/g, "").toUpperCase();
@@ -80,7 +79,7 @@ export default function NuovoVeicolo() {
       km: f.km ? Number(f.km) : undefined,
       weightKg: f.weight ? Number(f.weight) : undefined,
       color: f.color,
-      dossier: { number: f.dossier.trim(), kind: "Certificato di rottamazione", status: f.dossier.trim() ? f.dossierStatus : "da registrare" },
+      dossier: { number: "", kind: "Certificato di Rottamazione Digitale", status: "da registrare" },
       verification: verified ? "verificato" : "da verificare",
       work: "accettato",
       photo,
@@ -204,17 +203,11 @@ export default function NuovoVeicolo() {
         </div>
       </Panel>
 
-      <Panel title="3 · Pratica di demolizione" className="mt-5">
+      <Panel title="3 · Note e pratica" className="mt-5">
         <div className="grid gap-4 p-4 sm:grid-cols-2">
-          <Field label="Numero pratica / certificato" hint="Numero ufficiale: distinto dall'ID interno del veicolo">
-            <input className="field code" value={f.dossier} onChange={set("dossier")} placeholder="CR-2026-…" />
-          </Field>
-          <Field label="Stato pratica">
-            <select className="field" value={f.dossierStatus} onChange={set("dossierStatus")}>
-              <option value="in corso">In corso</option>
-              <option value="completata">Completata</option>
-            </select>
-          </Field>
+          <p className="rounded-md bg-carton px-4 py-3 text-[15px] text-ink-2 sm:col-span-2">
+            La pratica si completa nella scheda del veicolo, dopo il salvataggio: chi consegna e documenti, visura, presa in carico nel RVFU (il numero del certificato lo assegna il registro) e radiazione.
+          </p>
           <div className="sm:col-span-2">
             <Field label="Note">
               <textarea className="field" value={f.notes} onChange={set("notes")} />

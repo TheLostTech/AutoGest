@@ -5,7 +5,7 @@ import { Suspense, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Camera, Check, Loader2, Printer, X } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { CONDITIONS, PART_TYPES, SIDES, typeById } from "@/lib/catalog";
+import { CONDITIONS, PART_TYPES, sidesFor, typeById } from "@/lib/catalog";
 import { compressImage, identifyFromPhoto } from "@/lib/services";
 import { locLong, locToString, sameRipiano } from "@/lib/warehouse";
 import { Button, Empty, Field, Notice, PartImage } from "@/components/ui";
@@ -194,7 +194,8 @@ function AddFound({
   const knownPast = [...new Map(parts.filter((p) => p.pastDossier).map((p) => [p.pastDossier!.number, p.pastDossier!])).values()];
   const v = vehicles.find((x) => x.id === vehicleId);
   const originOk = origin === "nessuna" || (origin === "veicolo" ? !!v : past.number.trim().length >= 3);
-  const ok = !!t && !!condition && (!t.sided || !!side) && originOk;
+  const dupLegacy = legacy.trim() && parts.find((p) => p.legacyCode?.toUpperCase() === legacy.trim().toUpperCase());
+  const ok = !!t && !!condition && (!t.sided || !!side) && originOk && !dupLegacy;
   const model = origin === "veicolo" && v ? `${v.make} ${v.model}` : origin === "pratica" ? past.model.trim() : "";
 
   async function addPhotos(files: FileList | null) {
@@ -298,7 +299,7 @@ function AddFound({
           <Field label="Lato" error={tried && !side ? "Indica il lato" : undefined}>
             <select className="field" value={side} onChange={(e) => setSide(e.target.value)}>
               <option value="">Scegli…</option>
-              {SIDES.map((x) => <option key={x}>{x}</option>)}
+              {sidesFor(t!.id).map((x) => <option key={x}>{x}</option>)}
             </select>
           </Field>
         )}
@@ -378,7 +379,7 @@ function AddFound({
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Field label="Vecchio codice">
+        <Field label="Vecchio codice" error={dupLegacy ? `Già usato da ${dupLegacy.id}` : undefined}>
           <input className="field code uppercase" value={legacy} onChange={(e) => setLegacy(e.target.value)} placeholder="K000…" />
         </Field>
         <Field label="Codice OE (se leggibile)">

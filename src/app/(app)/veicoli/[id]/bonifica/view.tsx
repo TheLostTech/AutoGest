@@ -60,14 +60,14 @@ export default function BonificaVeicolo() {
       <label className="label-sheet mb-4 flex items-center justify-between gap-4 p-4">
         <span>
           <span className="block font-semibold">Peso in ingresso</span>
-          <span className="block text-sm text-ink-3">{v.weightKg ? "dalla pesata all'ingresso" : "nessuna pesata: inserisci il peso"}</span>
+          <span className="block text-sm text-ink-3">{v.weightKg ? "dalla pesata all'ingresso, già nel registro rifiuti" : "nessuna pesata all'ingresso: inserisci il peso"}</span>
         </span>
         <span className="flex items-center gap-2">
           <input
             className="field code h-12 w-28 text-right text-[22px] font-bold"
             inputMode="numeric"
             value={weight}
-            disabled={done}
+            disabled={done || !!v.weightKg}
             onChange={(e) => setWeight(e.target.value.replace(/[^0-9]/g, ""))}
             aria-label="Peso in chilogrammi"
           />

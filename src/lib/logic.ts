@@ -1,5 +1,5 @@
 import { PART_TYPES, typeById } from "./catalog";
-import type { Part, PartStatus, StockRule, Vehicle } from "./types";
+import type { Order, Part, PartStatus, StockRule, Vehicle } from "./types";
 
 export type StockLevel = "manca" | "sotto soglia" | "sufficiente" | "eccesso";
 
@@ -27,6 +27,8 @@ const LEVEL_RANK: Record<StockLevel, number> = { manca: 0, "sotto soglia": 1, su
 // Un pezzo copre un veicolo se viene dalla stessa piattaforma oppure se la sua compatibilità
 // verificata (catalogo + codice sul pezzo) include quella piattaforma.
 export function fits(p: Part, originPlatform: string | undefined, platform: string) {
+  // Un veicolo senza modello riconosciuto non è "compatibile" con gli altri veicoli sconosciuti
+  if (!platform || platform === "sconosciuta") return false;
   return originPlatform === platform || (!!p.compat?.verified && p.compat.platforms.includes(platform));
 }
 
@@ -97,3 +99,7 @@ export const relDays = (iso: string) => {
   const d = Math.round((Date.now() - new Date(iso).getTime()) / 864e5);
   return d <= 0 ? "oggi" : d === 1 ? "ieri" : `${d} giorni fa`;
 };
+
+// Ordine ancora aperto che contiene il pezzo (da incassare o pagato, non ancora consegnato/spedito)
+export const openOrderFor = (partId: string, orders: Order[]) =>
+  orders.find((o) => o.partIds.includes(partId) && (o.status === "in attesa di pagamento" || o.status === "pagato"));

@@ -12,6 +12,7 @@ export default function Listini() {
   const { listini, saveListini } = useStore();
   const [rows, setRows] = useState<Listino[]>(listini);
   const [saved, setSaved] = useState(false);
+  const [draft, setDraft] = useState<Record<string, string>>({});
   const dirty = JSON.stringify(rows) !== JSON.stringify(listini);
   const valid = rows.every((r) => r.name.trim() && Number.isFinite(r.pct) && r.pct > -90 && r.pct < 200);
   const edit = (id: string, patch: Partial<Listino>) => {
@@ -36,9 +37,14 @@ export default function Listini() {
                 <input
                   className="field code h-11 w-20 text-right font-bold"
                   inputMode="numeric"
-                  value={r.id === "base" ? "0" : String(r.pct)}
+                  value={r.id === "base" ? "0" : (draft[r.id] ?? String(r.pct))}
                   disabled={r.id === "base"}
-                  onChange={(e) => edit(r.id, { pct: Number(e.target.value.replace(/[^0-9-]/g, "")) || 0 })}
+                  // Si può scrivere "-" e poi il numero: si converte solo quando il valore è un numero
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/[^0-9-]/g, "").replace(/(?!^)-/g, "");
+                    setDraft((d) => ({ ...d, [r.id]: raw }));
+                    if (raw !== "" && raw !== "-") edit(r.id, { pct: Number(raw) });
+                  }}
                   aria-label={`Variazione percentuale di ${r.name}`}
                 />
                 <span className="text-ink-3">%</span>

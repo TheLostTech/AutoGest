@@ -87,7 +87,9 @@ export default function Negozio() {
                 <div className="flex flex-1 flex-col border-t border-hair-soft p-3">
                   <span className="code text-[26px] font-bold leading-none">{p.id}</span>
                   <span className="mt-1 line-clamp-2 font-semibold leading-snug">{p.description}</span>
-                  <span className="mt-1 text-[13px] text-ink-2">da {v?.make} {v?.model} {v?.year} · <span className="code font-semibold">{p.vehicleId}</span></span>
+                  <span className="mt-1 text-[13px] text-ink-2">
+                    {v ? <>da {v.make} {v.model} {v.year} · <span className="code font-semibold">{p.vehicleId}</span></> : p.pastDossier?.model ? `da ${p.pastDossier.model}` : "dal nostro magazzino"}
+                  </span>
                   {platform && v?.platform !== platform && <span className="mt-1 text-[13px] font-semibold text-ok">Compatibile con la tua auto (codice OE verificato)</span>}
                   <span className="mt-auto flex items-end justify-between pt-3">
                     <span className="code text-[26px] font-bold leading-none">{euro(p.price)}</span>

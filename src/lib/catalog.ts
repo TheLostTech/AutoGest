@@ -34,6 +34,9 @@ export const CONDITIONS: Record<Condition, { label: string; hint: string }> = {
 
 export const SIDES = ["Anteriore sx", "Anteriore dx", "Posteriore sx", "Posteriore dx", "Sinistro", "Destro"];
 
+// Lati sensati per tipo: solo le porte hanno anteriore e posteriore; un faro anteriore è sinistro o destro
+export const sidesFor = (typeId: string) => (typeId === "porta" ? ["Anteriore sx", "Anteriore dx", "Posteriore sx", "Posteriore dx"] : ["Sinistro", "Destro"]);
+
 export interface Platform {
   id: string;
   make: string;
