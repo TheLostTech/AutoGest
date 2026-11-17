@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
-import { ArrowUpFromLine, BadgeCheck, CircleCheck, CircleX, MapPin, Printer, ShoppingCart, Upload } from "lucide-react";
+import { useRef, useState } from "react";
+import { ArrowUpFromLine, BadgeCheck, Camera, CircleCheck, CircleX, MapPin, Printer, ShoppingCart, Upload, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { CONDITIONS, typeById } from "@/lib/catalog";
 import { dateIt, euro, openOrderFor, publishChecks } from "@/lib/logic";
@@ -12,6 +12,7 @@ import { LocationPicker, locComplete, startLocation } from "@/components/Locatio
 import { CatalogPanel } from "@/components/CatalogPanel";
 import { catalogFor } from "@/lib/partsdb";
 import { listPrice, suggestUsedPrice } from "@/lib/pricing";
+import { savePhoto } from "@/lib/services";
 import type { Location } from "@/lib/types";
 import { PartLabel } from "@/components/PartLabel";
 import { Lifecycle } from "@/components/Lifecycle";
@@ -27,6 +28,8 @@ export default function SchedaRicambio() {
   const [editLoc, setEditLoc] = useState(false);
   const [price, setPrice] = useState(p?.price ? String(p.price) : "");
   const [msg, setMsg] = useState<{ tone: "ok" | "danger"; text: string } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(0);
 
   if (!p) return <Empty title={`Ricambio ${id} non trovato`}>Controlla il codice sull&apos;etichetta o cerca nel magazzino.</Empty>;
   const t = typeById(p.typeId);
@@ -155,13 +158,56 @@ export default function SchedaRicambio() {
         <div className="space-y-6">
           {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
 
-          <Panel title="Foto">
+          <Panel title={`Foto · ${p.photos.length}`}>
             <div className="grid grid-cols-2 gap-2 p-3">
-              {p.photos.length ? (
-                p.photos.map((src, i) => <PartImage key={i} src={src} typeId={p.typeId} className="aspect-square w-full rounded border border-hair-soft bg-white" />)
-              ) : (
-                <PartImage typeId={p.typeId} className="col-span-2 aspect-[2/1] w-full rounded" />
-              )}
+              {p.photos.map((src, i) => (
+                <div key={`${src}-${i}`} className="relative">
+                  <PartImage src={src} typeId={p.typeId} className="aspect-square w-full rounded border border-hair-soft bg-white" />
+                  <button
+                    onClick={() => {
+                      if (!confirm("Togliere questa foto dalla scheda?")) return;
+                      s.updatePart(p.id, { photos: p.photos.filter((_, j) => j !== i) }, "Foto rimossa", `${p.photos.length - 1} foto`);
+                    }}
+                    className="absolute right-1 top-1 grid size-9 place-items-center rounded-full bg-ink/80 text-white hover:bg-ink"
+                    aria-label={`Togli la foto ${i + 1}`}
+                  >
+                    <X className="size-4" aria-hidden />
+                  </button>
+                </div>
+              ))}
+              {/* Foto da aggiungere anche dopo la catalogazione: scattate col telefono o scelte dalla galleria */}
+              <button
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading > 0}
+                className={`flex flex-col items-center justify-center gap-1 rounded border-2 border-dashed font-semibold disabled:opacity-60 ${p.photos.length ? "aspect-square border-hair text-band" : "col-span-2 aspect-[2/1] border-band bg-band-tint text-band"}`}
+              >
+                <Camera className={p.photos.length ? "size-7" : "size-10"} aria-hidden />
+                {uploading ? `Carico ${uploading} ${uploading === 1 ? "foto" : "foto"}…` : p.photos.length ? "Altra foto" : "Scatta o aggiungi una foto"}
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                multiple
+                className="hidden"
+                onChange={async (e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  e.target.value = "";
+                  if (!files.length) return;
+                  setUploading(files.length);
+                  try {
+                    const urls = await Promise.all(files.map((f) => savePhoto(f)));
+                    const cur = useStore.getState().parts.find((x) => x.id === p.id)?.photos ?? [];
+                    s.updatePart(p.id, { photos: [...cur, ...urls] }, "Foto aggiunta", `${urls.length} ${urls.length === 1 ? "foto" : "foto"} · ora ${cur.length + urls.length}`);
+                    flash("ok", urls.length === 1 ? "Foto aggiunta" : `${urls.length} foto aggiunte`);
+                  } catch {
+                    flash("danger", "Non sono riuscito a leggere la foto: riprova");
+                  } finally {
+                    setUploading(0);
+                  }
+                }}
+              />
             </div>
           </Panel>
 

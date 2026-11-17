@@ -347,7 +347,11 @@ function Riga({
 // Riepilogo del periodo (la strada di riserva: la consulente lo può caricare con un suo strumento)
 function downloadCsv(p: Period, firById: Map<string, Fir>) {
   const cols = ["numero", "data registrazione", "data operazione", "causale", "carico/scarico", "codice EER", "stato fisico", "classi di pericolo", "kg", "attivita", "veicolo fuori uso", "certificato rottamazione", "data certificato", "produttore", "codice fiscale", "formulario", "destinatario", "rettifica di", "annullamento di", "motivo", "RENTRI"];
-  const cell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  // Un testo che inizia con = + - @ verrebbe eseguito come formula da Excel: si neutralizza con un apostrofo
+  const cell = (v: unknown) => {
+    const t = String(v ?? "");
+    return `"${(/^[=+\-@\t\r]/.test(t) ? `'${t}` : t).replace(/"/g, '""')}"`;
+  };
   const lines = p.moves.map((m) => {
     const f = m.fir ? firById.get(m.fir) : undefined;
     return [
