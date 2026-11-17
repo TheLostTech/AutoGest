@@ -46,6 +46,7 @@ const AREAS: Area[] = [
       { href: "/ricambi", label: "Magazzino", roles: ["smontatore", "magazziniere", "responsabile", "vendite"] },
       { href: "/magazzino", label: "Ubicazioni", roles: ["magazziniere", "responsabile", "vendite"] },
       { href: "/inventario", label: "Inventario", roles: ["magazziniere", "responsabile"] },
+      { href: "/rottami", label: "Area rottami", roles: ["smontatore", "magazziniere", "responsabile"] },
       { href: "/pubblicazione", label: "Pubblicazione", roles: ["responsabile"] },
       { href: "/regole", label: "Scorte minime", roles: ["responsabile"] },
     ],

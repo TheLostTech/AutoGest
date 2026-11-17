@@ -133,12 +133,29 @@ export interface Part {
   notes?: string;
   price?: number;
   location?: Location;
+  // Scartato: tolto dallo scaffale e messo nell'area rottami, in attesa del ritiro a peso
+  scrap?: ScrapInfo;
   photos: string[];
   aiSuggested?: { typeId: string; confidence: number; accepted: boolean };
   labelPrints: number;
   listing: ListingStatus;
   createdAt: string;
   createdBy: string;
+}
+
+export interface ScrapInfo {
+  at: string;
+  reason: string;
+  from?: string; // ubicazione da cui è stato tolto
+  pickup?: ScrapPickup; // ritiro a peso: stesso numero per tutti i pezzi ritirati insieme
+}
+
+export interface ScrapPickup {
+  id: string; // RT-0001
+  at: string;
+  buyer: string;
+  kg: number; // peso del carico intero (pesa o bolla del ritiro)
+  eurPerKg: number;
 }
 
 export type Channel = "banco" | "negozio" | "marketplace";

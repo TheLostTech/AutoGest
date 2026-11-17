@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { ArrowDownToLine, ArrowUpFromLine, ScanLine, Undo2, VideoOff, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, Euro, ScanLine, Trash2, Undo2, VideoOff, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { openOrderFor } from "@/lib/logic";
 import { locToString, onLabel, parseShelf, shelfCode } from "@/lib/warehouse";
 import { Button, ButtonLink, Notice, PageTitle } from "@/components/ui";
-import type { Location, Part } from "@/lib/types";
+import type { Location, Order, Part } from "@/lib/types";
 
 type Detector = { detect: (src: HTMLVideoElement) => Promise<{ rawValue: string }[]> };
 type DetectorClass = { new (o: { formats: string[] }): Detector; getSupportedFormats?: () => Promise<string[]> };
@@ -41,8 +42,11 @@ function extractId(raw: string) {
   return short ? `R-${short[1].padStart(6, "0")}` : undefined;
 }
 
-type Pending = { kind: "part"; part: Part } | { kind: "shelf"; loc: Location };
-type Outcome = { tone: "ok" | "warn"; verb?: "carico" | "scarico"; title: string; detail?: string; undo?: () => void; sell?: string; load?: { label: string; run: () => void } };
+// Pezzo letto per primo: si sceglie cosa farne (spostarlo, venderlo, scartarlo); scaffale letto per primo: si preleva
+type PartMode = "choose" | "move" | "scrap";
+type Pending = { kind: "part"; part: Part; mode: PartMode } | { kind: "shelf"; loc: Location };
+const SCRAP_REASONS = ["Rotto o danneggiato", "Invendibile", "Fermo da troppo tempo", "Non conforme"];
+type Outcome = { tone: "ok" | "warn"; verb?: "carico" | "scarico" | "scarto"; title: string; detail?: string; undo?: () => void; sell?: string; load?: { label: string; run: () => void }; rottami?: boolean };
 
 // Lo scaffale scansionato resta attivo per prendere più pezzi di fila, ma non per sempre:
 // chi torna dopo con un pezzo in mano da mettere via non deve trovarsi in modalità prelievo.
@@ -52,6 +56,8 @@ const SHELF_IDLE_MS = 2 * 60 * 1000;
 // La stessa logica vale con la fotocamera, con la pistola laser o scrivendo i codici a mano.
 export default function Scansione() {
   const s = useStore();
+  const router = useRouter();
+  const [reason, setReason] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const lastRef = useRef<{ raw: string; at: number }>({ raw: "", at: 0 });
@@ -76,8 +82,13 @@ export default function Scansione() {
       return;
     }
     const prev = p.location;
-    if (prev && locToString(prev) === locToString(loc)) {
-      setOutcome({ tone: "ok", verb: "carico", title: `${p.id} è già in ${shelfCode(loc)}` });
+    // Già su questo ripiano (anche dentro un suo contenitore): resta dov'è, il contenitore non si perde
+    if (prev && onLabel(prev, loc)) {
+      setOutcome({
+        tone: "ok",
+        title: `${p.id} è già qui`,
+        detail: prev.contenitore && !loc.contenitore ? `In ${locToString(prev)}: contenitore ${prev.contenitore} di questo ripiano. Non cambia niente.` : `In ${locToString(prev)}. Non cambia niente.`,
+      });
       return;
     }
     s.setLocation(p.id, loc);
@@ -124,13 +135,44 @@ export default function Scansione() {
     });
   }
 
+  // Vendi: se il pezzo è in un ordine si preleva per quell'ordine, altrimenti si preleva e si apre il banco
+  function vendi(p: Part) {
+    setPending(null);
+    const order = openOrderFor(p.id, s.orders);
+    if (order) {
+      if (p.location) scarico(p, p.location, true);
+      else setOutcome({ tone: "ok", title: `${p.id} è già fuori dallo scaffale`, detail: `Ordine ${order.id} · ${order.customer}` });
+      return;
+    }
+    if (p.location) s.pickPart(p.id, "per la vendita al banco");
+    router.push(`/vendite?pezzo=${p.id}`);
+  }
+
+  function scarta(p: Part, reason: string) {
+    const prev = { status: p.status, location: p.location, listing: p.listing };
+    const r = s.scrapPart(p.id, reason);
+    setPending(null);
+    if (!r.ok) {
+      setOutcome({ tone: "warn", title: r.error });
+      return;
+    }
+    setOutcome({
+      tone: "ok",
+      verb: "scarto",
+      title: `${p.id} nei rottami`,
+      detail: `${prev.location ? `Tolto da ${locToString(prev.location)} · ` : ""}${reason}. Portalo nell'area rottami: si vende a peso con il prossimo ritiro.`,
+      undo: () => s.unscrapPart(p.id, prev),
+      rottami: true,
+    });
+  }
+
   function handle(raw: string) {
     setError("");
     const active = pending && (pending.kind === "part" || Date.now() - pendingAt.current < SHELF_IDLE_MS) ? pending : null;
     pendingAt.current = Date.now();
     const loc = parseShelf(raw, s.warehouses);
     if (loc) {
-      if (active?.kind === "part") carico(active.part, loc);
+      if (active?.kind === "part" && active.mode !== "scrap") carico(active.part, loc);
       else {
         setPending({ kind: "shelf", loc });
         setOutcome(null);
@@ -142,7 +184,7 @@ export default function Scansione() {
     if (p) {
       if (active?.kind === "shelf") scarico(p, active.loc); // lo scaffale resta: si possono prendere altri pezzi
       else {
-        setPending({ kind: "part", part: p });
+        setPending({ kind: "part", part: p, mode: p.status === "venduto" || p.status === "scartato" ? "move" : "choose" });
         setOutcome(null);
         setConflict(null);
       }
@@ -276,10 +318,38 @@ export default function Scansione() {
               <X className="size-5" aria-hidden />
             </button>
           </div>
-          <p className="mx-4 mt-3 flex items-center gap-2 rounded bg-band-tint px-3 py-2.5 text-[17px] font-semibold text-band-deep">
-            {pending.kind === "part" ? <ArrowDownToLine className="size-5 shrink-0" aria-hidden /> : <ArrowUpFromLine className="size-5 shrink-0" aria-hidden />}
-            {pending.kind === "part" ? "Ora scansiona lo scaffale dove lo lasci" : "Ora scansiona il pezzo che prendi"}
-          </p>
+          {pending.kind === "part" && pending.mode === "choose" && <PartChoices part={pending.part} orders={s.orders} onMove={() => setPending({ ...pending, mode: "move" })} onSell={() => vendi(pending.part)} onScrap={() => { setReason(""); setPending({ ...pending, mode: "scrap" }); }} />}
+          {pending.kind === "part" && pending.mode === "scrap" && (
+            <div className="mx-4 mt-3">
+              <p className="text-[17px] font-semibold">Perché lo scarti?</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {SCRAP_REASONS.map((r) => (
+                  <button key={r} onClick={() => setReason(r)} aria-pressed={reason === r} className={`min-h-11 rounded-md border-2 px-3 font-semibold ${reason === r ? "border-danger bg-danger text-white" : "border-hair bg-label text-ink hover:border-danger"}`}>
+                    {r}
+                  </button>
+                ))}
+              </div>
+              <input className="field mt-2" placeholder="Altro motivo (facoltativo)" value={SCRAP_REASONS.includes(reason) ? "" : reason} onChange={(e) => setReason(e.target.value)} aria-label="Altro motivo dello scarto" />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button variant="danger" disabled={!reason.trim()} onClick={() => scarta(pending.part, reason.trim())}>
+                  <Trash2 className="size-5" aria-hidden /> Metti nei rottami
+                </Button>
+                <Button variant="quiet" onClick={() => setPending({ ...pending, mode: "choose" })}>Indietro</Button>
+              </div>
+            </div>
+          )}
+          {(pending.kind === "shelf" || pending.mode === "move") && (
+            <p className="mx-4 mt-3 flex items-center gap-2 rounded bg-band-tint px-3 py-2.5 text-[17px] font-semibold text-band-deep">
+              {pending.kind === "part" ? <ArrowDownToLine className="size-5 shrink-0" aria-hidden /> : <ArrowUpFromLine className="size-5 shrink-0" aria-hidden />}
+              {pending.kind === "part"
+                ? pending.part.status === "venduto" || pending.part.status === "scartato"
+                  ? `È ${pending.part.status}: non va a scaffale`
+                  : pending.part.location
+                    ? "Ora scansiona lo scaffale dove lo metti"
+                    : "Ora scansiona lo scaffale dove lo lasci"
+                : "Ora scansiona il pezzo che prendi"}
+            </p>
+          )}
           {pending.kind === "shelf" && shelfParts.length > 0 && (
             <ul className="mx-4 mt-2 flex flex-wrap gap-1.5">
               {shelfParts.map((p) => (
@@ -320,11 +390,12 @@ export default function Scansione() {
       {/* Esito: grande, con Annulla finché non si scansiona altro */}
       {outcome && (
         <section className={`mt-4 rounded-md border-2 px-4 py-3 ${outcome.tone === "ok" ? "border-ok bg-ok-bg" : "border-warn bg-warn-bg"}`} aria-live="polite">
-          {outcome.verb && <p className={`code text-[13px] font-bold uppercase tracking-wide ${outcome.tone === "ok" ? "text-ok" : "text-warn"}`}>{outcome.verb === "carico" ? "Messo a scaffale" : "Preso dallo scaffale"}</p>}
+          {outcome.verb && <p className={`code text-[13px] font-bold uppercase tracking-wide ${outcome.tone === "ok" ? "text-ok" : "text-warn"}`}>{outcome.verb === "carico" ? "Messo a scaffale" : outcome.verb === "scarto" ? "Scartato" : "Preso dallo scaffale"}</p>}
           <p className="code text-[24px] font-bold leading-tight">{outcome.title}</p>
           {outcome.detail && <p className="mt-0.5 text-ink-2">{outcome.detail}</p>}
-          {(outcome.undo || outcome.sell || outcome.load) && (
+          {(outcome.undo || outcome.sell || outcome.load || outcome.rottami) && (
             <div className="mt-3 flex flex-wrap gap-2">
+              {outcome.rottami && <ButtonLink href="/rottami" variant="secondary">Area rottami</ButtonLink>}
               {outcome.load && <Button onClick={outcome.load.run}>{outcome.load.label}</Button>}
               {outcome.sell && <ButtonLink href={`/vendite?pezzo=${outcome.sell}`}>Vendi al banco</ButtonLink>}
               {outcome.undo && (
@@ -381,6 +452,38 @@ export default function Scansione() {
         </p>
       </div>
 
+    </div>
+  );
+}
+
+// Tre scelte grandi per il pezzo appena scansionato. Spostare resta anche la via rapida: si scansiona subito lo scaffale nuovo.
+function PartChoices({ part, orders, onMove, onSell, onScrap }: { part: Part; orders: Order[]; onMove: () => void; onSell: () => void; onScrap: () => void }) {
+  const order = openOrderFor(part.id, orders);
+  const sellable = !!order || part.status === "disponibile";
+  const sellNote = order ? `per ${order.id}` : sellable ? "al banco" : `è ${part.status}`;
+  const scrapNote = part.status === "riservato" ? "è in un ordine" : "nei rottami";
+  const big = "flex min-h-[88px] flex-col items-center justify-center gap-1 rounded-md border-2 px-2 text-center font-semibold disabled:cursor-not-allowed disabled:opacity-40";
+  return (
+    <div className="mx-4 mt-3">
+      <p className="text-[17px] font-semibold">Cosa fai con questo pezzo?</p>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        <button onClick={onMove} className={`${big} border-band bg-band text-white hover:bg-band-deep`}>
+          <ArrowLeftRight className="size-6" aria-hidden />
+          <span className="text-[17px]">{part.location ? "Sposta" : "Metti a posto"}</span>
+          <span className="text-[12px] font-medium opacity-80">{part.location ? "altro scaffale" : "su uno scaffale"}</span>
+        </button>
+        <button onClick={onSell} disabled={!sellable} className={`${big} border-hair bg-label text-ink hover:border-band`}>
+          <Euro className="size-6 text-band" aria-hidden />
+          <span className="text-[17px]">Vendi</span>
+          <span className="text-[12px] font-medium text-ink-3">{sellNote}</span>
+        </button>
+        <button onClick={onScrap} disabled={part.status === "riservato"} className={`${big} border-hair bg-label text-ink hover:border-danger`}>
+          <Trash2 className="size-6 text-danger" aria-hidden />
+          <span className="text-[17px]">Scarta</span>
+          <span className="text-[12px] font-medium text-ink-3">{scrapNote}</span>
+        </button>
+      </div>
+      {part.location && <p className="mt-2 text-sm text-ink-2">Per spostarlo puoi anche scansionare subito lo scaffale nuovo.</p>}
     </div>
   );
 }

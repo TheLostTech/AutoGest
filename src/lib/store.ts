@@ -20,6 +20,7 @@ import type {
   Part,
   PartStatus,
   Role,
+  ScrapPickup,
   StockRule,
   Vehicle,
   WasteMove,
@@ -43,6 +44,7 @@ interface Counters {
   fir: number;
   docs: Record<"P" | "DC" | "FT" | "NC", number>;
   inventory: number;
+  scrapPickup?: number;
 }
 
 interface State {
@@ -74,6 +76,9 @@ interface Actions {
   printLabel: (id: string) => void;
   setLocation: (id: string, loc: Location) => void;
   pickPart: (id: string, detail?: string) => void;
+  scrapPart: (id: string, reason: string) => Result;
+  unscrapPart: (id: string, prev: Pick<Part, "status" | "location" | "listing">) => void;
+  scrapPickup: (partIds: string[], kg: number, eurPerKg: number, buyer: string) => Result<string>;
   setPartStatus: (id: string, status: PartStatus, reason?: string) => void;
   publish: (id: string) => Result;
   unpublish: (id: string) => void;
@@ -285,6 +290,46 @@ export const useStore = create<State & Actions>()(
           if (!p?.location) return;
           set((s) => ({ parts: s.parts.map((x) => (x.id === id ? { ...x, location: undefined, missingSince: undefined } : x)) }));
           push(event({ entity: "ricambio", entityId: id, action: "Prelevato dallo scaffale", detail: `${locToString(p.location)}${detail ? ` · ${detail}` : ""}` }));
+        },
+
+        // Scarto: il pezzo esce dallo scaffale e va nell'area rottami (si vende a peso con il ritiro)
+        scrapPart: (id, reason) => {
+          const p = get().parts.find((x) => x.id === id);
+          if (!p) return { ok: false, error: "Ricambio non trovato" };
+          if (p.status === "venduto") return { ok: false, error: `${id} è già venduto` };
+          if (p.status === "scartato") return { ok: false, error: `${id} è già nei rottami` };
+          if (p.status === "riservato") return { ok: false, error: `${id} è in un ordine: annulla prima l'ordine` };
+          const from = p.location ? locToString(p.location) : undefined;
+          set((s) => ({
+            parts: s.parts.map((x) =>
+              x.id === id
+                ? { ...x, status: "scartato" as const, listing: x.listing === "pubblicato" ? ("ritirato" as const) : x.listing, location: undefined, missingSince: undefined, scrap: { at: now(), reason, from } }
+                : x,
+            ),
+          }));
+          push(event({ entity: "ricambio", entityId: id, action: "Messo nei rottami", detail: `${from ? `da ${from} · ` : ""}${reason}` }));
+          return { ok: true, value: undefined };
+        },
+
+        unscrapPart: (id, prev) => {
+          set((s) => ({ parts: s.parts.map((x) => (x.id === id ? { ...x, ...prev, scrap: undefined } : x)) }));
+          push(event({ entity: "ricambio", entityId: id, action: "Tolto dai rottami", detail: prev.location ? `rimesso in ${locToString(prev.location)}` : undefined }));
+        },
+
+        scrapPickup: (partIds, kg, eurPerKg, buyer) => {
+          const s = get();
+          const ids = partIds.filter((id) => s.parts.some((p) => p.id === id && p.status === "scartato" && !p.scrap?.pickup));
+          if (!ids.length) return { ok: false, error: "Nessun pezzo nei rottami da ritirare" };
+          if (!(kg > 0)) return { ok: false, error: "Scrivi il peso del carico" };
+          const n = (s.counters.scrapPickup ?? 0) + 1;
+          const pickup: ScrapPickup = { id: `RT-${String(n).padStart(4, "0")}`, at: now(), buyer: buyer.trim() || "Acquirente non indicato", kg, eurPerKg };
+          set((st) => ({
+            parts: st.parts.map((p) => (ids.includes(p.id) && p.scrap ? { ...p, scrap: { ...p.scrap, pickup } } : p)),
+            counters: { ...st.counters, scrapPickup: n },
+          }));
+          const total = Math.round(kg * eurPerKg * 100) / 100;
+          push(event({ entity: "ricambio", entityId: pickup.id, action: "Ritiro rottami a peso", detail: `${ids.length} pezzi · ${kg} kg · ${eurPerKg} €/kg = ${total} € · ${pickup.buyer}` }));
+          return { ok: true, value: pickup.id };
         },
 
         setPartStatus: (id, status, reason) => {

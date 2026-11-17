@@ -57,7 +57,17 @@ export default function SchedaRicambio() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
         <div className="space-y-6">
           <PartLabel part={p} vehicle={v} />
-          <p className="-mt-3 text-[15px] font-semibold text-ink-2">{locLong(p.location)}</p>
+          <p className="-mt-3 text-[15px] font-semibold text-ink-2">
+            {p.status === "scartato" ? (
+              p.scrap?.pickup ? (
+                <>Rottame ritirato il {dateIt(p.scrap.pickup.at)} da {p.scrap.pickup.buyer} ({p.scrap.pickup.id})</>
+              ) : (
+                <>Nell&apos;<Link href="/rottami" className="text-band underline">area rottami</Link>, in attesa di ritiro{p.scrap?.reason ? ` · ${p.scrap.reason}` : ""}</>
+              )
+            ) : (
+              locLong(p.location)
+            )}
+          </p>
           <div className="flex flex-wrap gap-2">
             <Button
               onClick={() => {
@@ -252,10 +262,24 @@ export default function SchedaRicambio() {
                 <Button variant="danger" size="sm" onClick={() => { const r = prompt("Motivo (es. danneggiato in magazzino):"); if (r) s.setPartStatus(p.id, "invendibile", r); }}>Segna invendibile</Button>
               )}
               {p.status === "invendibile" && (
-                <>
-                  <Button variant="secondary" size="sm" onClick={() => s.setPartStatus(p.id, "bozza", "Rimesso in lavorazione per verifica")}>Rimetti in verifica</Button>
-                  <Button variant="danger" size="sm" onClick={() => { const r = prompt("Motivo dello scarto:"); if (r) s.setPartStatus(p.id, "scartato", r); }}>Scarta</Button>
-                </>
+                <Button variant="secondary" size="sm" onClick={() => s.setPartStatus(p.id, "bozza", "Rimesso in lavorazione per verifica")}>Rimetti in verifica</Button>
+              )}
+              {p.status !== "venduto" && p.status !== "scartato" && p.status !== "riservato" && (
+                // Scarto: il pezzo va nell'area rottami, si vende a peso con il ritiro
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => {
+                    const r = prompt("Motivo dello scarto (es. rotto, invendibile):");
+                    if (!r?.trim()) return;
+                    const res = s.scrapPart(p.id, r.trim());
+                    if (!res.ok) return flash("danger", res.error);
+                    setLoc(undefined);
+                    flash("ok", `${p.id} messo nei rottami: portalo nell'area rottami`);
+                  }}
+                >
+                  Scarta nei rottami
+                </Button>
               )}
               <Button variant="quiet" size="sm" onClick={() => { s.printLabel(p.id); s.log({ entity: "ricambio", entityId: p.id, action: "Etichetta danneggiata segnalata", detail: "Sostituita con ristampa, stesso ID" }); flash("ok", "Ristampa registrata: l'ID non cambia"); window.open(`/etichetta/${p.id}`, "_blank"); }}>
                 Etichetta danneggiata
