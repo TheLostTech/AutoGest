@@ -7,6 +7,7 @@ import { Camera, Keyboard, Loader2, Search } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Button, Field, Notice, PageTitle, Panel, Plate } from "@/components/ui";
 import { PLATFORMS } from "@/lib/catalog";
+import { pesoDiverso } from "@/lib/stime";
 import { savePhoto, lookupPlate, OCR_SAMPLES, PLATE_RE, simulateOcr, VIN_RE, type OcrResult } from "@/lib/services";
 
 export default function NuovoVeicolo() {
@@ -21,7 +22,7 @@ export default function NuovoVeicolo() {
   const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "notfound" | "error">("idle");
   const [lookupError, setLookupError] = useState("");
   const [simulateFail, setSimulateFail] = useState(false);
-  const [f, setF] = useState({ make: "", model: "", version: "", platform: "", year: "", fuel: "Benzina", vin: "", color: "", km: "", weight: "", notes: "" });
+  const [f, setF] = useState({ make: "", model: "", version: "", platform: "", year: "", fuel: "Benzina", vin: "", color: "", km: "", weight: "", massa: "", notes: "" });
   const [touched, setTouched] = useState(false);
 
   const normPlate = plate.replace(/\s+/g, "").toUpperCase();
@@ -50,7 +51,7 @@ export default function NuovoVeicolo() {
         setLookupState("notfound");
         return;
       }
-      setF((x) => ({ ...x, make: r.make, model: r.model, version: r.version, platform: r.platform, year: String(r.year), fuel: r.fuel, vin: r.vin, color: r.color }));
+      setF((x) => ({ ...x, make: r.make, model: r.model, version: r.version, platform: r.platform, year: String(r.year), fuel: r.fuel, vin: r.vin, color: r.color, massa: r.massaKg ? String(r.massaKg) : x.massa }));
       setLookupState("found");
     } catch (e) {
       setLookupError((e as Error).message);
@@ -78,6 +79,7 @@ export default function NuovoVeicolo() {
       fuel: f.fuel,
       km: f.km ? Number(f.km) : undefined,
       weightKg: f.weight ? Number(f.weight) : undefined,
+      massaLibretto: f.massa ? Number(f.massa) : undefined,
       color: f.color,
       dossier: { number: "", kind: "Certificato di Rottamazione Digitale", status: "da registrare" },
       verification: verified ? "verificato" : "da verificare",
@@ -196,8 +198,15 @@ export default function NuovoVeicolo() {
             <Field label="Chilometri">
               <input className="field code" inputMode="numeric" value={f.km} onChange={set("km")} />
             </Field>
-            <Field label="Peso in ingresso (kg)" hint="Dalla pesata: entra da solo nel registro rifiuti">
-              <input className="field code" inputMode="numeric" value={f.weight} onChange={set("weight")} />
+            <Field label="Massa da libretto (kg)" hint="Campo G del libretto: arriva dai dati della targa">
+              <input className="field code" inputMode="numeric" value={f.massa} onChange={set("massa")} />
+            </Field>
+            <Field
+              label="Peso alla pesa (kg)"
+              hint="Il peso vero, quello che va nel registro rifiuti. Si può inserire anche dopo: intanto la registrazione resta in bozza."
+              error={f.weight && f.massa && pesoDiverso(Number(f.weight), Number(f.massa)) ? `Molto diverso dal libretto (${f.massa} kg): controlla` : undefined}
+            >
+              <input className="field code text-[18px] font-bold" inputMode="numeric" value={f.weight} onChange={(e) => setF({ ...f, weight: e.target.value.replace(/[^0-9]/g, "") })} />
             </Field>
           </div>
         </div>

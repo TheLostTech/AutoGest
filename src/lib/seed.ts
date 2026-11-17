@@ -1,7 +1,7 @@
 import { PART_TYPES, typeById } from "./catalog";
 import { catalogFor, CATALOG_SOURCE } from "./partsdb";
 import { corsiaId, locToString, scaffaleId, warehouseFor } from "./warehouse";
-import { eerByCode, movesForBonifica, movesForIntake, typicalBonifica } from "./ambiente";
+import { eerByCode, itemKg, movesForBonifica, movesForIntake, typicalBonifica } from "./ambiente";
 import { missingFields, monthKey } from "./periodo";
 import type {
   AuditEvent,
@@ -245,7 +245,11 @@ export function buildSeed() {
   // ——— Ambiente: pesi, bonifiche, registro di carico e scarico, formulari ———
   const hours = (iso: string, h: number) => new Date(new Date(iso).getTime() + h * 36e5).toISOString();
   const vehicles: Vehicle[] = SEED_VEHICLES.map((v, i) => {
-    const base: Vehicle = { ...v, weightKg: WEIGHTS[v.platform] ?? 1000 };
+    // Massa da libretto (dati della targa) e peso alla pesa, che per un'auto da rottamare è un po' diverso;
+    // V-000116 non è ancora stata pesata: la sua registrazione resta in bozza
+    const libretto = WEIGHTS[v.platform] ?? 1000;
+    const pesa = Math.round(libretto * (0.95 + ((Number(v.id.slice(-3)) * 7) % 9) / 100));
+    const base: Vehicle = { ...v, massaLibretto: libretto, weightKg: v.id === "V-000116" ? undefined : pesa };
     if (!v.dossier.number) return base; // V-000115: pratica ancora da avviare
     const dealer = i % 4 === 2;
     const n = Number(v.id.slice(-3));
@@ -270,8 +274,7 @@ export function buildSeed() {
   });
   const raw: Omit<WasteMove, "id">[] = [];
   for (const v of vehicles) {
-    // Tutti pesati alla pesa, tranne V-000116: la sua registrazione resta in bozza finché non si inserisce il peso
-    raw.push(...movesForIntake(v, v.intakeAt, v.id !== "V-000116"));
+    raw.push(...movesForIntake(v, v.intakeAt));
     if (v.work === "accettato") continue;
     const at = hours(v.intakeAt, 3);
     const items = typicalBonifica(v).map((it) => ({ ...it, qty: it.key === "carburante" ? Math.round(2 + r() * 12) : it.key === "oli" ? Math.round((3.5 + r() * 2.5) * 10) / 10 : it.qty }));
@@ -300,11 +303,14 @@ export function buildSeed() {
   let fn = 140;
   const oldOnes = vehicles.filter((v) => v.bonifica && v.intakeAt < daysAgo(30));
   const sumOf = (vs: Vehicle[], pick: (v: Vehicle) => number) => Math.round(vs.reduce((a, v) => a + pick(v), 0) * 10) / 10;
-  const itemKgOf = (v: Vehicle, key: string, kgPer: number) => (v.bonifica?.items.find((i) => i.key === key)?.qty ?? 0) * kgPer;
+  const itemKgOf = (v: Vehicle, key: string) => {
+    const it = v.bonifica?.items.find((i) => i.key === key);
+    return it ? itemKg(it) : 0;
+  };
   const plannedFirs: (Pick<Fir, "eer" | "kg" | "at" | "status" | "numero" | "destinatarioId" | "trasportatoreId" | "intermediarioId" | "targa" | "conducente" | "esito" | "kgAccettati">)[] = [
     // ottobre: carcasse accettate solo in parte (avviso nel periodo), oli firmati ma senza esito del destinatario
     { eer: "16 01 06", kg: sumOf(oldOnes, (v) => v.bonifica!.residualKg), at: daysAgo(25, 10), status: "accettato", numero: "DEMOA 00101 AA", destinatarioId: "S-002", trasportatoreId: "S-003", intermediarioId: "S-004", targa: "AB123CD", conducente: "Autista Demo", esito: "parziale" },
-    { eer: "13 02 08*", kg: sumOf(oldOnes, (v) => itemKgOf(v, "oli", 0.9)), at: daysAgo(20, 11), status: "firmato", numero: "DEMOB 00102 AA", destinatarioId: "S-005", trasportatoreId: "S-008", targa: "EF456GH", conducente: "Autista Demo" },
+    { eer: "13 02 08*", kg: sumOf(oldOnes, (v) => itemKgOf(v, "oli")), at: daysAgo(20, 11), status: "firmato", numero: "DEMOB 00102 AA", destinatarioId: "S-005", trasportatoreId: "S-008", targa: "EF456GH", conducente: "Autista Demo" },
     // novembre: catalizzatori accettati per intero
     { eer: "16 08 01", kg: sumOf(vehicles.filter((v) => v.bonifica && v.intakeAt < daysAgo(5)), () => 5), at: daysAgo(2, 15), status: "accettato", numero: "DEMOC 00103 AA", destinatarioId: "S-006", trasportatoreId: "S-008", targa: "EF456GH", conducente: "Autista Demo", esito: "accettato" },
   ];

@@ -193,7 +193,7 @@ function Riga({
   vehicle?: Vehicle;
   onMsg: (x: { tone: "ok" | "danger"; text: string }) => void;
 }) {
-  const { completeDraft, rectifyMove, cancelMove } = useStore();
+  const { completeDraft, rectifyMove, cancelMove, confirmMove } = useStore();
   const [mode, setMode] = useState<"none" | "rett" | "ann">("none");
   const [kg, setKg] = useState(kgText(m.kg));
   const [motivo, setMotivo] = useState("");
@@ -228,6 +228,9 @@ function Riga({
       </p>
       <p className="text-sm text-ink-2">
         {m.vfu && <>Veicolo fuori uso · </>}
+        {m.stimato && <>peso stimato per modello · </>}
+        {m.causale === "*T" && m.kgLibretto && <>libretto {fmtKg(m.kgLibretto)} · </>}
+        {m.verificato && <>controllata da {m.verificato.by} · </>}
         {m.produttore && <>{m.produttore.nome}{m.produttore.cf ? <> · <span className="code">{m.produttore.cf}</span></> : ""} · </>}
         {m.certificato && <>certificato <span className="code">{m.certificato.numero}</span> del {dateIt(m.certificato.data)} · </>}
         {fir && <>formulario <span className="code">{fir.numero ?? fir.id}</span> · {fir.destinatario} · </>}
@@ -306,6 +309,9 @@ function Riga({
         <div className="mt-2">
           {mode === "none" && (
             <span className="flex gap-2">
+              {issues.some((i) => i.code === "diff-pesata" || i.code === "peso-diverso") && (
+                <Button size="sm" variant="secondary" onClick={() => { confirmMove(m.id); onMsg({ tone: "ok", text: "Segnata come controllata." }); }}>Va bene così</Button>
+              )}
               {m.causale !== "RETT" && (
                 <Button size="sm" variant="quiet" onClick={() => setMode("rett")}>Rettifica</Button>
               )}

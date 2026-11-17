@@ -6,7 +6,8 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { buildSeed, pad } from "./seed";
 import { locToString, originLabel, WAREHOUSES, type Warehouse } from "./warehouse";
 import { eerByCode, movesForBonifica, movesForIntake, stockByEer } from "./ambiente";
-import { DEFAULT_LISTINI, type Listino } from "./pricing";
+import { differenzaPesata } from "./stime";
+import { DEFAULT_LISTINI, onlinePrice, type Listino } from "./pricing";
 import type {
   AuditEvent,
   BonificaItem,
@@ -106,8 +107,9 @@ interface Actions {
   cancelMove: (id: string, motivo: string) => Result<string>;
   transmitPeriod: (key: string) => Result<string>;
   // Formulari ricevuti dalla ditta che ritira
-  receiveFir: (f: Pick<Fir, "numero" | "emessoAt" | "eer" | "kg" | "destinatarioId" | "trasportatoreId" | "intermediarioId" | "targa" | "conducente" | "inizioTrasportoAt" | "rinfusa" | "annotazioni">) => Result<string>;
+  receiveFir: (f: Pick<Fir, "numero" | "emessoAt" | "eer" | "kg" | "destinatarioId" | "trasportatoreId" | "intermediarioId" | "targa" | "conducente" | "inizioTrasportoAt" | "rinfusa" | "svuota" | "annotazioni">) => Result<string>;
   signFir: (id: string) => Result;
+  confirmMove: (id: string) => void;
   setFirOutcome: (id: string, esito: NonNullable<Fir["esito"]>, kgAccettati: number, arrivoAt: string) => Result;
   saveSoggetto: (s: Soggetto) => void;
   createQuote: (partIds: string[], customer: SalesDoc["customer"], prices?: Record<string, number>, listino?: string) => string;
@@ -385,9 +387,14 @@ export const useStore = create<State & Actions>()(
         // In produzione: transazione sul database con vincolo sullo stato del pezzo.
         createOrder: (channel, partIds, customer, actor, prices, delivery) => {
           const s = get();
+          // Prezzo applicato: quello passato (listino al banco), altrimenti il prezzo del pezzo; online con la commissione dell'8%
+          const priceOf = (pid: string) => {
+            const base = s.parts.find((x) => x.id === pid)?.price;
+            return prices?.[pid] ?? (channel === "banco" ? base : onlinePrice(base));
+          };
           const conflicts = partIds.filter((pid) => {
             const p = s.parts.find((x) => x.id === pid);
-            return !p || p.status !== "disponibile" || !(prices?.[pid] ?? p.price) || (channel !== "banco" && p.listing !== "pubblicato");
+            return !p || p.status !== "disponibile" || !priceOf(pid) || (channel !== "banco" && p.listing !== "pubblicato");
           });
           if (conflicts.length) {
             push(event({ entity: "ordine", entityId: "—", action: "Riserva rifiutata", detail: `${conflicts.join(", ")} non disponibile (${channel})`, ...actor }));
@@ -395,7 +402,7 @@ export const useStore = create<State & Actions>()(
           }
           const n = s.counters.order + 1;
           const id = `O-${pad(n)}`;
-          const amount = partIds.reduce((a, pid) => a + (prices?.[pid] ?? s.parts.find((x) => x.id === pid)?.price ?? 0), 0);
+          const amount = Math.round(partIds.reduce((a, pid) => a + (priceOf(pid) ?? 0), 0) * 100) / 100;
           const at = now();
           set((st) => ({
             parts: st.parts.map((x) => (partIds.includes(x.id) ? { ...x, status: "riservato" } : x)),
@@ -406,7 +413,7 @@ export const useStore = create<State & Actions>()(
                 delivery,
                 partIds,
                 amount,
-                prices: Object.fromEntries(partIds.map((pid) => [pid, prices?.[pid] ?? s.parts.find((x) => x.id === pid)?.price ?? 0])),
+                prices: Object.fromEntries(partIds.map((pid) => [pid, priceOf(pid) ?? 0])),
                 status: "in attesa di pagamento",
                 customer,
                 createdAt: at,
@@ -494,19 +501,23 @@ export const useStore = create<State & Actions>()(
         },
 
         saveBonifica: (vehicleId, items, weightKg) => {
-          const v = get().vehicles.find((x) => x.id === vehicleId);
-          if (!v || v.bonifica) return 0;
+          const v0 = get().vehicles.find((x) => x.id === vehicleId);
+          if (!v0 || v0.bonifica) return 0;
           const at = now();
-          const hadIntake = get().wasteMoves.some((m) => m.origin === vehicleId && m.eer === "16 01 04*" && m.kind === "carico");
-          // Se il carico d'ingresso esiste già, il peso è quello registrato: cambiarlo sbilancerebbe il registro
-          const withWeight = { ...v, weightKg: hadIntake && v.weightKg ? v.weightKg : weightKg };
-          const intake = hadIntake ? [] : movesForIntake(withWeight, v.intakeAt);
-          const carico = get().wasteMoves.find((m) => m.origin === vehicleId && m.causale === "*T");
-          // Lo scarico interno usa il peso registrato all'ingresso (pesa), così carico e scarico del veicolo coincidono
+          let carico = get().wasteMoves.find((m) => m.origin === vehicleId && m.causale === "*T");
+          const intake = carico ? [] : movesForIntake({ ...v0, weightKg: v0.weightKg ?? (weightKg || undefined) }, v0.intakeAt);
+          // Pesata fatta solo ora (alla bonifica): completa il carico d'ingresso ancora in bozza
+          if (carico && isDraft(carico) && !v0.weightKg && weightKg > 0) {
+            get().completeDraft(carico.id, { kg: weightKg, pesoPesa: true });
+            carico = get().wasteMoves.find((m) => m.id === carico!.id);
+          }
+          const v = get().vehicles.find((x) => x.id === vehicleId)!;
+          const withWeight = { ...v, weightKg: v.weightKg ?? (weightKg || undefined) };
+          // Lo scarico interno usa il peso registrato all'ingresso, così carico e scarico del veicolo coincidono
           const { moves, residualKg } = movesForBonifica(carico ? { ...withWeight, weightKg: carico.kg } : withWeight, items, at, carico?.id);
           set((s) => ({ vehicles: s.vehicles.map((x) => (x.id === vehicleId ? { ...withWeight, bonifica: { at, by: ROLE_USER[s.role].user, items, residualKg } } : x)) }));
           addMoves([...intake, ...moves]);
-          push(event({ entity: "veicolo", entityId: vehicleId, action: "Bonifica registrata", detail: `${intake.length + moves.length} movimenti nel registro rifiuti` }));
+          push(event({ entity: "veicolo", entityId: vehicleId, action: "Bonifica registrata", detail: `${intake.length + moves.length} movimenti nel registro rifiuti · pesi dei componenti stimati per modello` }));
           return intake.length + moves.length;
         },
 
@@ -591,18 +602,34 @@ export const useStore = create<State & Actions>()(
           if (!f) return { ok: false, error: "Formulario non trovato" };
           if (f.status !== "da firmare") return { ok: false, error: "Formulario già firmato" };
           const stock = stockByEer(get().wasteMoves).find((x) => x.code === f.eer)?.kg ?? 0;
-          if (f.kg > stock + 0.05) {
+          // Se parte tutto il contenitore, la pesata è il peso vero: la differenza con la giacenza stimata si registra da sola
+          if (!f.svuota && f.kg > stock + 0.05) {
             push(event({ entity: "sistema", entityId: id, action: "Firma bloccata", detail: `${f.kg} kg richiesti, ${stock} kg in giacenza` }));
-            return { ok: false, error: `In giacenza ci sono solo ${stock} kg di ${f.eer}: controlla la quantità del formulario` };
+            return { ok: false, error: `In giacenza ci sono solo ${stock} kg di ${f.eer}: controlla la quantità del formulario, oppure indica che parte tutta la giacenza` };
           }
           const at = now();
           const dest = get().soggetti.find((x) => x.id === f.destinatarioId);
           const e = eerByCode(f.eer);
+          const nome = f.numero ?? id;
+          const diff = f.svuota ? differenzaPesata(stock, f.kg) : 0;
           set((s) => ({ firs: s.firs.map((x) => (x.id === id ? { ...x, status: "firmato", history: [...x.history, { at, status: "firmato", by: ROLE_USER[s.role].user }] } : x)) }));
-          // Con la firma il rifiuto lascia l'impianto: scarico "a terzi" nel registro, legato al formulario
-          addMoves([{ at, kind: "scarico", eer: f.eer, kg: f.kg, origin: id, note: `Uscita verso ${f.destinatario ?? "destinatario"} · formulario ${f.numero ?? id}`, rentri: "da trasmettere", causale: "aT", fir: id, operazione: dest?.operazione ?? "R13", statoFisico: e?.stato, hp: e?.hp }]);
-          push(event({ entity: "sistema", entityId: id, action: "Formulario firmato", detail: `${f.numero ?? ""} · ${f.eer} · ${f.kg} kg` }));
+          addMoves([
+            ...(diff
+              ? [{ at, kind: diff > 0 ? ("carico" as const) : ("scarico" as const), eer: f.eer, kg: Math.abs(diff), origin: id, note: `Differenza tra giacenza stimata (${stock} kg) e pesata del formulario ${nome} (${f.kg} kg)`, rentri: "da trasmettere" as const, causale: "DIFF" as const, fir: id, statoFisico: e?.stato, hp: e?.hp }]
+              : []),
+            // Con la firma il rifiuto lascia l'impianto: scarico "a terzi" nel registro, legato al formulario
+            { at, kind: "scarico", eer: f.eer, kg: f.kg, origin: id, note: `Uscita verso ${f.destinatario ?? "destinatario"} · formulario ${nome}`, rentri: "da trasmettere", causale: "aT", fir: id, operazione: dest?.operazione ?? "R13", statoFisico: e?.stato, hp: e?.hp },
+          ]);
+          push(event({ entity: "sistema", entityId: id, action: "Formulario firmato", detail: `${f.numero ?? ""} · ${f.eer} · ${f.kg} kg${diff ? ` · differenza di pesata ${diff > 0 ? "+" : ""}${diff} kg` : ""}` }));
           return { ok: true, value: undefined };
+        },
+
+        confirmMove: (id) => {
+          const m = get().wasteMoves.find((x) => x.id === id);
+          if (!m) return;
+          const by = ROLE_USER[get().role].user;
+          set((s) => ({ wasteMoves: s.wasteMoves.map((x) => (x.id === id ? { ...x, verificato: { at: now(), by } } : x)) }));
+          push(event({ entity: "sistema", entityId: id, action: "Registrazione controllata", detail: `n. ${m.numero ?? "bozza"} · ${m.note ?? ""}` }));
         },
 
         setFirOutcome: (id, esito, kgAccettati, arrivoAt) => {
@@ -632,7 +659,7 @@ export const useStore = create<State & Actions>()(
           // Il documento riprende i prezzi dell'ordine (listino compreso); un solo documento per ordine
           if (get().docs.some((d) => d.orderId === orderId && (d.type === "fattura" || d.type === "documento commerciale"))) return "";
           const lines = linesOf(o.partIds, prices ?? o.prices ?? (o.partIds.length === 1 ? { [o.partIds[0]]: o.amount } : undefined));
-          return newDoc({ type, customer, lines, total: lines.reduce((a, l) => a + l.price, 0), orderId, listino, status: type === "fattura" ? "inviata allo SdI" : "emesso" });
+          return newDoc({ type, customer, lines, total: Math.round(lines.reduce((a, l) => a + l.price, 0) * 100) / 100, orderId, listino, status: type === "fattura" ? "inviata allo SdI" : "emesso" });
         },
 
         convertQuote: (docId, type) => {

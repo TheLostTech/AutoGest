@@ -59,8 +59,11 @@ export default function BonificaVeicolo() {
 
       <label className="label-sheet mb-4 flex items-center justify-between gap-4 p-4">
         <span>
-          <span className="block font-semibold">Peso in ingresso</span>
-          <span className="block text-sm text-ink-3">{v.weightKg ? "dalla pesata all'ingresso, già nel registro rifiuti" : "nessuna pesata all'ingresso: inserisci il peso"}</span>
+          <span className="block font-semibold">Peso alla pesa</span>
+          <span className="block text-sm text-ink-3">
+            {v.weightKg ? "pesato all'ingresso, già nel registro rifiuti" : "non ancora pesata: inserisci il peso della pesa"}
+            {v.massaLibretto ? ` · libretto ${fmtKg(v.massaLibretto)}` : ""}
+          </span>
         </span>
         <span className="flex items-center gap-2">
           <input
@@ -90,7 +93,7 @@ export default function BonificaVeicolo() {
               />
               <span className="min-w-0 flex-1">
                 <span className="block font-semibold leading-snug">{b.label}</span>
-                <span className="code block text-[13px] text-ink-3">EER {b.eer(v)} · {fmtKg(itemKg(it))}</span>
+                <span className="code block text-[13px] text-ink-3">EER {b.eer(v)} · ~{fmtKg(itemKg(it))} stimati</span>
               </span>
               <span className="flex shrink-0 items-center gap-1.5">
                 <input
@@ -130,7 +133,7 @@ export default function BonificaVeicolo() {
         )}
       </div>
       <p className="mt-3 text-[13px] text-ink-3">
-        Quantità tipiche precompilate: correggi solo ciò che è diverso. Codici rifiuto e conversioni in kg sono dimostrativi, da validare con il consulente ambientale.
+        Quantità e pesi stimati per questo modello (massa da libretto, alimentazione, anno): spunta solo cosa hai tolto, non serve pesare. Il peso vero arriva con la pesata del contenitore quando parte col formulario, e la differenza si registra da sola. Stime dimostrative: nel prodotto arriveranno dai dati tecnici del veicolo.
       </p>
     </div>
   );

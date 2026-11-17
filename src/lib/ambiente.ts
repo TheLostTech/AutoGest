@@ -3,6 +3,7 @@
 // e validati con il consulente ambientale prima dell'uso reale.
 import type { BonificaItem, StatoFisico, Vehicle, WasteMove } from "./types";
 import { monthKey, monthStock } from "./periodo";
+import { stimaComponenti, type Voce } from "./stime";
 
 export interface Eer {
   code: string;
@@ -60,9 +61,17 @@ export const BONIFICA: BonificaVoice[] = [
 
 export const voiceByKey = (k: string) => BONIFICA.find((b) => b.key === k)!;
 
-export const typicalBonifica = (v: Vehicle): BonificaItem[] => BONIFICA.map((b) => ({ key: b.key, qty: b.typical(v), done: true }));
+// Quantità e pesi stimati per questo modello (massa da libretto, alimentazione, anno): nessuno li scrive a mano
+export const profiloOf = (v: Vehicle) => ({ massaKg: v.massaLibretto ?? v.weightKg ?? 1000, fuel: v.fuel, year: v.year });
+export const typicalBonifica = (v: Vehicle): BonificaItem[] => {
+  const st = stimaComponenti(profiloOf(v));
+  return BONIFICA.map((b) => {
+    const e = st[b.key as Voce];
+    return { key: b.key, qty: e?.qty ?? b.typical(v), done: true, kgPerUnit: e?.kgPerUnit ?? b.kgPerUnit };
+  });
+};
 
-export const itemKg = (it: BonificaItem) => (it.done ? Math.round(it.qty * voiceByKey(it.key).kgPerUnit * 10) / 10 : 0);
+export const itemKg = (it: BonificaItem) => (it.done ? Math.round(it.qty * (it.kgPerUnit ?? voiceByKey(it.key).kgPerUnit) * 10) / 10 : 0);
 
 export const fmtKg = (kg: number) => `${kg.toLocaleString("it-IT", { maximumFractionDigits: kg < 10 ? 1 : 0 })} kg`;
 
@@ -75,14 +84,14 @@ const fromEer = (eer: string) => {
 
 // Ingresso del veicolo: carico "ricevuto da terzi" con spunta veicoli fuori uso e certificato di rottamazione.
 // Il peso va confermato con la pesa: finché manca (o manca il codice fiscale o il certificato) resta in bozza.
-export function movesForIntake(v: Vehicle, at: string, pesoPesa = false): Omit<WasteMove, "id">[] {
-  if (!v.weightKg) return [];
+// Il peso è quello della pesa; finché manca si propone la massa del libretto e la registrazione resta in bozza
+export function movesForIntake(v: Vehicle, at: string): Omit<WasteMove, "id">[] {
   return [
     {
       at,
       kind: "carico",
       eer: "16 01 04*",
-      kg: v.weightKg,
+      kg: v.weightKg ?? v.massaLibretto ?? 0,
       origin: v.id,
       note: `Ingresso ${v.plate}`,
       rentri: "da trasmettere",
@@ -92,7 +101,8 @@ export function movesForIntake(v: Vehicle, at: string, pesoPesa = false): Omit<W
       ...fromEer("16 01 04*"),
       produttore: v.conferente ? { nome: v.conferente.nome, cf: v.conferente.cf } : undefined,
       certificato: v.dossier.number && v.presaInCarico ? { numero: v.dossier.number, data: v.presaInCarico.at } : undefined,
-      pesoPesa,
+      pesoPesa: !!v.weightKg,
+      kgLibretto: v.massaLibretto,
     },
   ];
 }
@@ -104,7 +114,8 @@ export function movesForBonifica(v: Vehicle, items: BonificaItem[], at: string, 
   const removed = items.filter((i) => i.done && i.qty > 0);
   const removedKg = removed.reduce((a, i) => a + itemKg(i), 0);
   const residualKg = Math.max(0, Math.round(weight - removedKg));
-  const np = (eer: string, kg: number, note: string): Omit<WasteMove, "id"> => ({ at, kind: "carico", eer, kg, origin: v.id, note, rentri: "da trasmettere", causale: "NP", operazione: "R13", ...fromEer(eer) });
+  // Pesi stimati per modello: la pesata del contenitore all'uscita li riporta al vero
+  const np = (eer: string, kg: number, note: string): Omit<WasteMove, "id"> => ({ at, kind: "carico", eer, kg, origin: v.id, note, rentri: "da trasmettere", causale: "NP", operazione: "R13", stimato: true, ...fromEer(eer) });
   const moves: Omit<WasteMove, "id">[] = [
     { at, kind: "scarico", eer: "16 01 04*", kg: weight, origin: v.id, note: "Avviato a bonifica", rentri: "da trasmettere", causale: "I", caricoRif, ...fromEer("16 01 04*") },
     ...removed.map((i) => np(voiceByKey(i.key).eer(v), itemKg(i), `Bonifica: ${voiceByKey(i.key).label.toLowerCase()}`)),

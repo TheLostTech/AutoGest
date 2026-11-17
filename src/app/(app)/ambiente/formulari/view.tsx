@@ -172,6 +172,7 @@ function NuovoFormulario({
   const [eer, setEer] = useState(pre && inStock.some((s) => s.code === pre) ? pre : (inStock[0]?.code ?? ""));
   const [kg, setKg] = useState("");
   const [rinfusa, setRinfusa] = useState(true);
+  const [svuota, setSvuota] = useState(true);
   const [dest, setDest] = useState(of("destinatario")[0]?.id ?? "");
   const [carrier, setCarrier] = useState(of("trasportatore")[0]?.id ?? "");
   const [broker, setBroker] = useState("");
@@ -181,7 +182,8 @@ function NuovoFormulario({
   const [note, setNote] = useState("");
   const cur = inStock.find((s) => s.code === eer);
   const kgNum = parseKg(kg);
-  const tooMuch = !!(cur && kgNum && kgNum > cur.kg);
+  const tooMuch = !svuota && !!(cur && kgNum && kgNum > cur.kg);
+  const diff = svuota && cur && kgNum ? Math.round((kgNum - cur.kg) * 10) / 10 : 0;
   const oddNumber = numero.trim() !== "" && !firNumberLooksValid(numero);
   const canSave = numero.trim() && eer && kgNum && !tooMuch && dest && carrier;
 
@@ -199,7 +201,11 @@ function NuovoFormulario({
             {inStock.map((s) => <option key={s.code} value={s.code}>{s.code} · {s.short} · {fmtKg(s.kg)} in giacenza</option>)}
           </select>
         </Field>
-        <Field label="Quantità (kg)" hint={cur ? `In giacenza ${fmtKg(cur.kg)}` : undefined} error={tooMuch ? "Più di quanto in giacenza" : undefined}>
+        <Field
+          label={svuota ? "Peso della pesata (kg)" : "Quantità (kg)"}
+          hint={cur ? `In giacenza (stimata) ${fmtKg(cur.kg)}${diff ? ` · differenza di pesata ${diff > 0 ? "+" : "−"}${fmtKg(Math.abs(diff))}, registrata da sola alla firma` : ""}` : undefined}
+          error={tooMuch ? "Più di quanto in giacenza" : undefined}
+        >
           <input className="field code text-[18px] font-bold" inputMode="decimal" value={kg} onChange={(e) => setKg(e.target.value.replace(/[^0-9.,]/g, ""))} />
         </Field>
         <Field label="Destinatario">
@@ -221,6 +227,13 @@ function NuovoFormulario({
         <label className="flex min-h-11 items-center gap-2 self-end">
           <input type="checkbox" className="size-5 accent-[var(--band)]" checked={rinfusa} onChange={(e) => setRinfusa(e.target.checked)} />
           <span>Alla rinfusa</span>
+        </label>
+        <label className="flex min-h-11 items-start gap-2 sm:col-span-2">
+          <input type="checkbox" className="mt-0.5 size-5 shrink-0 accent-[var(--band)]" checked={svuota} onChange={(e) => setSvuota(e.target.checked)} />
+          <span>
+            <span className="font-semibold">Parte tutto il contenitore di questo rifiuto</span>
+            <span className="block text-sm text-ink-3">Il peso della pesata è quello vero: la giacenza stimata si corregge da sola con una differenza di pesata.</span>
+          </span>
         </label>
         <Field label="Targa del mezzo">
           <input className="field code uppercase" value={targa} onChange={(e) => setTarga(e.target.value.toUpperCase().replace(/\s+/g, ""))} />
@@ -253,6 +266,7 @@ function NuovoFormulario({
                 conducente: conducente.trim() || undefined,
                 inizioTrasportoAt: partenza ? new Date(partenza).toISOString() : undefined,
                 rinfusa,
+                svuota,
                 annotazioni: note.trim() || undefined,
               })
             }

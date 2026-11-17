@@ -48,6 +48,7 @@ export const CAUSALE_LABEL: Record<NonNullable<WasteMove["causale"]>, string> = 
   aT: "a terzi",
   RETT: "rettifica",
   ANN: "annullamento",
+  DIFF: "differenza di pesata",
 };
 
 export type MissingField = "produttore" | "cf-produttore" | "certificato" | "peso" | "carico";
@@ -84,7 +85,7 @@ export function workingDaysAfter(iso: string, n: number): string {
   return d.toISOString();
 }
 
-export type IssueCode = "bozza" | "esito-mancante" | "respinto" | "kg-diversi" | "fir-formato" | "oltre-limite";
+export type IssueCode = "bozza" | "esito-mancante" | "respinto" | "kg-diversi" | "fir-formato" | "oltre-limite" | "peso-diverso" | "diff-pesata";
 export interface Issue {
   code: IssueCode;
   text: string;
@@ -108,6 +109,11 @@ export function moveIssues(m: WasteMove, fir?: Fir, corrected = false, all?: Was
     return [{ code: "bozza", text: miss.length ? `Bozza: manca ${miss.map((x) => MISSING_TEXT[x]).join(", ")}` : "Bozza da confermare", blocking: true }];
   }
   const out: Issue[] = [];
+  if (m.verificato) return [];
+  if (m.causale === "*T" && m.pesoPesa && m.kgLibretto && Math.abs(m.kg - m.kgLibretto) / m.kgLibretto > 0.25)
+    out.push({ code: "peso-diverso", text: `Pesa ${kgText(m.kg)} kg, libretto ${kgText(m.kgLibretto)} kg: controlla`, blocking: false });
+  if (m.causale === "DIFF" && !corrected)
+    out.push({ code: "diff-pesata", text: `Differenza di pesata (${m.kind === "carico" ? "+" : "−"}${kgText(m.kg)} kg): verificala`, blocking: false });
   if (m.causale === "aT" && fir) {
     if (!fir.esito) out.push({ code: "esito-mancante", text: "Formulario senza esito del destinatario", blocking: false });
     else if (corrected) {

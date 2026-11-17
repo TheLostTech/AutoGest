@@ -33,7 +33,8 @@ export interface Vehicle {
   photo?: string;
   notes?: string;
   createdBy: string;
-  weightKg?: number; // peso in ingresso (bilancia o stima)
+  weightKg?: number; // peso alla pesa all'ingresso (obbligatoria: All. I p. 2.1 f-bis D.Lgs. 209/2003)
+  massaLibretto?: number; // massa in ordine di marcia da libretto (campo G), dai dati della targa
   bonifica?: Bonifica;
   // Pratica: conferimento → documenti → visura → presa in carico → radiazione
   conferente?: { tipo: ConferenteTipo; nome: string; cf?: string; documento?: string }; // cf = codice fiscale o partita IVA
@@ -51,6 +52,7 @@ export interface BonificaItem {
   key: string; // voce del modello di bonifica (vedi ambiente.ts)
   qty: number; // nella sua unità (l, kg, pz)
   done: boolean;
+  kgPerUnit?: number; // stima per modello fissata al momento della bonifica
 }
 
 export interface Bonifica {
@@ -63,7 +65,7 @@ export interface Bonifica {
 // Causali del registro per un impianto (manuale RENTRI §3.3): *T carico ricevuto da terzi, NP carico nuovo
 // produttore (rifiuti nati dal trattamento), I scarico interno, aT scarico a terzi. RETT e ANN sono le
 // registrazioni di rettifica e annullamento: una registrazione numerata non si modifica mai.
-export type Causale = "*T" | "NP" | "I" | "aT" | "RETT" | "ANN";
+export type Causale = "*T" | "NP" | "I" | "aT" | "RETT" | "ANN" | "DIFF"; // DIFF: differenza tra giacenza stimata e pesata all'uscita
 export type StatoFisico = "S" | "SP" | "L" | "FP" | "VS";
 
 export interface WasteMove {
@@ -89,6 +91,9 @@ export interface WasteMove {
   certificato?: { numero: string; data: string }; // certificato di rottamazione (RVFU)
   produttore?: { nome: string; cf?: string };
   pesoPesa?: boolean; // peso rilevato con la pesa dell'impianto
+  kgLibretto?: number; // massa da libretto, per confronto con la pesa
+  stimato?: boolean; // peso stimato per modello (bonifica): il vero arriva con la pesata all'uscita
+  verificato?: { at: string; by: string }; // avviso controllato dalla consulente (non cambia i dati registrati)
   caricoRif?: string; // scarico interno: id del carico a cui si riferisce
   fir?: string; // id del formulario
   rettificaDi?: string;
@@ -131,6 +136,7 @@ export interface Fir {
   conducente?: string;
   inizioTrasportoAt?: string;
   rinfusa?: boolean;
+  svuota?: boolean; // il carico è tutta la giacenza di quel codice: la pesata corregge le stime
   annotazioni?: string;
   esito?: "accettato" | "parziale" | "respinto";
   kgAccettati?: number;

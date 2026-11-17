@@ -214,3 +214,23 @@ test("firNumberTaken: lo stesso formulario non si registra due volte", () => {
   assert.equal(firNumberTaken(firs, "jnmpc00262jc"), true);
   assert.equal(firNumberTaken(firs, "JNMPC 00263 JC"), false);
 });
+
+test("moveIssues: pesa molto diversa dal libretto è un avviso", () => {
+  const m = mv({ numero: 9, causale: "*T", vfu: true, kg: 700, kgLibretto: 975, pesoPesa: true, produttore: { nome: "A", cf: "X" }, certificato: { numero: "CR", data: "2026-10-01" } });
+  assert.deepEqual(moveIssues(m).map((i) => [i.code, i.blocking]), [["peso-diverso", false]]);
+  assert.deepEqual(moveIssues({ ...m, kg: 990 }), []);
+});
+
+test("differenza di pesata: si segnala da verificare e conta in giacenza", () => {
+  const c = mv({ numero: 1, registeredAt: "2026-10-05T10:00:00+02:00", eer: "16 06 01*", kg: 420 });
+  const d = mv({ numero: 2, registeredAt: "2026-10-20T10:00:00+02:00", eer: "16 06 01*", kind: "scarico", causale: "DIFF", kg: 22 });
+  assert.deepEqual(moveIssues(d).map((i) => [i.code, i.blocking]), [["diff-pesata", false]]);
+  assert.deepEqual(moveIssues(d, undefined, true), []);
+  const row = monthStock([c, d], "2026-10", [{ code: "16 06 01*", limitKg: 3000 }])[0];
+  assert.equal(row.giacenza, 398);
+});
+
+test("una differenza di pesata confermata dalla consulente non è più un avviso", () => {
+  const d = mv({ numero: 2, registeredAt: "2026-10-20T10:00:00+02:00", kind: "scarico", causale: "DIFF", kg: 22, verificato: { at: "2026-10-21T10:00:00+02:00", by: "Laura" } });
+  assert.deepEqual(moveIssues(d), []);
+});
