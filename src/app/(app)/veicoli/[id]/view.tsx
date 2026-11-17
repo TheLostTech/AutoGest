@@ -7,7 +7,7 @@ import { VIN_RE } from "@/lib/services";
 import { BadgeCheck, Leaf, Wrench } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { BonificaBadge, Button, ButtonLink, Empty, Notice, Panel, Plate } from "@/components/ui";
-import { bonificaClock, TERMS } from "@/lib/agenda";
+import { bonificaClock } from "@/lib/agenda";
 import { RecoveryList } from "@/components/RecoveryList";
 import { PraticaPanel } from "@/components/PraticaPanel";
 import { PartRow } from "@/components/PartRow";
@@ -122,7 +122,7 @@ export default function SchedaVeicolo() {
                     <div className="w-full">
                       <BonificaBadge clock={c} className="text-[15px]" />
                       <p className="mt-1 text-sm text-ink-2">
-                        {c.parked[0].toUpperCase() + c.parked.slice(1)} · termine {TERMS.bonifica} giorni dall&apos;ingresso ({dateIt(c.due)})
+                        {c.parked[0].toUpperCase() + c.parked.slice(1)} · obiettivo interno 7 giorni ({dateIt(c.due)}) · per legge entro 10 giorni lavorativi ({dateIt(c.legalDue)})
                       </p>
                     </div>
                   );

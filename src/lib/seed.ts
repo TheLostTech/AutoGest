@@ -1,9 +1,11 @@
 import { PART_TYPES, typeById } from "./catalog";
 import { catalogFor, CATALOG_SOURCE } from "./partsdb";
 import { corsiaId, locToString, scaffaleId, warehouseFor } from "./warehouse";
-import { movesForBonifica, movesForIntake, typicalBonifica } from "./ambiente";
+import { eerByCode, movesForBonifica, movesForIntake, typicalBonifica } from "./ambiente";
+import { missingFields, monthKey } from "./periodo";
 import type {
   AuditEvent,
+  Soggetto,
   Condition,
   Fir,
   InventoryCount,
@@ -246,7 +248,11 @@ export function buildSeed() {
     const base: Vehicle = { ...v, weightKg: WEIGHTS[v.platform] ?? 1000 };
     if (!v.dossier.number) return base; // V-000115: pratica ancora da avviare
     const dealer = i % 4 === 2;
-    const conferente = dealer ? { tipo: "concessionaria" as const, nome: "Concessionaria Demo Auto" } : { tipo: "privato" as const, nome: `Detentore demo ${v.id.slice(-3)}` };
+    const n = Number(v.id.slice(-3));
+    // Codici fiscali e partite IVA finti, solo per la demo
+    const conferente = dealer
+      ? { tipo: "concessionaria" as const, nome: "Concessionaria Demo Auto", cf: "01234567890" }
+      : { tipo: "privato" as const, nome: `Detentore demo ${v.id.slice(-3)}`, cf: `DMODTN${80 + (n % 20)}A01L219X` };
     const documenti = ["libretto", "proprieta", "identita", "targa-ant", "targa-post", ...(dealer ? ["delega"] : [])];
     const done = v.dossier.status === "completata";
     return {
@@ -264,7 +270,8 @@ export function buildSeed() {
   });
   const raw: Omit<WasteMove, "id">[] = [];
   for (const v of vehicles) {
-    raw.push(...movesForIntake(v, v.intakeAt));
+    // Tutti pesati alla pesa, tranne V-000116: la sua registrazione resta in bozza finché non si inserisce il peso
+    raw.push(...movesForIntake(v, v.intakeAt, v.id !== "V-000116"));
     if (v.work === "accettato") continue;
     const at = hours(v.intakeAt, 3);
     const items = typicalBonifica(v).map((it) => ({ ...it, qty: it.key === "carburante" ? Math.round(2 + r() * 12) : it.key === "oli" ? Math.round((3.5 + r() * 2.5) * 10) / 10 : it.qty }));
@@ -274,32 +281,92 @@ export function buildSeed() {
     log({ at, user: "Davide (smontaggio)", role: "smontatore", device: "Smartphone campo 2", entity: "veicolo", entityId: v.id, action: "Bonifica registrata", detail: `${moves.length} movimenti nel registro rifiuti` });
   }
 
-  // Uscite già avvenute: carcasse e oli dei veicoli più vecchi, catalizzatori; batterie in attesa di firma
+  // Anagrafica dei soggetti dei formulari (dati finti)
+  const soggetti: Soggetto[] = [
+    { id: "S-001", ruolo: "impianto", nome: "Autodemolizione Demo S.r.l.", cf: "01234567890", sede: "Via Demo 1, Torino (TO)", autorizzazione: "Aut. unica art. 208 D.Lgs. 152/06 n. DEMO-0001/2019", operazione: "R13" },
+    { id: "S-002", ruolo: "destinatario", nome: "Centro Recuperi Demo S.r.l.", cf: "02345678901", sede: "Via Recuperi 17, Torino (TO)", autorizzazione: "AIA art. 29-ter n. DEMO-0002/2022", operazione: "R13" },
+    { id: "S-003", ruolo: "trasportatore", nome: "Centro Recuperi Demo S.r.l.", cf: "02345678901", albo: "TO/000001" },
+    { id: "S-004", ruolo: "intermediario", nome: "Metalli Demo S.p.A.", cf: "03456789012", albo: "TO/000004" },
+    { id: "S-005", ruolo: "destinatario", nome: "Recupero Oli Demo", cf: "04567890123", sede: "Via Oli 5, Asti (AT)", autorizzazione: "Aut. art. 208 n. DEMO-0005/2020", operazione: "R13" },
+    { id: "S-006", ruolo: "destinatario", nome: "Recupero Catalizzatori Demo", cf: "05678901234", sede: "Via Catalizzatori 3, Novara (NO)", autorizzazione: "Aut. art. 208 n. DEMO-0006/2021", operazione: "R13" },
+    { id: "S-007", ruolo: "destinatario", nome: "Raccolta Batterie Demo", cf: "06789012345", sede: "Via Batterie 9, Torino (TO)", autorizzazione: "Aut. art. 208 n. DEMO-0007/2018", operazione: "R13" },
+    { id: "S-008", ruolo: "trasportatore", nome: "Trasporti Demo Snc", cf: "07890123456", albo: "TO/000002" },
+    { id: "S-009", ruolo: "trasportatore", nome: "Autotrasporti Esempio Srl", cf: "08901234567", albo: "TO/000003" },
+  ];
+  const nomeOf = (id: string) => soggetti.find((x) => x.id === id)!.nome;
+
+  // Formulari ricevuti: li emette e li vidima la ditta che ritira, l'impianto li firma
   const firs: Fir[] = [];
   let fn = 140;
   const oldOnes = vehicles.filter((v) => v.bonifica && v.intakeAt < daysAgo(30));
   const sumOf = (vs: Vehicle[], pick: (v: Vehicle) => number) => Math.round(vs.reduce((a, v) => a + pick(v), 0) * 10) / 10;
   const itemKgOf = (v: Vehicle, key: string, kgPer: number) => (v.bonifica?.items.find((i) => i.key === key)?.qty ?? 0) * kgPer;
-  const plannedFirs: { eer: string; kg: number; at: string; status: Fir["status"]; dest: string }[] = [
-    { eer: "16 01 06", kg: sumOf(oldOnes, (v) => v.bonifica!.residualKg), at: daysAgo(25, 10), status: "accettato", dest: "Frantumazione Demo Srl" },
-    { eer: "13 02 08*", kg: sumOf(oldOnes, (v) => itemKgOf(v, "oli", 0.9)), at: daysAgo(20, 11), status: "accettato", dest: "Recupero Oli Demo" },
-    { eer: "16 08 01", kg: sumOf(vehicles.filter((v) => v.bonifica && v.intakeAt < daysAgo(5)), () => 5), at: daysAgo(2, 15), status: "firmato", dest: "Recupero Catalizzatori Demo" },
+  const plannedFirs: (Pick<Fir, "eer" | "kg" | "at" | "status" | "numero" | "destinatarioId" | "trasportatoreId" | "intermediarioId" | "targa" | "conducente" | "esito" | "kgAccettati">)[] = [
+    // ottobre: carcasse accettate solo in parte (avviso nel periodo), oli firmati ma senza esito del destinatario
+    { eer: "16 01 06", kg: sumOf(oldOnes, (v) => v.bonifica!.residualKg), at: daysAgo(25, 10), status: "accettato", numero: "DEMOA 00101 AA", destinatarioId: "S-002", trasportatoreId: "S-003", intermediarioId: "S-004", targa: "AB123CD", conducente: "Autista Demo", esito: "parziale" },
+    { eer: "13 02 08*", kg: sumOf(oldOnes, (v) => itemKgOf(v, "oli", 0.9)), at: daysAgo(20, 11), status: "firmato", numero: "DEMOB 00102 AA", destinatarioId: "S-005", trasportatoreId: "S-008", targa: "EF456GH", conducente: "Autista Demo" },
+    // novembre: catalizzatori accettati per intero
+    { eer: "16 08 01", kg: sumOf(vehicles.filter((v) => v.bonifica && v.intakeAt < daysAgo(5)), () => 5), at: daysAgo(2, 15), status: "accettato", numero: "DEMOC 00103 AA", destinatarioId: "S-006", trasportatoreId: "S-008", targa: "EF456GH", conducente: "Autista Demo", esito: "accettato" },
   ];
   for (const f of plannedFirs) {
     const id = `F-${pad(++fn)}`;
     const history: Fir["history"] = [{ at: f.at, status: "da firmare", by: "Sara (responsabile)" }, { at: hours(f.at, 1), status: "firmato", by: "Sara (responsabile)" }];
-    if (f.status === "accettato") history.push({ at: hours(f.at, 2), status: "trasmesso", by: "Sistema" }, { at: hours(f.at, 30), status: "accettato", by: f.dest });
-    firs.push({ id, at: f.at, eer: f.eer, kg: f.kg, destinatario: f.dest, trasportatore: "Trasporti Demo Snc", status: f.status, history });
-    raw.push({ at: hours(f.at, 1), kind: "scarico", eer: f.eer, kg: f.kg, origin: id, note: `Uscita verso ${f.dest}`, rentri: "da trasmettere" });
+    const accepted = f.status === "accettato";
+    if (accepted) history.push({ at: hours(f.at, 30), status: "accettato", by: nomeOf(f.destinatarioId!) });
+    const kgAccettati = f.esito === "parziale" ? Math.round(f.kg - 150) : f.esito === "accettato" ? f.kg : undefined;
+    firs.push({
+      id,
+      ...f,
+      destinatario: nomeOf(f.destinatarioId!),
+      trasportatore: nomeOf(f.trasportatoreId!),
+      emessoAt: f.at,
+      inizioTrasportoAt: hours(f.at, 1),
+      rinfusa: true,
+      history,
+      kgAccettati,
+      arrivoAt: accepted ? hours(f.at, 3) : undefined,
+    });
+    const e = eerByCode(f.eer);
+    raw.push({ at: hours(f.at, 1), kind: "scarico", eer: f.eer, kg: f.kg, origin: id, note: `Uscita verso ${nomeOf(f.destinatarioId!)}`, rentri: "da trasmettere", causale: "aT", fir: id, operazione: "R13", statoFisico: e?.stato, hp: e?.hp });
   }
   const batt = sumOf(vehicles.filter((v) => v.bonifica), () => 14);
-  firs.push({ id: `F-${pad(++fn)}`, at: daysAgo(0, 7), eer: "16 06 01*", kg: batt, destinatario: "Raccolta Batterie Demo", trasportatore: "Autotrasporti Esempio Srl", status: "da firmare", history: [{ at: daysAgo(0, 7), status: "da firmare", by: "Sara (responsabile)" }] });
+  firs.push({ id: `F-${pad(++fn)}`, at: daysAgo(0, 7), eer: "16 06 01*", kg: batt, destinatario: nomeOf("S-007"), trasportatore: nomeOf("S-009"), status: "da firmare", history: [{ at: daysAgo(0, 7), status: "da firmare", by: "Sara (responsabile)" }], numero: "DEMOD 00104 AA", emessoAt: daysAgo(0, 7), destinatarioId: "S-007", trasportatoreId: "S-009", targa: "IL789MN", conducente: "Autista Demo", rinfusa: false });
 
+  // Ottobre resta con una bozza: il primo ingresso del mese senza codice fiscale di chi conferisce
   raw.sort((a, b) => a.at.localeCompare(b.at));
+  const octIntake = raw.find((m) => m.causale === "*T" && monthKey(m.at) === "2026-10");
+  if (octIntake?.produttore) {
+    octIntake.produttore = { nome: octIntake.produttore.nome };
+    const veh = vehicles.find((v) => v.id === octIntake.origin);
+    if (veh?.conferente) veh.conferente = { ...veh.conferente, cf: undefined };
+  }
+
+  // Registro: numeri progressivi per anno, registrazione lo stesso giorno dell'operazione;
+  // i mesi prima di ottobre sono già trasmessi, ottobre è da trasmettere, novembre è in corso
+  // Trasmissione simulata il 10 del mese successivo
+  const sentOn = (key: string) => { const [y, mo] = key.split("-").map(Number); return new Date(y, mo, 10, 11).toISOString(); };
+  const perYear = new Map<number, number>();
+  // Il carico d'ingresso di ogni veicolo, per sapere se lo scarico interno della bonifica può essere numerato
+  const draftIntake = new Set(raw.filter((m) => m.causale === "*T" && missingFields(m as WasteMove).length > 0).map((m) => m.origin));
   const wasteMoves: WasteMove[] = raw.map((m, i) => {
-    const sent = m.at < daysAgo(2);
-    return { ...m, id: `M-${pad(i + 1)}`, rentri: sent ? "trasmesso" : "da trasmettere", rentriAt: sent ? hours(m.at, 20) : undefined };
+    const id = `M-${pad(i + 1)}`;
+    const draft = missingFields(m as WasteMove).length > 0 || (m.causale === "I" && draftIntake.has(m.origin));
+    const key = monthKey(m.at);
+    const sent = !draft && key < "2026-10";
+    const year = new Date(m.at).getFullYear();
+    const numero = draft ? undefined : (perYear.get(year) ?? 0) + 1;
+    if (numero) perYear.set(year, numero);
+    return {
+      ...m,
+      id,
+      ...(draft ? {} : { numero, registeredAt: m.at, by: m.causale === "*T" ? "Giulia (accettazione)" : "Davide (smontaggio)" }),
+      rentri: sent ? "trasmesso" : "da trasmettere",
+      rentriAt: sent ? sentOn(key) : undefined,
+      rentriRicevuta: sent ? `RENTRI-SIM-${key}-DEMO01` : undefined,
+    };
   });
+  // Lo scarico interno della bonifica richiama il carico d'ingresso del veicolo
+  for (const m of wasteMoves) if (m.causale === "I") m.caricoRif = wasteMoves.find((x) => x.causale === "*T" && x.origin === m.origin)?.id;
 
   // ——— Documenti di vendita: scontrini e una fattura per le vendite al banco, un preventivo aperto ———
   const docs: SalesDoc[] = [];
@@ -338,6 +405,7 @@ export function buildSeed() {
     rules: SEED_RULES,
     wasteMoves,
     firs,
+    soggetti,
     docs,
     inventory: [] as InventoryCount[],
     counters: { vehicle: 118, part: pn, order: on, event: an, move: wasteMoves.length, fir: fn, docs: dn, inventory: 0 },

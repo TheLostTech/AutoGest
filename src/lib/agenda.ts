@@ -1,4 +1,5 @@
 import { locToString } from "./warehouse";
+import { bonificaStato, isDraft, MISSING_TEXT, missingFields, periodKeyOf, periodsOf, workingDaysAfter, type BonificaStato } from "./periodo";
 // Coda "Da fare": le attività nascono dai dati, non da una lista compilata a mano.
 // Ogni voce ha un ruolo destinatario, una scadenza (se esiste) e porta all'azione.
 import { typeById } from "./catalog";
@@ -29,8 +30,6 @@ export const TERMS = {
   pagamento: 2, // dopo questo termine la riserva va rivista
   spedizione: 1,
   preventivo: 5, // giorni dopo i quali richiamare il cliente
-  bonifica: 7, // giorni dall'ingresso: il veicolo può restare in parcheggio, ma va bonificato entro questo termine
-  rentri: 2,
 };
 
 const DAY = 864e5;
@@ -50,31 +49,9 @@ export function urgencyOf(due: string | undefined, now = new Date()): Urgency {
   return "quando-puoi";
 }
 
-// Tempo di stazionamento prima della bonifica: si contano i giorni di calendario dall'ingresso
-// (giorno 0 = giorno di ingresso). Avviso giallo a 2 giorni dalla scadenza, rosso dal giorno della scadenza.
-export type BonificaLevel = "ok" | "attenzione" | "oggi" | "scaduta";
-export interface BonificaClock {
-  days: number; // giorni in parcheggio
-  left: number; // giorni rimasti (negativo = scaduta)
-  level: BonificaLevel;
-  label: string; // es. "Bonifica entro 2 giorni"
-  parked: string; // es. "in parcheggio da 5 giorni"
-  due: string; // ISO, fine del giorno di scadenza
-}
-const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-const giorni = (n: number) => `${n} ${n === 1 ? "giorno" : "giorni"}`;
-
-export function bonificaClock(v: Vehicle, now = new Date()): BonificaClock | null {
-  if (v.bonifica) return null;
-  const intake = new Date(v.intakeAt);
-  const days = Math.max(0, Math.round((dayStart(now) - dayStart(intake)) / DAY));
-  const left = TERMS.bonifica - days;
-  const level: BonificaLevel = left < 0 ? "scaduta" : left === 0 ? "oggi" : left <= 2 ? "attenzione" : "ok";
-  const label = left < 0 ? `Bonifica scaduta da ${giorni(-left)}` : left === 0 ? "Bonifica da fare oggi" : `Bonifica entro ${giorni(left)}`;
-  const due = new Date(dayStart(intake) + TERMS.bonifica * DAY);
-  due.setHours(23, 59, 59, 999);
-  return { days, left, level, label, parked: days === 0 ? "entrato oggi" : `in parcheggio da ${giorni(days)}`, due: due.toISOString() };
-}
+// Tempo di stazionamento prima della bonifica: obiettivo interno 7 giorni, legge 10 giorni lavorativi (vedi periodo.ts)
+export type BonificaClock = BonificaStato;
+export const bonificaClock = (v: Vehicle, now = new Date()): BonificaClock | null => (v.bonifica ? null : bonificaStato(v.intakeAt, now));
 
 export function buildAgenda(
   {
@@ -290,24 +267,39 @@ export function buildAgenda(
   }
 
   // Ambiente: registro, formulari e limiti dell'autorizzazione
-  const pending = wasteMoves.filter((m) => m.rentri === "da trasmettere");
-  if (pending.length)
+  // Bozze del registro: vanno completate entro 2 giorni lavorativi (art. 190 c. 3 lett. d D.Lgs. 152/2006)
+  for (const m of wasteMoves.filter(isDraft)) {
+    const miss = missingFields(m, wasteMoves);
+    const v = vehicles.find((x) => x.id === m.origin);
     items.push({
-      id: "rentri",
+      id: `bozza-${m.id}`,
       kind: "ambiente",
-      title: `Trasmetti ${pending.length} movimenti al RENTRI`,
-      detail: "Generati da ingressi, bonifiche e formulari: controlla e invia",
-      action: "Trasmetti",
-      href: "/ambiente",
-      due: addDays(pending.map((m) => m.at).sort()[0], TERMS.rentri),
-      roles: ["accettazione", "responsabile"],
+      title: `Completa la registrazione${v ? ` di ${v.plate}` : ""}`,
+      detail: `${m.eer} · manca ${miss.map((x) => MISSING_TEXT[x]).join(", ") || "la conferma"} · entro 2 giorni lavorativi`,
+      action: "Completa",
+      href: `/ambiente/periodo?mese=${periodKeyOf(m)}`,
+      due: workingDaysAfter(m.at, 2),
+      roles: ["accettazione", "responsabile", "consulente"],
+    });
+  }
+  // Periodi chiusi da trasmettere: entro la fine del mese successivo (DM 59/2023 art. 15)
+  for (const p of periodsOf(wasteMoves, firs).filter((x) => x.status === "da trasmettere"))
+    items.push({
+      id: `rentri-${p.key}`,
+      kind: "ambiente",
+      title: `Periodo di ${p.label} da trasmettere al RENTRI`,
+      detail: `${p.moves.length} registrazioni${p.drafts ? ` · ${p.drafts} da completare` : ""}${p.warnings ? ` · ${p.warnings} avvisi` : ""}`,
+      action: "Apri",
+      href: `/ambiente/periodo?mese=${p.key}`,
+      due: p.deadline,
+      roles: ["consulente", "responsabile", "accettazione"],
     });
   for (const f of firs) {
     if (f.status === "da firmare")
       items.push({
         id: `firma-${f.id}`,
         kind: "ambiente",
-        title: `Firma il formulario ${f.id}`,
+        title: `Firma il formulario ${f.numero ?? f.id}`,
         detail: `${eerByCode(f.eer)?.short} · ${fmtKg(f.kg)} → ${f.destinatario}`,
         action: "Firma",
         href: "/ambiente/formulari",
@@ -316,14 +308,13 @@ export function buildAgenda(
       });
     if (f.status === "firmato")
       items.push({
-        id: `fir-rentri-${f.id}`,
+        id: `fir-esito-${f.id}`,
         kind: "ambiente",
-        title: `Trasmetti il formulario ${f.id}`,
-        detail: `${eerByCode(f.eer)?.short} · ${fmtKg(f.kg)} · ${f.destinatario}`,
-        action: "Trasmetti",
+        title: `Esito del formulario ${f.numero ?? f.id}`,
+        detail: `${eerByCode(f.eer)?.short} · ${fmtKg(f.kg)} · segna quanto ha accettato ${f.destinatario}`,
+        action: "Esito",
         href: "/ambiente/formulari",
-        due: addDays(f.at, 1),
-        roles: ["accettazione", "responsabile"],
+        roles: ["accettazione", "responsabile", "consulente"],
       });
   }
   const pendingFir = new Set(firs.filter((f) => f.status === "da firmare").map((f) => f.eer));

@@ -3,7 +3,8 @@ export type Role =
   | "smontatore"
   | "magazziniere"
   | "responsabile"
-  | "vendite";
+  | "vendite"
+  | "consulente"; // consulente ambientale esterna: solo registro rifiuti e formulari
 
 export type VehicleWork = "accettato" | "in smontaggio" | "smontato";
 export type Verification = "verificato" | "da verificare";
@@ -59,9 +60,15 @@ export interface Bonifica {
   residualKg: number; // carcassa bonificata che resta in piazzale
 }
 
+// Causali del registro per un impianto (manuale RENTRI §3.3): *T carico ricevuto da terzi, NP carico nuovo
+// produttore (rifiuti nati dal trattamento), I scarico interno, aT scarico a terzi. RETT e ANN sono le
+// registrazioni di rettifica e annullamento: una registrazione numerata non si modifica mai.
+export type Causale = "*T" | "NP" | "I" | "aT" | "RETT" | "ANN";
+export type StatoFisico = "S" | "SP" | "L" | "FP" | "VS";
+
 export interface WasteMove {
-  id: string; // M-000001: numero progressivo del registro
-  at: string;
+  id: string; // M-000001: identificativo interno
+  at: string; // data dell'operazione (ingresso, bonifica, ritiro)
   kind: "carico" | "scarico";
   eer: string; // codice rifiuto
   kg: number;
@@ -69,19 +76,65 @@ export interface WasteMove {
   note?: string;
   rentri: "da trasmettere" | "trasmesso";
   rentriAt?: string;
+  rentriRicevuta?: string;
+  // Registrazione: senza numero è una bozza (manca un dato obbligatorio); col numero non si modifica più
+  numero?: number; // progressivo nell'anno
+  registeredAt?: string;
+  by?: string;
+  causale?: Causale;
+  statoFisico?: StatoFisico;
+  hp?: string[]; // classi di pericolo
+  operazione?: string; // attività a destinazione, es. R13
+  vfu?: boolean; // veicolo fuori uso (impianti del D.Lgs. 209/2003)
+  certificato?: { numero: string; data: string }; // certificato di rottamazione (RVFU)
+  produttore?: { nome: string; cf?: string };
+  pesoPesa?: boolean; // peso rilevato con la pesa dell'impianto
+  caricoRif?: string; // scarico interno: id del carico a cui si riferisce
+  fir?: string; // id del formulario
+  rettificaDi?: string;
+  annullaDi?: string;
+  motivo?: string;
 }
 
-export type FirStatus = "da firmare" | "firmato" | "trasmesso" | "accettato";
+export type RuoloSoggetto = "impianto" | "destinatario" | "trasportatore" | "intermediario";
 
+// Anagrafica dei soggetti dei formulari: si compila una volta
+export interface Soggetto {
+  id: string;
+  ruolo: RuoloSoggetto;
+  nome: string;
+  cf: string;
+  sede?: string;
+  autorizzazione?: string;
+  albo?: string; // iscrizione all'Albo gestori ambientali
+  operazione?: string; // per i destinatari, es. R13
+}
+
+export type FirStatus = "da firmare" | "firmato" | "accettato"; // la trasmissione al RENTRI la fa chi emette il formulario
+
+// Formulario ricevuto: lo emette e lo vidima la ditta che ritira, l'impianto lo firma
 export interface Fir {
-  id: string; // formulario di identificazione rifiuto
+  id: string;
   at: string;
   eer: string;
   kg: number;
-  destinatario: string;
-  trasportatore: string;
+  destinatario?: string;
+  trasportatore?: string;
   status: FirStatus;
   history: { at: string; status: FirStatus; by: string }[];
+  numero?: string; // es. "JNMPC 00262 JC"
+  emessoAt?: string;
+  destinatarioId?: string;
+  trasportatoreId?: string;
+  intermediarioId?: string;
+  targa?: string;
+  conducente?: string;
+  inizioTrasportoAt?: string;
+  rinfusa?: boolean;
+  annotazioni?: string;
+  esito?: "accettato" | "parziale" | "respinto";
+  kgAccettati?: number;
+  arrivoAt?: string;
 }
 
 export type PartStatus =

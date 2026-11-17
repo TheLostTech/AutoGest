@@ -5,7 +5,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { buildSeed, pad } from "./seed";
 import { locToString, originLabel, WAREHOUSES, type Warehouse } from "./warehouse";
-import { FIR_NEXT, movesForBonifica, movesForIntake, stockByEer } from "./ambiente";
+import { eerByCode, movesForBonifica, movesForIntake, stockByEer } from "./ambiente";
 import { DEFAULT_LISTINI, type Listino } from "./pricing";
 import type {
   AuditEvent,
@@ -21,11 +21,13 @@ import type {
   PartStatus,
   Role,
   ScrapPickup,
+  Soggetto,
   StockRule,
   Vehicle,
   WasteMove,
 } from "./types";
 import { publishChecks } from "./logic";
+import { canTransmit, firNumberTaken, isDraft, missingFields, monthLabel, nextRegisterNumber, periodsOf } from "./periodo";
 
 export const ROLE_USER: Record<Role, { user: string; device: string; label: string }> = {
   accettazione: { user: "Giulia (accettazione)", device: "PC ufficio", label: "Accettazione" },
@@ -33,6 +35,7 @@ export const ROLE_USER: Record<Role, { user: string; device: string; label: stri
   magazziniere: { user: "Paolo (magazzino)", device: "Smartphone magazzino", label: "Magazziniere" },
   responsabile: { user: "Sara (responsabile)", device: "PC ufficio", label: "Responsabile" },
   vendite: { user: "Anna (vendite)", device: "PC banco", label: "Vendite" },
+  consulente: { user: "Laura (consulente ambientale)", device: "PC studio", label: "Consulente ambientale" },
 };
 
 interface Counters {
@@ -56,6 +59,7 @@ interface State {
   rules: StockRule[];
   wasteMoves: WasteMove[];
   firs: Fir[];
+  soggetti: Soggetto[];
   docs: SalesDoc[];
   listini: Listino[];
   warehouses: Warehouse[];
@@ -96,9 +100,16 @@ interface Actions {
   returnOrder: (orderId: string) => void;
   setRule: (typeId: string, min: number, max: number) => void;
   saveBonifica: (vehicleId: string, items: BonificaItem[], weightKg: number) => number;
-  transmitRentri: () => number;
-  createFir: (f: Pick<Fir, "eer" | "kg" | "destinatario" | "trasportatore">) => string;
-  advanceFir: (id: string) => Result;
+  // Registro rifiuti: le registrazioni numerate non si modificano; si completano le bozze, si rettifica o si annulla
+  completeDraft: (id: string, patch: { produttoreNome?: string; produttoreCf?: string; certificato?: { numero: string; data: string }; kg?: number; pesoPesa?: boolean }) => Result<boolean>;
+  rectifyMove: (id: string, kg: number, motivo: string) => Result<string>;
+  cancelMove: (id: string, motivo: string) => Result<string>;
+  transmitPeriod: (key: string) => Result<string>;
+  // Formulari ricevuti dalla ditta che ritira
+  receiveFir: (f: Pick<Fir, "numero" | "emessoAt" | "eer" | "kg" | "destinatarioId" | "trasportatoreId" | "intermediarioId" | "targa" | "conducente" | "inizioTrasportoAt" | "rinfusa" | "annotazioni">) => Result<string>;
+  signFir: (id: string) => Result;
+  setFirOutcome: (id: string, esito: NonNullable<Fir["esito"]>, kgAccettati: number, arrivoAt: string) => Result;
+  saveSoggetto: (s: Soggetto) => void;
   createQuote: (partIds: string[], customer: SalesDoc["customer"], prices?: Record<string, number>, listino?: string) => string;
   issueDoc: (orderId: string, type: "documento commerciale" | "fattura", customer: SalesDoc["customer"], prices?: Record<string, number>, listino?: string) => string;
   convertQuote: (docId: string, type: "documento commerciale" | "fattura") => Result<string>;
@@ -113,7 +124,7 @@ interface Actions {
 const now = () => new Date().toISOString();
 
 // Chiave dei dati salvati: cambia quando cambia la struttura dei dati demo
-export const STORE_SCHEMA = "gestionale-demolizione-demo-v10";
+export const STORE_SCHEMA = "gestionale-demolizione-demo-v11";
 
 function initial(): State {
   const s = buildSeed();
@@ -126,6 +137,7 @@ function initial(): State {
     rules: s.rules,
     wasteMoves: s.wasteMoves,
     firs: s.firs,
+    soggetti: s.soggetti,
     docs: s.docs,
     listini: DEFAULT_LISTINI,
     warehouses: WAREHOUSES,
@@ -203,12 +215,24 @@ export const useStore = create<State & Actions>()(
       };
       const push = (...evs: AuditEvent[]) => set((s) => ({ audit: [...s.audit, ...evs] }));
       // Il registro di carico e scarico si scrive da solo a partire dagli eventi operativi
-      const addMoves = (ms: Omit<WasteMove, "id">[]) =>
+      // Le registrazioni complete ricevono subito il numero progressivo; quelle a cui manca un dato restano bozze
+      const addMoves = (ms: Omit<WasteMove, "id">[]) => {
+        const ids: string[] = [];
         set((s) => {
           let n = s.counters.move;
-          const added = ms.map((m) => ({ ...m, id: `M-${pad(++n)}` }));
-          return { wasteMoves: [...s.wasteMoves, ...added], counters: { ...s.counters, move: n } };
+          const all = [...s.wasteMoves];
+          const by = ROLE_USER[s.role].user;
+          for (const m of ms) {
+            const id = `M-${pad(++n)}`;
+            ids.push(id);
+            const at = now();
+            const ready = missingFields(m as WasteMove, all).length === 0;
+            all.push({ ...m, id, ...(ready ? { numero: nextRegisterNumber(all, at), registeredAt: at, by } : {}) });
+          }
+          return { wasteMoves: all, counters: { ...s.counters, move: n } };
         });
+        return ids;
+      };
 
       const PREFIX: Record<DocType, "P" | "DC" | "FT" | "NC"> = { preventivo: "P", "documento commerciale": "DC", fattura: "FT", "nota di credito": "NC" };
       const newDoc = (d: Omit<SalesDoc, "id" | "at">) => {
@@ -477,50 +501,124 @@ export const useStore = create<State & Actions>()(
           // Se il carico d'ingresso esiste già, il peso è quello registrato: cambiarlo sbilancerebbe il registro
           const withWeight = { ...v, weightKg: hadIntake && v.weightKg ? v.weightKg : weightKg };
           const intake = hadIntake ? [] : movesForIntake(withWeight, v.intakeAt);
-          const { moves, residualKg } = movesForBonifica(withWeight, items, at);
+          const carico = get().wasteMoves.find((m) => m.origin === vehicleId && m.causale === "*T");
+          // Lo scarico interno usa il peso registrato all'ingresso (pesa), così carico e scarico del veicolo coincidono
+          const { moves, residualKg } = movesForBonifica(carico ? { ...withWeight, weightKg: carico.kg } : withWeight, items, at, carico?.id);
           set((s) => ({ vehicles: s.vehicles.map((x) => (x.id === vehicleId ? { ...withWeight, bonifica: { at, by: ROLE_USER[s.role].user, items, residualKg } } : x)) }));
           addMoves([...intake, ...moves]);
           push(event({ entity: "veicolo", entityId: vehicleId, action: "Bonifica registrata", detail: `${intake.length + moves.length} movimenti nel registro rifiuti` }));
           return intake.length + moves.length;
         },
 
-        transmitRentri: () => {
+        completeDraft: (id, patch) => {
+          const m = get().wasteMoves.find((x) => x.id === id);
+          if (!m) return { ok: false, error: "Registrazione non trovata" };
+          if (!isDraft(m)) return { ok: false, error: `La registrazione n. ${m.numero} è già numerata: si corregge con una rettifica` };
+          const nome = patch.produttoreNome?.trim() || m.produttore?.nome;
+          const cf = patch.produttoreCf !== undefined ? patch.produttoreCf.trim().toUpperCase() : m.produttore?.cf;
+          const next: WasteMove = {
+            ...m,
+            ...(nome || cf ? { produttore: { nome: nome ?? "", cf } } : {}),
+            ...(patch.certificato ? { certificato: patch.certificato } : {}),
+            ...(patch.kg !== undefined ? { kg: patch.kg } : {}),
+            ...(patch.pesoPesa !== undefined ? { pesoPesa: patch.pesoPesa } : {}),
+          };
           const at = now();
-          const pending = get().wasteMoves.filter((m) => m.rentri === "da trasmettere").length;
-          if (!pending) return 0;
-          set((s) => ({ wasteMoves: s.wasteMoves.map((m) => (m.rentri === "da trasmettere" ? { ...m, rentri: "trasmesso", rentriAt: at } : m)) }));
-          push(event({ entity: "sistema", entityId: "RENTRI", action: "Registro trasmesso al RENTRI", detail: `${pending} movimenti (trasmissione simulata)` }));
-          return pending;
+          const by = ROLE_USER[get().role].user;
+          const ready = missingFields(next, get().wasteMoves).length === 0;
+          set((s) => {
+            let all = s.wasteMoves.map((x) => (x.id === id ? { ...next, ...(ready ? { numero: nextRegisterNumber(s.wasteMoves, at), registeredAt: at, by } : {}) } : x));
+            // Registrato il carico d'ingresso, si registrano anche gli scarichi interni che lo aspettavano, con lo stesso peso
+            if (ready && next.causale === "*T")
+              for (const d of all.filter((x) => isDraft(x) && x.causale === "I" && x.caricoRif === id)) {
+                const fixed = { ...d, kg: next.kg };
+                if (missingFields(fixed, all).length === 0) all = all.map((x) => (x.id === d.id ? { ...fixed, numero: nextRegisterNumber(all, at), registeredAt: at, by } : x));
+              }
+            // Il peso della pesa diventa il peso del veicolo: la bonifica scaricherà lo stesso peso
+            const vehicles = patch.kg !== undefined && next.causale === "*T" ? s.vehicles.map((v) => (v.id === m.origin ? { ...v, weightKg: patch.kg } : v)) : s.vehicles;
+            return { wasteMoves: all, vehicles };
+          });
+          push(event({ entity: "sistema", entityId: id, action: ready ? "Registrazione completata" : "Bozza aggiornata", detail: `${m.eer} · ${next.kg} kg · ${m.note ?? ""}` }));
+          return { ok: true, value: ready };
         },
 
-        createFir: (f) => {
+        rectifyMove: (id, kg, motivo) => {
+          const m = get().wasteMoves.find((x) => x.id === id);
+          if (!m || isDraft(m)) return { ok: false, error: "Si rettificano solo le registrazioni numerate" };
+          if (!(kg > 0)) return { ok: false, error: "Scrivi i kg corretti" };
+          if (!motivo.trim()) return { ok: false, error: "Scrivi il motivo della rettifica" };
+          const [newId] = addMoves([{ at: now(), kind: m.kind, eer: m.eer, kg, origin: m.origin, note: `Rettifica della n. ${m.numero}`, rentri: "da trasmettere", causale: "RETT", rettificaDi: id, motivo: motivo.trim(), statoFisico: m.statoFisico, hp: m.hp, operazione: m.operazione }]);
+          push(event({ entity: "sistema", entityId: newId, action: "Rettifica registrata", detail: `n. ${m.numero}: ${m.kg} → ${kg} kg · ${motivo.trim()}` }));
+          return { ok: true, value: newId };
+        },
+
+        cancelMove: (id, motivo) => {
+          const m = get().wasteMoves.find((x) => x.id === id);
+          if (!m || isDraft(m)) return { ok: false, error: "Si annullano solo le registrazioni numerate" };
+          if (!motivo.trim()) return { ok: false, error: "Scrivi il motivo dell'annullamento" };
+          if (get().wasteMoves.some((x) => x.annullaDi === id)) return { ok: false, error: `La registrazione n. ${m.numero} è già annullata` };
+          const [newId] = addMoves([{ at: now(), kind: m.kind, eer: m.eer, kg: 0, origin: m.origin, note: `Annullamento della n. ${m.numero}`, rentri: "da trasmettere", causale: "ANN", annullaDi: id, motivo: motivo.trim() }]);
+          push(event({ entity: "sistema", entityId: newId, action: "Annullamento registrato", detail: `n. ${m.numero} · ${motivo.trim()}` }));
+          return { ok: true, value: newId };
+        },
+
+        transmitPeriod: (key) => {
+          const p = periodsOf(get().wasteMoves, get().firs).find((x) => x.key === key);
+          if (!p || !canTransmit(p)) return { ok: false, error: p?.drafts ? `Ci sono ${p.drafts} bozze da completare` : "Questo periodo non si può trasmettere" };
+          const at = now();
+          const ricevuta = `RENTRI-SIM-${key}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+          const ids = new Set(p.moves.map((m) => m.id));
+          set((s) => ({ wasteMoves: s.wasteMoves.map((m) => (ids.has(m.id) ? { ...m, rentri: "trasmesso", rentriAt: at, rentriRicevuta: ricevuta } : m)) }));
+          push(event({ entity: "sistema", entityId: "RENTRI", action: `Periodo di ${monthLabel(key)} trasmesso al RENTRI`, detail: `${p.moves.length} registrazioni · ricevuta ${ricevuta} (trasmissione simulata)` }));
+          return { ok: true, value: ricevuta };
+        },
+
+        receiveFir: (f) => {
+          if (f.numero && firNumberTaken(get().firs, f.numero)) return { ok: false, error: `Il formulario ${f.numero} è già registrato` };
           const n = get().counters.fir + 1;
           const id = `F-${pad(n)}`;
           const at = now();
           const by = ROLE_USER[get().role].user;
-          set((s) => ({ firs: [{ ...f, id, at, status: "da firmare", history: [{ at, status: "da firmare", by }] }, ...s.firs], counters: { ...s.counters, fir: n } }));
-          push(event({ entity: "sistema", entityId: id, action: "Formulario creato", detail: `${f.eer} · ${f.kg} kg → ${f.destinatario}` }));
-          return id;
+          const nome = (sid?: string) => get().soggetti.find((x) => x.id === sid)?.nome;
+          const fir: Fir = { ...f, id, at, destinatario: nome(f.destinatarioId), trasportatore: nome(f.trasportatoreId), status: "da firmare", history: [{ at, status: "da firmare", by }] };
+          set((s) => ({ firs: [fir, ...s.firs], counters: { ...s.counters, fir: n } }));
+          push(event({ entity: "sistema", entityId: id, action: "Formulario ricevuto", detail: `${f.numero} · ${f.eer} · ${f.kg} kg → ${fir.destinatario ?? ""}` }));
+          return { ok: true, value: id };
         },
 
-        advanceFir: (id) => {
+        signFir: (id) => {
           const f = get().firs.find((x) => x.id === id);
-          const next = f && FIR_NEXT[f.status];
-          if (!f || !next) return { ok: false, error: "Formulario non trovato" };
-          if (next.to === "firmato") {
-            const stock = stockByEer(get().wasteMoves).find((x) => x.code === f.eer)?.kg ?? 0;
-            if (f.kg > stock + 0.05) {
-              push(event({ entity: "sistema", entityId: id, action: "Firma bloccata", detail: `${f.kg} kg richiesti, ${stock} kg in giacenza` }));
-              return { ok: false, error: `In giacenza ci sono solo ${stock} kg di ${f.eer}: correggi la quantità del formulario` };
-            }
+          if (!f) return { ok: false, error: "Formulario non trovato" };
+          if (f.status !== "da firmare") return { ok: false, error: "Formulario già firmato" };
+          const stock = stockByEer(get().wasteMoves).find((x) => x.code === f.eer)?.kg ?? 0;
+          if (f.kg > stock + 0.05) {
+            push(event({ entity: "sistema", entityId: id, action: "Firma bloccata", detail: `${f.kg} kg richiesti, ${stock} kg in giacenza` }));
+            return { ok: false, error: `In giacenza ci sono solo ${stock} kg di ${f.eer}: controlla la quantità del formulario` };
           }
           const at = now();
-          const by = next.to === "accettato" ? f.destinatario : next.to === "trasmesso" ? "Sistema" : ROLE_USER[get().role].user;
-          set((s) => ({ firs: s.firs.map((x) => (x.id === id ? { ...x, status: next.to, history: [...x.history, { at, status: next.to, by }] } : x)) }));
-          // Con la firma il rifiuto lascia l'impianto: scarico automatico nel registro
-          if (next.to === "firmato") addMoves([{ at, kind: "scarico", eer: f.eer, kg: f.kg, origin: id, note: `Uscita verso ${f.destinatario}`, rentri: "da trasmettere" }]);
-          push(event({ entity: "sistema", entityId: id, action: `Formulario ${next.to}`, detail: `${f.eer} · ${f.kg} kg` }));
+          const dest = get().soggetti.find((x) => x.id === f.destinatarioId);
+          const e = eerByCode(f.eer);
+          set((s) => ({ firs: s.firs.map((x) => (x.id === id ? { ...x, status: "firmato", history: [...x.history, { at, status: "firmato", by: ROLE_USER[s.role].user }] } : x)) }));
+          // Con la firma il rifiuto lascia l'impianto: scarico "a terzi" nel registro, legato al formulario
+          addMoves([{ at, kind: "scarico", eer: f.eer, kg: f.kg, origin: id, note: `Uscita verso ${f.destinatario ?? "destinatario"} · formulario ${f.numero ?? id}`, rentri: "da trasmettere", causale: "aT", fir: id, operazione: dest?.operazione ?? "R13", statoFisico: e?.stato, hp: e?.hp }]);
+          push(event({ entity: "sistema", entityId: id, action: "Formulario firmato", detail: `${f.numero ?? ""} · ${f.eer} · ${f.kg} kg` }));
           return { ok: true, value: undefined };
+        },
+
+        setFirOutcome: (id, esito, kgAccettati, arrivoAt) => {
+          const f = get().firs.find((x) => x.id === id);
+          if (!f) return { ok: false, error: "Formulario non trovato" };
+          if (f.status !== "firmato" && f.status !== "accettato") return { ok: false, error: "Prima va firmato" };
+          if (esito !== "respinto" && !(kgAccettati > 0)) return { ok: false, error: "Scrivi i kg accettati" };
+          const kg = esito === "accettato" ? f.kg : esito === "respinto" ? 0 : kgAccettati;
+          set((s) => ({ firs: s.firs.map((x) => (x.id === id ? { ...x, status: "accettato", esito, kgAccettati: kg, arrivoAt, history: [...x.history, { at: now(), status: "accettato", by: f.destinatario ?? "Destinatario" }] } : x)) }));
+          push(event({ entity: "sistema", entityId: id, action: `Esito del destinatario: ${esito}`, detail: `${f.numero ?? ""} · ${kg} kg su ${f.kg}` }));
+          return { ok: true, value: undefined };
+        },
+
+        saveSoggetto: (sg) => {
+          set((s) => ({ soggetti: s.soggetti.some((x) => x.id === sg.id) ? s.soggetti.map((x) => (x.id === sg.id ? sg : x)) : [...s.soggetti, sg] }));
+          push(event({ entity: "sistema", entityId: sg.id, action: "Anagrafica soggetto salvata", detail: `${sg.nome} · ${sg.ruolo}` }));
         },
 
         createQuote: (partIds, customer, prices, listino) => {

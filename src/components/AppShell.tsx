@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Boxes, Briefcase, CarFront, ClipboardList, LayoutGrid, Leaf, Menu, ScanLine, Settings, ShoppingCart, Wrench, X, type LucideIcon } from "lucide-react";
+import { Boxes, Briefcase, CarFront, ClipboardList, LayoutGrid, Leaf, Menu, ScanLine, Send, Settings, ShoppingCart, Wrench, X, type LucideIcon } from "lucide-react";
 import { ROLE_USER, useDeviceStorageFull, useStore } from "@/lib/store";
 import type { Role } from "@/lib/types";
 import { BRAND, DEMO_NOTICE } from "@/lib/config";
@@ -28,7 +28,7 @@ interface Area {
 }
 
 const AREAS: Area[] = [
-  { id: "oggi", label: "Oggi", icon: LayoutGrid, subs: [{ href: "/", label: "Da fare", roles: ALL_ROLES }] },
+  { id: "oggi", label: "Oggi", icon: LayoutGrid, subs: [{ href: "/", label: "Da fare", roles: [...ALL_ROLES, "consulente"] }] },
   {
     id: "veicoli",
     label: "Veicoli",
@@ -67,8 +67,10 @@ const AREAS: Area[] = [
     label: "Ambiente",
     icon: Leaf,
     subs: [
-      { href: "/ambiente", label: "Registro rifiuti", roles: ["accettazione", "responsabile"] },
-      { href: "/ambiente/formulari", label: "Formulari", roles: ["accettazione", "responsabile"] },
+      { href: "/ambiente/periodo", label: "Periodo RENTRI", roles: ["accettazione", "responsabile", "consulente"] },
+      { href: "/ambiente", label: "Registro rifiuti", roles: ["accettazione", "responsabile", "consulente"] },
+      { href: "/ambiente/formulari", label: "Formulari", roles: ["accettazione", "responsabile", "consulente"] },
+      { href: "/ambiente/soggetti", label: "Soggetti", roles: ["accettazione", "responsabile", "consulente"] },
     ],
   },
   {
@@ -121,9 +123,15 @@ const MOBILE_TABS: Record<Role, Tab[]> = {
     { area: "ricambi", label: "Ricambi", icon: Boxes },
     { href: "/scansione", label: "Scansiona", icon: ScanLine },
   ],
+  consulente: [
+    { area: "oggi", label: "Oggi", icon: LayoutGrid },
+    { href: "/ambiente/periodo", label: "Periodo", icon: Send },
+    { href: "/ambiente", label: "Registro", icon: Leaf },
+    { href: "/ambiente/formulari", label: "Formulari", icon: ClipboardList },
+  ],
 };
 
-const ROLES: Role[] = ALL_ROLES;
+const ROLES: Role[] = [...ALL_ROLES, "consulente"];
 
 const matches = (path: string, href: string) => (href === "/" ? path === "/" : path === href || path.startsWith(href + "/"));
 

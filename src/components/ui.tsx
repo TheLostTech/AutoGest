@@ -175,8 +175,13 @@ export function Notice({ tone = "info", children }: { tone?: "info" | "warn" | "
 }
 
 // Avviso del tempo di stazionamento prima della bonifica (7 giorni dall'ingresso)
-export function BonificaBadge({ clock, className = "" }: { clock: { level: "ok" | "attenzione" | "oggi" | "scaduta"; label: string }; className?: string }) {
-  const tone =
-    clock.level === "ok" ? "border-hair bg-carton text-ink-2" : clock.level === "attenzione" ? "border-warn/50 bg-warn-bg text-ink" : "border-danger bg-danger text-white";
+export function BonificaBadge({ clock, className = "" }: { clock: { level: "ok" | "attenzione" | "oggi" | "scaduta"; label: string; fuoriLegge?: boolean }; className?: string }) {
+  const tone = clock.fuoriLegge
+    ? "border-ink bg-ink text-white"
+    : clock.level === "ok"
+      ? "border-hair bg-carton text-ink-2"
+      : clock.level === "attenzione"
+        ? "border-warn/50 bg-warn-bg text-ink"
+        : "border-danger bg-danger text-white";
   return <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[13px] font-semibold ${tone} ${className}`}>{clock.label}</span>;
 }

@@ -7,7 +7,7 @@ import { STORE_SCHEMA, useStore } from "./store";
 const PREPEND = ["vehicles", "parts", "orders", "docs", "firs"] as const;
 const APPEND = ["audit", "wasteMoves", "inventory"] as const;
 const LISTS = [...PREPEND, ...APPEND] as const;
-const WHOLE = ["rules", "listini", "warehouses"] as const;
+const WHOLE = ["rules", "listini", "warehouses", "soggetti"] as const;
 const SHARED = [...LISTS, ...WHOLE, "counters"] as const;
 
 type S = ReturnType<typeof useStore.getState>;

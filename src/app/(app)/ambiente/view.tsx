@@ -3,18 +3,18 @@
 import Link from "next/link";
 import { useState } from "react";
 import { CircleCheck, Send } from "lucide-react";
+import { CAUSALE_LABEL, isDraft, periodsOf } from "@/lib/periodo";
 import { useStore } from "@/lib/store";
 import { EER, eerByCode, fmtKg, stockByEer } from "@/lib/ambiente";
 import { dateIt } from "@/lib/logic";
-import { Button, Notice, PageTitle, Panel } from "@/components/ui";
+import { ButtonLink, PageTitle, Panel } from "@/components/ui";
 
 export default function RegistroRifiuti() {
-  const { wasteMoves, transmitRentri } = useStore();
+  const { wasteMoves, firs } = useStore();
   const [eer, setEer] = useState("tutti");
   const [all, setAll] = useState(false);
   const [allStock, setAllStock] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const pending = wasteMoves.filter((m) => m.rentri === "da trasmettere").length;
+  const toSend = periodsOf(wasteMoves, firs).filter((p) => p.status === "da trasmettere");
   const stock = stockByEer(wasteMoves)
     .filter((s) => s.kg > 0)
     .sort((a, b) => b.pct - a.pct);
@@ -27,18 +27,11 @@ export default function RegistroRifiuti() {
         title="Registro rifiuti"
         sub="Carico e scarico si scrivono da soli: ingresso dei veicoli, bonifiche e formulari generano i movimenti. Qui si controlla e si trasmette."
         actions={
-          <Button
-            disabled={!pending}
-            onClick={() => {
-              const n = transmitRentri();
-              setMsg(`${n} movimenti trasmessi al RENTRI (trasmissione simulata).`);
-            }}
-          >
-            <Send className="size-5" aria-hidden /> {pending ? `Trasmetti ${pending} al RENTRI` : "Tutto trasmesso"}
-          </Button>
+          <ButtonLink href={toSend.length ? `/ambiente/periodo?mese=${toSend[0].key}` : "/ambiente/periodo"}>
+            <Send className="size-5" aria-hidden /> {toSend.length ? `Periodo di ${toSend[0].label} da trasmettere` : "Periodi RENTRI"}
+          </ButtonLink>
         }
       />
-      {msg && <div className="mb-5"><Notice tone="ok">{msg}</Notice></div>}
 
       <section aria-labelledby="giacenze" className="mb-6">
         <h2 id="giacenze" className="code mb-2 text-[15px] font-bold uppercase tracking-wide text-ink-2">Giacenze e limiti dell&apos;autorizzazione</h2>
@@ -87,17 +80,19 @@ export default function RegistroRifiuti() {
             const isVeh = m.origin.startsWith("V-");
             return (
               <li key={m.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3 md:grid-cols-[96px_118px_minmax(0,1fr)_110px_120px]">
-                <span className="code text-[15px] font-semibold text-ink-2 md:order-none">{m.id}</span>
+                <span className="code text-[15px] font-semibold text-ink-2 md:order-none">{isDraft(m) ? <span className="text-warn">bozza</span> : `n. ${m.numero}`}</span>
                 <span className="text-sm text-ink-3 md:text-[15px]">{dateIt(m.at, true)}</span>
                 <span className="col-span-2 min-w-0 md:col-span-1">
                   <span className={`code mr-2 inline-flex h-6 items-center rounded px-2 text-[12px] font-bold uppercase tracking-wide ${m.kind === "carico" ? "bg-band-tint text-band" : "bg-ink text-white"}`}>{m.kind}</span>
                   <span className="code font-semibold">{m.eer}</span> <span className="text-ink-2">{e?.short}</span>
+                  {m.causale && <span className="ml-2 text-sm text-ink-3">{CAUSALE_LABEL[m.causale]}</span>}
                   <span className="block truncate text-sm text-ink-3">
                     {m.note} ·{" "}
                     <Link href={isVeh ? `/veicoli/${m.origin}` : "/ambiente/formulari"} className="code font-semibold text-band underline">{m.origin}</Link>
+                    {m.motivo && <> · {m.motivo}</>}
                   </span>
                 </span>
-                <span className={`code text-[18px] font-bold md:text-right ${m.kind === "carico" ? "" : "text-ink-2"}`}>{m.kind === "carico" ? "+" : "−"}{fmtKg(m.kg)}</span>
+                <span className={`code text-[18px] font-bold md:text-right ${m.kind === "carico" ? "" : "text-ink-2"}`}>{m.causale === "ANN" ? "annulla" : `${m.causale === "RETT" ? "= " : m.kind === "carico" ? "+" : "−"}${fmtKg(m.kg)}`}</span>
                 <span className="text-right text-sm">
                   {m.rentri === "trasmesso" ? (
                     <span className="inline-flex items-center gap-1 font-semibold text-ok"><CircleCheck className="size-4" aria-hidden /> RENTRI</span>
@@ -115,7 +110,7 @@ export default function RegistroRifiuti() {
           </div>
         )}
       </Panel>
-      <p className="mt-3 text-[13px] text-ink-3">Codici rifiuto, limiti e trasmissione sono dimostrativi: il collegamento reale al RENTRI richiede accreditamento e va validato con il consulente ambientale.</p>
+      <p className="mt-3 text-[13px] text-ink-3">Codici rifiuto, limiti e trasmissione sono dimostrativi: il collegamento reale al RENTRI richiede l&apos;accreditamento e va validato con la consulente ambientale.</p>
     </div>
   );
 }

@@ -5,7 +5,8 @@ import { useState } from "react";
 import { ArrowRight, Boxes, CarFront, CircleCheck, FileText, Leaf, PackageCheck, TrendingDown, type LucideIcon } from "lucide-react";
 import { ROLE_USER, useStore } from "@/lib/store";
 import { BonificaBadge, ButtonLink, Panel, PageTitle, Plate } from "@/components/ui";
-import { bonificaClock, buildAgenda, TERMS, urgencyOf, type AgendaItem, type Urgency } from "@/lib/agenda";
+import { bonificaClock, buildAgenda, urgencyOf, type AgendaItem, type Urgency } from "@/lib/agenda";
+import { isDraft, periodsOf } from "@/lib/periodo";
 import { dateIt, euro } from "@/lib/logic";
 import type { Role } from "@/lib/types";
 
@@ -31,6 +32,7 @@ const PRIMARY: Record<Role, { href: string; label: string }> = {
   magazziniere: { href: "/scansione", label: "Scansiona un'etichetta" },
   responsabile: { href: "/veicoli/nuovo", label: "Nuovo ingresso veicolo" },
   vendite: { href: "/vendite", label: "Nuova vendita al banco" },
+  consulente: { href: "/ambiente/periodo", label: "Periodo da trasmettere" },
 };
 
 const DAY = 864e5;
@@ -46,6 +48,8 @@ export default function Oggi() {
   const avail = parts.filter((p) => p.status === "disponibile");
   const inYard = vehicles.filter((v) => v.work !== "smontato");
   const sold30 = orders.filter((o) => ["pagato", "spedito", "consegnato"].includes(o.status) && now - new Date(o.createdAt).getTime() < 30 * DAY);
+  const periods = periodsOf(s.wasteMoves, s.firs);
+  const nextSend = periods.find((p) => p.status === "da trasmettere");
   const stats: Record<Role, { label: string; value: string }[]> = {
     accettazione: [
       { label: "Veicoli in piazzale", value: String(inYard.length) },
@@ -72,8 +76,13 @@ export default function Oggi() {
       { label: "Online sul negozio", value: String(avail.filter((p) => p.listing === "pubblicato").length) },
       { label: "Venduto ultimi 30 giorni", value: euro(sold30.reduce((a, o) => a + o.amount, 0)) },
     ],
+    consulente: [
+      { label: "Registrazioni questo mese", value: String(periods.at(-1)?.status === "aperto" ? periods.at(-1)!.moves.filter((m) => !isDraft(m)).length : 0) },
+      { label: "Bozze da completare", value: String(s.wasteMoves.filter(isDraft).length) },
+      { label: "Prossima trasmissione", value: nextSend ? `entro ${new Date(nextSend.deadline).toLocaleDateString("it-IT", { day: "numeric", month: "short" })}` : "nessuna" },
+    ],
   };
-  const showVehicles = role !== "vendite" && role !== "magazziniere";
+  const showVehicles = role !== "vendite" && role !== "magazziniere" && role !== "consulente";
   // Avvisi di stazionamento: veicoli in parcheggio vicini al termine della bonifica (o oltre)
   const parked = vehicles
     .map((v) => ({ v, c: bonificaClock(v) }))
@@ -94,13 +103,13 @@ export default function Oggi() {
         actions={<ButtonLink href={PRIMARY[role].href}>{PRIMARY[role].label}</ButtonLink>}
       />
 
-      {role !== "vendite" && role !== "magazziniere" && parked.length > 0 && (
+      {showVehicles && parked.length > 0 && (
         <section
           className={`mb-6 rounded-md border-2 px-4 py-3 ${parked.some((x) => x.c.level !== "attenzione") ? "border-danger bg-danger-bg" : "border-warn bg-warn-bg"}`}
           aria-label="Avvisi bonifica"
         >
           <p className="text-[17px] font-semibold text-ink">
-            {parked.length === 1 ? "1 veicolo in parcheggio" : `${parked.length} veicoli in parcheggio`} vicino al termine della bonifica ({TERMS.bonifica} giorni dall&apos;ingresso)
+            {parked.length === 1 ? "1 veicolo in parcheggio" : `${parked.length} veicoli in parcheggio`} vicino al termine della bonifica (obiettivo 7 giorni, per legge 10 giorni lavorativi dall&apos;ingresso)
           </p>
           <ul className="mt-2 space-y-1.5">
             {parked.map(({ v, c }) => (
