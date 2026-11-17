@@ -46,6 +46,23 @@ function pubblico(s?: Salvato): StatoServizio {
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 
+// Nessun login vero nel prototipo: chiunque raggiunga il server può chiamare questa API.
+// Intanto si bloccano le richieste partite da pagine di altri siti (il browser manda sempre Origin
+// su PUT e DELETE). Prima della produzione: login con ruolo responsabile verificato qui sul server.
+function altroSito(req: Request) {
+  const origin = req.headers.get("origin");
+  if (!origin) return false;
+  try {
+    return new URL(origin).host !== req.headers.get("host");
+  } catch {
+    return true;
+  }
+}
+
+// Campi che dicono dove mandare le credenziali: se cambiano, la password salvata va reinserita,
+// così nessuno può dirottarla verso un altro indirizzo senza conoscerla
+const INDIRIZZI = ["endpoint"];
+
 export async function GET() {
   await connection();
   const a = await load();
@@ -63,6 +80,7 @@ interface Modifica {
 let lock: Promise<unknown> = Promise.resolve();
 
 export async function PUT(req: Request) {
+  if (altroSito(req)) return json({ error: "Richiesta da un altro sito" }, 403);
   const body = (await req.json().catch(() => null)) as Modifica | null;
   const serv = body && servizioById(String(body.id));
   if (!body || !serv) return json({ error: "Servizio sconosciuto" }, 400);
@@ -71,6 +89,15 @@ export async function PUT(req: Request) {
   const run = lock.then(async () => {
     const a = await load();
     const s: Salvato = a[serv.id] ?? { valori: {}, segreti: {}, file: {} };
+
+    const nuoviSegreti = Object.values(body.segreti ?? {}).some((v) => typeof v === "string" && v);
+    const cambiaIndirizzo = INDIRIZZI.some((k) => {
+      const v = body.valori?.[k];
+      return typeof v === "string" && v.trim() !== (s.valori[k] ?? "");
+    });
+    if (cambiaIndirizzo && Object.keys(s.segreti).length && !nuoviSegreti) {
+      throw new Error("Hai cambiato l'indirizzo del servizio: reinserisci la password per confermare.");
+    }
 
     for (const [k, v] of Object.entries(body.valori ?? {})) {
       const c = campo(k);
@@ -111,6 +138,7 @@ export async function PUT(req: Request) {
 
 // Scollega: cancella tutti i dati salvati del servizio
 export async function DELETE(req: Request) {
+  if (altroSito(req)) return json({ error: "Richiesta da un altro sito" }, 403);
   const id = new URL(req.url).searchParams.get("id") ?? "";
   if (!servizioById(id)) return json({ error: "Servizio sconosciuto" }, 400);
   const run = lock.then(async () => {
