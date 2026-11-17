@@ -1,6 +1,6 @@
 "use client";
 
-import { absUrl, Barcode, Qr } from "./codes";
+import { Barcode, Qr, usePublicBase } from "./codes";
 import { shelfCode, shelfPath } from "@/lib/warehouse";
 import type { Location } from "@/lib/types";
 import { BRAND } from "@/lib/config";
@@ -9,6 +9,7 @@ import { BRAND } from "@/lib/config";
 // La lettera del ripiano è enorme: si legge da lontano, a scaffale pieno.
 export function ShelfLabel({ loc, warehouseName }: { loc: Location; warehouseName: string }) {
   const code = shelfCode(loc);
+  const { base } = usePublicBase();
   return (
     <article className="label-sheet flex h-[50mm] w-[100mm] shrink-0 flex-col overflow-hidden rounded-none shadow-none print:border-0" aria-label={`Etichetta scaffale ${code}`}>
       <div className="flex items-center justify-between bg-ink px-[3mm] py-[1mm] text-white">
@@ -30,7 +31,7 @@ export function ShelfLabel({ loc, warehouseName }: { loc: Location; warehouseNam
           <span className="code mt-[0.5mm] text-[6.5pt] font-semibold uppercase tracking-wide text-ink-3">{loc.contenitore ? "Ripiano · contenitore" : "Ripiano"}</span>
         </div>
         <div className="flex shrink-0 flex-col items-center">
-          <Qr value={absUrl(shelfPath(loc))} size={92} />
+          <Qr value={base + shelfPath(loc)} size={92} />
           <span className="code mt-0.5 text-[9pt] font-bold">{code}</span>
         </div>
       </div>

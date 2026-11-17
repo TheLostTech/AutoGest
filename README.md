@@ -27,8 +27,9 @@ Il menu è diviso in aree (Oggi, Veicoli, Ricambi, Vendite, Ambiente, Ufficio): 
 | Certificato | `/certificato/[id]` | Fac-simile stampabile del certificato di rottamazione |
 | Smontaggio (mobile) | `/campo` | Veicolo attivo, lista «da recuperare» confrontata con scorte e soglie, cataloga pezzo con foto, suggerimento IA (simulato) da confermare, etichetta generata al salvataggio |
 | Etichetta | `/etichetta/[id]` | Formato 100×50 mm, QR + Code128 con il solo ID; ristampa tracciata con lo stesso ID |
+| Etichette scaffale | `/etichette-scaffale` | Una per ripiano (e contenitore), QR + Code128; il QR apre la mappa su quel ripiano (`/u/…`) |
 | QR | `/r/[id]` | Indirizzo contenuto nel QR: apre la scheda corretta |
-| Scansione | `/scansione` | Fotocamera (BarcodeDetector, Chrome Android) o codice digitato |
+| Scansione | `/scansione` | Pezzo → scaffale = carico, scaffale → pezzo = prelievo. Fotocamera (lettore del browser o ZXing incluso, quindi anche iPhone; serve https), pistola laser o codice digitato |
 | Ricambi | `/ricambi`, `/ricambi/[id]` | Ricerca anche per vecchio codice (K000…), codice OE e costruttore; ubicazione, spostamenti, percorso del pezzo, catalogo e compatibilità, controlli di pubblicazione, invendibile/scarto, storico |
 | Inventario | `/inventario`, `/inventario/[mag]`, `/inventario/[mag]/nuovo` | Crea magazzino (solo numero e nome) e aprilo; elenco dei ricambi raggruppati per ubicazione; «Aggiungi ricambio» per i pezzi già presenti: tipo (con foto e riconoscimento simulato), marca e modello, codice vecchio, dicitura, condizioni, ubicazione scritta (corsia, scaffale, ripiano, contenitore), pratica passata dal vecchio archivio; ubicazione, modello e pratica restano per il pezzo successivo. «Verifica» di un ripiano (`/inventario/conta`) per l'appello dei pezzi registrati |
 | Ubicazioni | `/magazzino` | Mappa Magazzino → Corsia → Scaffale → Ripiano → Contenitore (formato `3/T03-104-B-1`), riempimento scaffali, trova pezzo, «prima posizione libera» per categoria |
@@ -45,9 +46,21 @@ Il menu è diviso in aree (Oggi, Veicoli, Ricambi, Vendite, Ambiente, Ufficio): 
 
 ## Cosa è simulato (da definire in analisi)
 
-OCR targhe, banca dati veicoli/VIN, visura PRA, radiazione, RENTRI e formulari digitali, registratore telematico e invio allo SdI, IA riconoscimento componente, catalogo ricambi (costruttore, codice OE, prezzo del nuovo, intercambiabilità: `src/lib/partsdb.ts`; la compatibilità viene dichiarata solo se l'operatore conferma che il codice sul pezzo coincide), stampante etichette, provider di pagamento, corrieri, marketplace, documenti fiscali. I dati vivono nel browser (localStorage): in Fase 2 lo store (`src/lib/store.ts`) si sostituisce con API e database, e la riserva atomica diventa una transazione lato server.
+OCR targhe, banca dati veicoli/VIN, visura PRA, radiazione, RENTRI e formulari digitali, registratore telematico e invio allo SdI, IA riconoscimento componente, catalogo ricambi (costruttore, codice OE, prezzo del nuovo, intercambiabilità: `src/lib/partsdb.ts`; la compatibilità viene dichiarata solo se l'operatore conferma che il codice sul pezzo coincide), stampante etichette, provider di pagamento, corrieri, marketplace, documenti fiscali. I dati condivisi stanno in un file sul server (`/api/demo-state`) con una copia di lavoro nel browser: in Fase 2 lo store (`src/lib/store.ts`) si sostituisce con API e database, e la riserva atomica diventa una transazione lato server.
+
+## Sul server dell'azienda
+
+Il gestionale gira su un computer dell'azienda (anche Windows Server) o nel cloud; telefoni e computer lo aprono dal browser.
+
+- **Dati e foto** stanno nella cartella indicata da `DATI_DIR` (di serie `.demo-data/` nel progetto): `state.json` è l'archivio, `foto/` le foto. Il backup è la copia di quella cartella. Nel telefono resta solo una copia di lavoro senza le foto.
+- **Indirizzo nei QR**: `INDIRIZZO_GESTIONALE` (es. `https://gestionale.azienda.it`). Se manca, i QR stampati dal server aperto come `localhost` usano l'indirizzo di rete del server (es. `http://192.168.1.58:3211`), che funziona solo dal Wi-Fi aziendale. Le etichette già stampate contengono l'indirizzo di quel momento: va fissato prima di etichettare il magazzino. Dentro *Scansiona* conta solo il codice, quindi lì funzionano comunque.
+- **https**: i telefoni aprono la fotocamera nel browser solo da un indirizzo `https`. Strade possibili: un nome a dominio con certificato (es. Caddy o IIS davanti al gestionale), Cloudflare Tunnel (https senza aprire porte del router, funziona anche su Windows Server), oppure il cloud, dove l'https è già incluso. Senza https resta la pistola laser o il codice scritto a mano.
+
+```bash
+DATI_DIR=/percorso/dati INDIRIZZO_GESTIONALE=https://gestionale.azienda.it npm run build && npm start
+```
 
 ## Stack
 
-Next.js (App Router) · TypeScript · Tailwind CSS · Zustand · qrcode · JsBarcode · lucide-react.
+Next.js (App Router) · TypeScript · Tailwind CSS · Zustand · qrcode · JsBarcode · barcode-detector (ZXing WebAssembly, servito da `public/zxing/`, copiato a ogni `npm install`) · lucide-react.
 Render 3D dei ricambi generati proceduralmente con Blender (`assets-src/blender/`).

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Boxes, Briefcase, CarFront, ClipboardList, LayoutGrid, Leaf, Menu, ScanLine, ShoppingCart, Wrench, X, type LucideIcon } from "lucide-react";
-import { ROLE_USER, useStore } from "@/lib/store";
+import { ROLE_USER, useDeviceStorageFull, useStore } from "@/lib/store";
 import type { Role } from "@/lib/types";
 import { BRAND, DEMO_NOTICE } from "@/lib/config";
 import { GlobalSearch } from "./GlobalSearch";
@@ -141,6 +141,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const role = useStore((s) => s.role);
   const setRole = useStore((s) => s.setRole);
+  const storageFull = useDeviceStorageFull();
   const areas = visibleAreas(role);
   const cur = currentSub(path, areas);
   const tabs = MOBILE_TABS[role];
@@ -271,6 +272,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="no-print border-b border-hair bg-carton px-4 py-1.5 text-center text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-3 code md:text-right">
           {DEMO_NOTICE} · {ROLE_USER[role].user} · {ROLE_USER[role].device}
         </div>
+        {storageFull && (
+          <p role="status" className="no-print border-b border-warn/40 bg-warn-bg px-4 py-2 text-center text-[14px] text-ink">
+            <b>Memoria di questo dispositivo piena.</b> Il lavoro si salva sul server dell&apos;azienda: tieni il telefono collegato alla rete.
+          </p>
+        )}
         <main className="flex-1 px-4 pb-28 pt-5 md:px-8 md:pb-12 md:pt-7">{children}</main>
 
         {/* Barra inferiore mobile: bersagli grandi, usabili coi guanti */}

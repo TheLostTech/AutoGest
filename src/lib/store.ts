@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { buildSeed, pad } from "./seed";
@@ -128,6 +129,51 @@ function initial(): State {
     activeVehicleId: "V-000118",
   };
 }
+
+// Copia locale nel browser del dispositivo. Il browser concede pochi MB: se si riempie
+// (es. tante foto rimaste nel telefono perché il server non rispondeva) si toglie la foto dalla copia
+// locale (resta in memoria e sul server) e, se non basta, si smette di salvare in locale senza bloccare
+// il lavoro: l'archivio vero è quello sul server. useDeviceStorageFull() lo segnala all'utente.
+let storageFull = false;
+const storageListeners = new Set<() => void>();
+const setStorageFull = (v: boolean) => {
+  if (storageFull === v) return;
+  storageFull = v;
+  storageListeners.forEach((f) => f());
+};
+const deviceStorage = {
+  getItem: (k: string) => {
+    try {
+      return localStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  },
+  setItem: (k: string, v: string) => {
+    try {
+      localStorage.setItem(k, v);
+      setStorageFull(false);
+      return;
+    } catch {}
+    try {
+      localStorage.setItem(k, v.replace(/"data:image\/[^"]*"/g, '"/renders/scatola.png"'));
+      setStorageFull(false);
+    } catch {
+      setStorageFull(true);
+    }
+  },
+  removeItem: (k: string) => {
+    try {
+      localStorage.removeItem(k);
+    } catch {}
+  },
+};
+export const useDeviceStorageFull = () =>
+  useSyncExternalStore(
+    (f) => (storageListeners.add(f), () => void storageListeners.delete(f)),
+    () => storageFull,
+    () => false,
+  );
 
 export const useStore = create<State & Actions>()(
   persist(
@@ -496,7 +542,7 @@ export const useStore = create<State & Actions>()(
     },
     {
       name: STORE_SCHEMA,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => deviceStorage),
       skipHydration: true,
     },
   ),

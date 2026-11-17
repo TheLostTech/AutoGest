@@ -64,6 +64,21 @@ export async function identifyFromPhoto(candidates: string[]): Promise<{ typeId:
 export const PLATE_RE = /^[A-Z]{2}\d{3}[A-Z]{2}$/;
 export const VIN_RE = /^[A-HJ-NPR-Z0-9]{17}$/;
 
+// Scatta → rimpicciolisce → manda la foto al server dell'azienda. Nel telefono resta solo l'indirizzo,
+// così la memoria del browser non si riempie. Se il server non risponde la foto resta nel telefono
+// e si salva comunque (meglio una foto pesante che una foto persa).
+export async function savePhoto(file: File, max = 1000): Promise<string> {
+  const data = await compressImage(file, max);
+  try {
+    const r = await fetch("/api/foto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data }) });
+    if (!r.ok) return data;
+    const { url } = (await r.json()) as { url?: string };
+    return url ?? data;
+  } catch {
+    return data;
+  }
+}
+
 export async function compressImage(file: File, max = 1000): Promise<string> {
   const url = URL.createObjectURL(file);
   try {

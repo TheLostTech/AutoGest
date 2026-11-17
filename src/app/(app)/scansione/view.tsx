@@ -10,6 +10,27 @@ import { Button, ButtonLink, Notice, PageTitle } from "@/components/ui";
 import type { Location, Part } from "@/lib/types";
 
 type Detector = { detect: (src: HTMLVideoElement) => Promise<{ rawValue: string }[]> };
+type DetectorClass = { new (o: { formats: string[] }): Detector; getSupportedFormats?: () => Promise<string[]> };
+const FORMATS = ["qr_code", "code_128"];
+
+// Lettore dei codici: quello del browser se c'è (Chrome su Android), altrimenti il nostro
+// (ZXing in WebAssembly, servito dal gestionale stesso: funziona su iPhone e senza internet).
+let ponyfillReady = false;
+async function getDetector(): Promise<{ det: Detector; native: boolean }> {
+  const Native = (window as unknown as { BarcodeDetector?: DetectorClass }).BarcodeDetector;
+  if (Native) {
+    try {
+      const f = (await Native.getSupportedFormats?.()) ?? FORMATS;
+      if (FORMATS.every((x) => f.includes(x))) return { det: new Native({ formats: FORMATS }), native: true };
+    } catch {}
+  }
+  const mod = await import("barcode-detector/ponyfill");
+  if (!ponyfillReady) {
+    mod.prepareZXingModule({ overrides: { locateFile: (path: string, prefix: string) => (path.endsWith(".wasm") ? "/zxing/zxing_reader.wasm" : prefix + path) } });
+    ponyfillReady = true;
+  }
+  return { det: new mod.BarcodeDetector({ formats: FORMATS as never }), native: false };
+}
 
 // Dal QR arriva l'URL o l'ID completo; a mano si scrive spesso abbreviato ("r-2389", "2389", "R2389")
 function extractId(raw: string) {
@@ -34,7 +55,7 @@ export default function Scansione() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const lastRef = useRef<{ raw: string; at: number }>({ raw: "", at: 0 });
-  const [camera, setCamera] = useState<"off" | "on" | "unsupported" | "denied">("off");
+  const [camera, setCamera] = useState<"off" | "starting" | "on" | "insecure" | "unsupported" | "denied">("off");
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
@@ -139,39 +160,59 @@ export default function Scansione() {
 
   async function start() {
     setError("");
-    const BD = (window as unknown as { BarcodeDetector?: new (o: { formats: string[] }) => Detector }).BarcodeDetector;
-    if (!BD || !navigator.mediaDevices) {
+    // La fotocamera nel browser si apre solo da un indirizzo sicuro (https) o dal computer stesso
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      setCamera(window.isSecureContext ? "unsupported" : "insecure");
+      return;
+    }
+    setCamera("starting");
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    } catch {
+      setCamera("denied");
+      return;
+    }
+    let reader: Awaited<ReturnType<typeof getDetector>>;
+    try {
+      reader = await getDetector();
+    } catch {
+      stream.getTracks().forEach((t) => t.stop());
       setCamera("unsupported");
       return;
     }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      streamRef.current = stream;
-      setCamera("on");
-      const video = videoRef.current!;
-      video.srcObject = stream;
-      await video.play();
-      const det = new BD({ formats: ["qr_code", "code_128"] });
-      const loop = async () => {
-        if (!streamRef.current?.active) return;
-        try {
-          const r = await det.detect(video);
-          const raw = r[0]?.rawValue;
-          // Lo stesso codice inquadrato di continuo conta una volta sola
-          if (raw && (raw !== lastRef.current.raw || Date.now() - lastRef.current.at > 2500)) {
-            lastRef.current = { raw, at: Date.now() };
-            if (handleRef.current(raw)) navigator.vibrate?.(60);
-          }
-        } catch {}
-        requestAnimationFrame(loop);
-      };
-      loop();
-    } catch {
-      setCamera("denied");
-    }
+    streamRef.current = stream;
+    setCamera("on");
+    const video = videoRef.current!;
+    video.srcObject = stream;
+    await video.play().catch(() => undefined);
+    const loop = async () => {
+      if (!streamRef.current?.active) return;
+      try {
+        const r = video.readyState >= 2 ? await reader.det.detect(video) : [];
+        const raw = r[0]?.rawValue;
+        // Lo stesso codice inquadrato di continuo conta una volta sola
+        if (raw && (raw !== lastRef.current.raw || Date.now() - lastRef.current.at > 2500)) {
+          lastRef.current = { raw, at: Date.now() };
+          if (handleRef.current(raw)) navigator.vibrate?.(60);
+        }
+      } catch {}
+      // Il lettore del browser regge ogni fotogramma; il nostro legge circa 6 volte al secondo per non scaldare il telefono
+      if (reader.native) requestAnimationFrame(loop);
+      else setTimeout(loop, 160);
+    };
+    loop();
   }
 
-  useEffect(() => () => streamRef.current?.getTracks().forEach((t) => t.stop()), []);
+  // Uscendo dalla pagina la fotocamera si spegne; tornando si riaccende col pulsante (non resta un riquadro nero)
+  useEffect(
+    () => () => {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      setCamera((c) => (c === "on" || c === "starting" ? "off" : c));
+    },
+    [],
+  );
 
   // Lo scaffale attivo sparisce dallo schermo quando scade (ogni prelievo riparte il conto)
   useEffect(() => {
@@ -198,10 +239,17 @@ export default function Scansione() {
                 <ScanLine className="size-6" aria-hidden /> Attiva fotocamera
               </Button>
             )}
-            {(camera === "unsupported" || camera === "denied") && (
+            {camera === "starting" && <p className="text-[17px] font-semibold">Apro la fotocamera…</p>}
+            {(camera === "unsupported" || camera === "denied" || camera === "insecure") && (
               <>
                 <VideoOff className="size-10" aria-hidden />
-                <p className="max-w-xs">{camera === "unsupported" ? "Questo browser non legge i codici dalla fotocamera. Su smartphone Android con Chrome funziona; qui puoi scrivere i codici." : "Accesso alla fotocamera negato. Scrivi il codice stampato sotto il QR."}</p>
+                <p className="max-w-xs">
+                  {camera === "insecure"
+                    ? "Il telefono apre la fotocamera solo se il gestionale è aperto da un indirizzo sicuro (https://…). Intanto scrivi il codice qui sotto o usa la pistola laser."
+                    : camera === "denied"
+                      ? "Accesso alla fotocamera negato. Consentilo nelle impostazioni del browser, oppure scrivi il codice stampato sotto il QR."
+                      : "Questo browser non riesce a leggere i codici dalla fotocamera. Scrivi il codice qui sotto o usa la pistola laser."}
+                </p>
               </>
             )}
           </div>

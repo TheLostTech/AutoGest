@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { ArrowLeft, Camera, Check, Loader2, Printer, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { CONDITIONS, PART_TYPES, sidesFor, typeById } from "@/lib/catalog";
-import { compressImage, identifyFromPhoto } from "@/lib/services";
+import { savePhoto, identifyFromPhoto } from "@/lib/services";
 import { locLong, locToString, normLoc } from "@/lib/warehouse";
 import { Button, Empty, Field, Notice } from "@/components/ui";
 import type { Condition } from "@/lib/types";
@@ -68,7 +68,7 @@ export default function AggiungiRicambio() {
 
   async function addPhotos(files: FileList | null) {
     if (!files?.length) return;
-    const imgs = await Promise.all(Array.from(files).map((f) => compressImage(f)));
+    const imgs = await Promise.all(Array.from(files).map((f) => savePhoto(f)));
     setPhotos((p) => [...p, ...imgs]);
     if (!guess && !typeId) {
       setGuessing(true);

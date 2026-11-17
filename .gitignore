@@ -46,3 +46,6 @@ next-env.d.ts
 
 # archivio condiviso della demo (dati locali)
 .demo-data/
+
+# lettore codici (copiato da node_modules a ogni npm install)
+/public/zxing/

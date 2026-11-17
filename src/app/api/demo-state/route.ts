@@ -3,8 +3,9 @@
 import { connection } from "next/server";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { DATA_DIR } from "@/lib/server-data";
 
-const DIR = path.join(process.cwd(), ".demo-data");
+const DIR = DATA_DIR;
 const FILE = path.join(DIR, "state.json");
 
 // Collezioni con ID: il server fonde per ID invece di sovrascrivere

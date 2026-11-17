@@ -7,7 +7,7 @@ import { Camera, Keyboard, Loader2, Search } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Button, Field, Notice, PageTitle, Panel, Plate } from "@/components/ui";
 import { PLATFORMS } from "@/lib/catalog";
-import { compressImage, lookupPlate, OCR_SAMPLES, PLATE_RE, simulateOcr, VIN_RE, type OcrResult } from "@/lib/services";
+import { savePhoto, lookupPlate, OCR_SAMPLES, PLATE_RE, simulateOcr, VIN_RE, type OcrResult } from "@/lib/services";
 
 export default function NuovoVeicolo() {
   const router = useRouter();
@@ -31,7 +31,7 @@ export default function NuovoVeicolo() {
 
   async function onPhoto(file?: File) {
     if (!file) return;
-    setPhoto(await compressImage(file, 900));
+    setPhoto(await savePhoto(file, 900));
     setReading(true);
     setOcr(null);
     const res = await simulateOcr(Date.now() % 97);

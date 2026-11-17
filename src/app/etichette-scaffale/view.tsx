@@ -7,6 +7,7 @@ import { ArrowLeft, Printer } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { corsiaId, layoutOf, natural, normLoc, scaffaleId } from "@/lib/warehouse";
 import { ShelfLabel } from "@/components/ShelfLabel";
+import { QrAddressNote, usePublicBase } from "@/components/codes";
 import type { Location } from "@/lib/types";
 
 export default function Page() {
@@ -42,6 +43,7 @@ function Stampa() {
   const [ripiani, setRipiani] = useState("");
   const [boxes, setBoxes] = useState(false);
   const w = warehouses.find((x) => x.id === mag) ?? warehouses[0];
+  const { ready } = usePublicBase();
 
   const labels = useMemo(() => {
     const lay = layoutOf(w, parts);
@@ -112,10 +114,11 @@ function Stampa() {
             <b className="code text-[20px] text-ink">{labels.length}</b> etichette · formato 100 × 50 mm, una per foglio sulla stampante etichette
             {tooMany && <span className="text-warn"> · mostro le prime 600: stampa per corsia</span>}
           </p>
-          <button onClick={() => window.print()} disabled={labels.length === 0} className="inline-flex min-h-12 items-center gap-2 rounded-md bg-band px-5 font-semibold text-white hover:bg-band-deep disabled:opacity-40">
+          <button onClick={() => window.print()} disabled={labels.length === 0 || !ready} className="inline-flex min-h-12 items-center gap-2 rounded-md bg-band px-5 font-semibold text-white hover:bg-band-deep disabled:opacity-40">
             <Printer className="size-5" aria-hidden /> Stampa
           </button>
         </div>
+        <QrAddressNote className="mt-2" />
         {labels.length === 0 && (
           <p className="mt-6 rounded-md border border-hair bg-label px-5 py-8 text-center text-ink-2">
             Nessuno scaffale da etichettare. Scrivi corsia, scaffale e ripiani (es. <b className="code">A-E</b>) per stampare le etichette di uno scaffale ancora vuoto.

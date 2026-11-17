@@ -1,7 +1,7 @@
 "use client";
 
 import { originLabel } from "@/lib/warehouse";
-import { Barcode, partUrl, Qr } from "./codes";
+import { Barcode, partPath, Qr, usePublicBase } from "./codes";
 import { typeById, CONDITIONS } from "@/lib/catalog";
 import { locToString } from "@/lib/warehouse";
 import type { Part, Vehicle } from "@/lib/types";
@@ -11,6 +11,7 @@ import { BRAND } from "@/lib/config";
 export function PartLabel({ part, vehicle, size = "md", className = "" }: { part: Part; vehicle?: Vehicle; size?: "md" | "print"; className?: string }) {
   const t = typeById(part.typeId);
   const print = size === "print";
+  const { base } = usePublicBase();
   return (
     <article
       className={`label-sheet relative flex flex-col overflow-hidden ${print ? "h-[50mm] w-[100mm] rounded-none shadow-none" : "w-full"} ${className}`}
@@ -40,7 +41,7 @@ export function PartLabel({ part, vehicle, size = "md", className = "" }: { part
           </dl>
         </div>
         <div className="flex shrink-0 flex-col items-center">
-          <Qr value={partUrl(part.id)} size={print ? 82 : 112} />
+          <Qr value={base + partPath(part.id)} size={print ? 82 : 112} />
           {part.location ? (
             <span className={`code mt-0.5 font-bold text-ink ${print ? "text-[9pt]" : "text-[18px]"}`}>{locToString(part.location)}</span>
           ) : (

@@ -6,7 +6,7 @@ import { Suspense, useRef, useState } from "react";
 import { Camera, Check, ChevronLeft, ChevronRight, Loader2, Printer, Sparkles, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { CONDITIONS, PART_TYPES, sidesFor, typeById } from "@/lib/catalog";
-import { compressImage, suggestComponent } from "@/lib/services";
+import { savePhoto, suggestComponent } from "@/lib/services";
 import { recoveryList } from "@/lib/logic";
 import { catalogFor, platformLabel } from "@/lib/partsdb";
 import { suggestUsedPrice } from "@/lib/pricing";
@@ -49,7 +49,7 @@ function NuovoPezzo() {
 
   async function addPhotos(files: FileList | null) {
     if (!files?.length) return;
-    const imgs = await Promise.all(Array.from(files).map((f) => compressImage(f)));
+    const imgs = await Promise.all(Array.from(files).map((f) => savePhoto(f)));
     setPhotos((p) => [...p, ...imgs]);
     if (!preset && aiState === "idle") {
       setAiState("loading");
