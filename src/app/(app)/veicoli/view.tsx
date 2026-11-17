@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useStore } from "@/lib/store";
-import { ButtonLink, PageTitle, Plate, Panel } from "@/components/ui";
+import { BonificaBadge, ButtonLink, PageTitle, Plate, Panel } from "@/components/ui";
+import { bonificaClock } from "@/lib/agenda";
 import { dateIt } from "@/lib/logic";
 
 export default function Veicoli() {
@@ -43,6 +44,7 @@ export default function Veicoli() {
                   ingresso {dateIt(v.intakeAt)} · {v.dossier.number ? <span className="code">{v.dossier.number}</span> : <span className="text-warn">pratica da registrare</span>} · {v.work}
                   {v.verification === "da verificare" && <b className="text-warn"> · da verificare</b>}
                 </span>
+                {bonificaClock(v) && <BonificaBadge clock={bonificaClock(v)!} className="mt-1.5" />}
               </Link>
               {/* Schermi larghi: tabella a colonne */}
               <Link href={`/veicoli/${v.id}`} className="hidden items-center gap-4 px-4 py-3 hover:bg-carton xl:grid xl:grid-cols-[130px_120px_1fr_150px_120px_90px]">
@@ -51,6 +53,7 @@ export default function Veicoli() {
                 <span className="min-w-0">
                   <span className="block truncate font-semibold">{v.make} {v.model} <span className="font-normal text-ink-2">{v.version}</span></span>
                   <span className="block text-sm text-ink-3">ingresso {dateIt(v.intakeAt)}{v.verification === "da verificare" && <b className="text-warn"> · da verificare</b>}</span>
+                  {bonificaClock(v) && <BonificaBadge clock={bonificaClock(v)!} className="mt-1" />}
                 </span>
                 <span className="code text-[15px] text-ink-2">{v.dossier.number || <span className="text-warn">da registrare</span>}</span>
                 <span className="text-[15px] font-medium">{v.work}</span>

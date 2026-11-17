@@ -6,7 +6,8 @@ import { useState } from "react";
 import { VIN_RE } from "@/lib/services";
 import { BadgeCheck, Leaf, Wrench } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { Button, ButtonLink, Empty, Notice, Panel, Plate } from "@/components/ui";
+import { BonificaBadge, Button, ButtonLink, Empty, Notice, Panel, Plate } from "@/components/ui";
+import { bonificaClock, TERMS } from "@/lib/agenda";
 import { RecoveryList } from "@/components/RecoveryList";
 import { PraticaPanel } from "@/components/PraticaPanel";
 import { PartRow } from "@/components/PartRow";
@@ -115,6 +116,17 @@ export default function SchedaVeicolo() {
               </dl>
             ) : (
               <div className="flex flex-wrap items-center justify-between gap-3 p-4">
+                {(() => {
+                  const c = bonificaClock(v)!;
+                  return (
+                    <div className="w-full">
+                      <BonificaBadge clock={c} className="text-[15px]" />
+                      <p className="mt-1 text-sm text-ink-2">
+                        {c.parked[0].toUpperCase() + c.parked.slice(1)} · termine {TERMS.bonifica} giorni dall&apos;ingresso ({dateIt(c.due)})
+                      </p>
+                    </div>
+                  );
+                })()}
                 <p className="text-[15px] text-ink-2">Da fare prima dello smontaggio: liquidi, batteria, airbag, catalizzatore, pneumatici.</p>
                 <ButtonLink href={`/veicoli/${v.id}/bonifica`} size="sm"><Leaf className="size-4" aria-hidden /> Registra bonifica</ButtonLink>
               </div>

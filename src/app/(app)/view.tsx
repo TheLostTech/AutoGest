@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { ArrowRight, Boxes, CarFront, CircleCheck, FileText, Leaf, PackageCheck, TrendingDown, type LucideIcon } from "lucide-react";
 import { ROLE_USER, useStore } from "@/lib/store";
-import { ButtonLink, Panel, PageTitle, Plate } from "@/components/ui";
-import { buildAgenda, urgencyOf, type AgendaItem, type Urgency } from "@/lib/agenda";
+import { BonificaBadge, ButtonLink, Panel, PageTitle, Plate } from "@/components/ui";
+import { bonificaClock, buildAgenda, TERMS, urgencyOf, type AgendaItem, type Urgency } from "@/lib/agenda";
 import { dateIt, euro } from "@/lib/logic";
 import type { Role } from "@/lib/types";
 
@@ -74,6 +74,11 @@ export default function Oggi() {
     ],
   };
   const showVehicles = role !== "vendite" && role !== "magazziniere";
+  // Avvisi di stazionamento: veicoli in parcheggio vicini al termine della bonifica (o oltre)
+  const parked = vehicles
+    .map((v) => ({ v, c: bonificaClock(v) }))
+    .filter((x): x is { v: (typeof vehicles)[number]; c: NonNullable<ReturnType<typeof bonificaClock>> } => !!x.c && x.c.level !== "ok")
+    .sort((a, b) => a.c.left - b.c.left);
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -88,6 +93,29 @@ export default function Oggi() {
         }
         actions={<ButtonLink href={PRIMARY[role].href}>{PRIMARY[role].label}</ButtonLink>}
       />
+
+      {role !== "vendite" && role !== "magazziniere" && parked.length > 0 && (
+        <section
+          className={`mb-6 rounded-md border-2 px-4 py-3 ${parked.some((x) => x.c.level !== "attenzione") ? "border-danger bg-danger-bg" : "border-warn bg-warn-bg"}`}
+          aria-label="Avvisi bonifica"
+        >
+          <p className="text-[17px] font-semibold text-ink">
+            {parked.length === 1 ? "1 veicolo in parcheggio" : `${parked.length} veicoli in parcheggio`} vicino al termine della bonifica ({TERMS.bonifica} giorni dall&apos;ingresso)
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            {parked.map(({ v, c }) => (
+              <li key={v.id}>
+                <Link href={`/veicoli/${v.id}/bonifica`} className="flex flex-wrap items-center gap-x-3 gap-y-1 hover:underline">
+                  <BonificaBadge clock={c} />
+                  <Plate plate={v.plate} size="sm" />
+                  <span className="font-semibold">{v.make} {v.model}</span>
+                  <span className="text-sm text-ink-2">{c.parked}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         {/* Coda di lavoro */}

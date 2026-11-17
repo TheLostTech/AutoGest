@@ -29,7 +29,7 @@ export const TERMS = {
   pagamento: 2, // dopo questo termine la riserva va rivista
   spedizione: 1,
   preventivo: 5, // giorni dopo i quali richiamare il cliente
-  bonifica: 10,
+  bonifica: 7, // giorni dall'ingresso: il veicolo può restare in parcheggio, ma va bonificato entro questo termine
   rentri: 2,
 };
 
@@ -48,6 +48,32 @@ export function urgencyOf(due: string | undefined, now = new Date()): Urgency {
   if (d <= endOfToday) return "oggi";
   if (d.getTime() - endOfToday.getTime() <= 7 * DAY) return "settimana";
   return "quando-puoi";
+}
+
+// Tempo di stazionamento prima della bonifica: si contano i giorni di calendario dall'ingresso
+// (giorno 0 = giorno di ingresso). Avviso giallo a 2 giorni dalla scadenza, rosso dal giorno della scadenza.
+export type BonificaLevel = "ok" | "attenzione" | "oggi" | "scaduta";
+export interface BonificaClock {
+  days: number; // giorni in parcheggio
+  left: number; // giorni rimasti (negativo = scaduta)
+  level: BonificaLevel;
+  label: string; // es. "Bonifica entro 2 giorni"
+  parked: string; // es. "in parcheggio da 5 giorni"
+  due: string; // ISO, fine del giorno di scadenza
+}
+const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+const giorni = (n: number) => `${n} ${n === 1 ? "giorno" : "giorni"}`;
+
+export function bonificaClock(v: Vehicle, now = new Date()): BonificaClock | null {
+  if (v.bonifica) return null;
+  const intake = new Date(v.intakeAt);
+  const days = Math.max(0, Math.round((dayStart(now) - dayStart(intake)) / DAY));
+  const left = TERMS.bonifica - days;
+  const level: BonificaLevel = left < 0 ? "scaduta" : left === 0 ? "oggi" : left <= 2 ? "attenzione" : "ok";
+  const label = left < 0 ? `Bonifica scaduta da ${giorni(-left)}` : left === 0 ? "Bonifica da fare oggi" : `Bonifica entro ${giorni(left)}`;
+  const due = new Date(dayStart(intake) + TERMS.bonifica * DAY);
+  due.setHours(23, 59, 59, 999);
+  return { days, left, level, label, parked: days === 0 ? "entrato oggi" : `in parcheggio da ${giorni(days)}`, due: due.toISOString() };
 }
 
 export function buildAgenda(
@@ -112,16 +138,17 @@ export function buildAgenda(
         due: addDays(v.presaInCarico?.at ?? v.intakeAt, TERMS.radiazione),
         roles: ["accettazione", "responsabile"],
       });
-    if (!v.bonifica)
+    const clock = bonificaClock(v);
+    if (clock)
       items.push({
         id: `bonifica-${v.id}`,
         kind: "ambiente",
-        title: `Bonifica ${v.id}`,
-        detail: `${name(v)} · liquidi, batteria, airbag, catalizzatore, pneumatici`,
+        title: `${clock.label} · ${v.id}`,
+        detail: `${name(v)} · ${clock.parked} · liquidi, batteria, airbag, catalizzatore, pneumatici`,
         action: "Bonifica",
         href: `/veicoli/${v.id}/bonifica`,
-        due: addDays(v.intakeAt, TERMS.bonifica),
-        roles: ["smontatore", "responsabile"],
+        due: clock.due,
+        roles: ["smontatore", "accettazione", "responsabile"],
       });
     if (v.work === "accettato" && v.bonifica)
       items.push({

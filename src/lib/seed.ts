@@ -76,8 +76,8 @@ const V = (
 export const SEED_VEHICLES: Vehicle[] = [
   V(118, "EK482TR", "ZFA31200003K48211", "Fiat", "Panda", "1.2 69 CV Lounge", "fiat-panda-319", 2013, "Benzina", 168400, "Bianco", 1, "CR-2026-004812", "in corso", "in smontaggio"),
   V(117, "FB903LM", "WVWZZZ1KZBW903417", "Volkswagen", "Golf VI", "1.6 TDI 105 CV Highline", "vw-golf-6", 2011, "Diesel", 231900, "Grigio scuro", 2, "CR-2026-004809", "in corso", "in smontaggio"),
-  V(116, "DX215PA", "ZFA19900001P21566", "Fiat", "Punto Evo", "1.3 Multijet 75 CV", "fiat-punto-199", 2010, "Diesel", 204000, "Rosso", 3, "CR-2026-004797", "completata", "accettato"),
-  V(115, "GA771ZK", "VF15RBJ0D48771220", "Renault", "Clio III", "1.2 16V 75 CV", "renault-clio-3", 2009, "Benzina", 189300, "Blu", 0, "", "da registrare", "accettato", "da verificare", "Banca dati veicoli non raggiungibile all'ingresso: modello inserito a mano."),
+  V(116, "DX215PA", "ZFA19900001P21566", "Fiat", "Punto Evo", "1.3 Multijet 75 CV", "fiat-punto-199", 2010, "Diesel", 204000, "Rosso", 5, "CR-2026-004797", "completata", "accettato"),
+  V(115, "GA771ZK", "VF15RBJ0D48771220", "Renault", "Clio III", "1.2 16V 75 CV", "renault-clio-3", 2009, "Benzina", 189300, "Blu", 8, "", "da registrare", "accettato", "da verificare", "Banca dati veicoli non raggiungibile all'ingresso: modello inserito a mano."),
   V(112, "EH604SN", "ZAR94000007E60412", "Alfa Romeo", "Giulietta", "1.6 JTDm 105 CV", "alfa-giulietta-940", 2012, "Diesel", 246700, "Nero", 9, "CR-2026-004731", "completata", "smontato"),
   V(109, "DT338CF", "WF0DXXGAKD9T33811", "Ford", "Fiesta", "1.25 82 CV Titanium", "ford-fiesta-7", 2009, "Benzina", 152800, "Argento", 14, "CR-2026-004688", "completata", "smontato"),
   V(104, "FH129RB", "ZLA84600001F12907", "Lancia", "Ypsilon", "1.2 69 CV Gold", "lancia-ypsilon-846", 2012, "Benzina", 121500, "Avorio", 21, "CR-2026-004602", "completata", "smontato"),
