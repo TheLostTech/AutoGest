@@ -140,3 +140,28 @@ test("negozioStato", () => {
   assert.equal(negozioStato(annuncio({ negozio: { stato: "ritirato" } }), 2), "ritirato");
   assert.equal(negozioStato(annuncio({ negozio: undefined }), 2), undefined);
 });
+
+test("isWithdrawn: ritirato solo se ogni canale esistente è ritirato", () => {
+  const eb = (stato: "online" | "ritirato") => ({ stato, daRiallineare: false });
+  assert.equal(isWithdrawn(annuncio({ negozio: { stato: "ritirato" }, ebay: eb("online") })), false);
+  assert.equal(isWithdrawn(annuncio({ negozio: undefined, ebay: eb("ritirato") })), true);
+  assert.equal(isWithdrawn(annuncio({ negozio: { stato: "ritirato" }, ebay: eb("ritirato") })), true);
+  assert.equal(isWithdrawn(annuncio({ negozio: { stato: "online" } })), false);
+  assert.equal(isWithdrawn(annuncio({ negozio: undefined })), false);
+});
+
+test("placementFor: con più annunci uguali sceglie quello vivo", () => {
+  const p = part();
+  const key = groupKey(p, false);
+  const morto = annuncio({ id: "A-000001", negozio: { stato: "ritirato" } });
+  const vivo = annuncio({ id: "A-000002" });
+  assert.deepEqual(placementFor(p, key, [morto, vivo]), { kind: "unisci", annuncioId: "A-000002" });
+});
+
+test("nextToShip: a parità di data parte l'id più basso", () => {
+  const a = annuncio();
+  const t = "2026-01-01T00:00:00.000Z";
+  const p2 = part({ id: "R-000002", annuncioId: a.id, createdAt: t });
+  const p1 = part({ id: "R-000001", annuncioId: a.id, createdAt: t });
+  assert.deepEqual(nextToShip(a, [p2, p1]).map((p) => p.id), ["R-000001"]);
+});

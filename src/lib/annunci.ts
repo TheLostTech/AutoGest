@@ -26,12 +26,16 @@ export function quantityOf(a: Annuncio, parts: Part[]): number {
 export function nextToShip(a: Annuncio, parts: Part[], n = 1): Part[] {
   return partsOf(a, parts)
     .filter((p) => p.status === "disponibile")
-    .sort((x, y) => x.createdAt.localeCompare(y.createdAt))
+    .sort((x, y) => x.createdAt.localeCompare(y.createdAt) || x.id.localeCompare(y.id))
     .slice(0, n);
 }
 
+/** Ritirato: esiste almeno un canale (negozio e/o eBay) e ogni canale esistente è ritirato. */
 export function isWithdrawn(a: Annuncio): boolean {
-  return a.negozio?.stato === "ritirato" && (!a.ebay || a.ebay.stato === "ritirato");
+  const stati: string[] = [];
+  if (a.negozio) stati.push(a.negozio.stato);
+  if (a.ebay) stati.push(a.ebay.stato);
+  return stati.length > 0 && stati.every((s) => s === "ritirato");
 }
 
 export function negozioStato(a: Annuncio, qty: number): StatoNegozio | undefined {
