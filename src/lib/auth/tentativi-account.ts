@@ -26,6 +26,9 @@ async function registraBlocco(c: AuthContext, userId: string) {
   }
 }
 
+// Stessa risposta per email inesistenti e account bloccati: il rifiuto non dice se l'account esiste
+const troppi = () => new APIError("TOO_MANY_REQUESTS", { message: "Troppi tentativi di accesso: riprova più tardi.", code: "TROPPI_TENTATIVI" });
+
 const codice = (r: unknown): number | undefined => (r && typeof r === "object" && "statusCode" in r ? Number((r as { statusCode: unknown }).statusCode) : undefined);
 const chiaveDi = (ctx: { body?: unknown }) => chiaveAccount((ctx.body as { email?: unknown } | undefined)?.email);
 
@@ -42,13 +45,13 @@ export const tentativiAccount = {
           // Da qui in poi nessun await fino al conteggio: le richieste parallele si vedono a vicenda
           const ora = Date.now();
           if (!u?.user) {
-            if (!tentativoSconosciuto(stato.sconosciuti, ora)) throw new APIError("TOO_MANY_REQUESTS", { message: "Troppi tentativi di accesso: riprova tra un minuto.", code: "TROPPI_TENTATIVI" });
+            if (!tentativoSconosciuto(stato.sconosciuti, ora)) throw troppi();
             return;
           }
           const k = `u:${u.user.id}`;
           const gettone = randomUUID();
           if (prenota(stato.conti, k, gettone, ora) === "bloccato") {
-            throw new APIError("TOO_MANY_REQUESTS", { message: "Troppe password sbagliate per questo account: riprova tra 15 minuti.", code: "ACCOUNT_BLOCCATO" });
+            throw troppi();
           }
           stato.inCorso.set(ctx.request, { k, gettone, userId: u.user.id });
         }),
