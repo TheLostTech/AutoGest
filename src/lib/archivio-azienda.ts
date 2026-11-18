@@ -1,8 +1,9 @@
 // Archivio condiviso di un'azienda: un file state.json nella sua cartella. Solo server.
 // Un blocco per azienda: le scritture della stessa azienda vanno in fila (così l'ordine del negozio e il
 // salvataggio di un dispositivo non si sovrascrivono), quelle di aziende diverse non si aspettano.
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { leggiStatoDaFile } from "@/lib/archivio-file";
 import { cartellaAzienda } from "@/lib/server-data";
 import { STORE_SCHEMA } from "@/lib/schema";
 import type { Rec, Stored } from "@/lib/archivio-unione";
@@ -11,12 +12,9 @@ const code = (a: string) => path.join(cartellaAzienda(a), "state.json");
 const blocchi = new Map<string, Promise<unknown>>();
 
 // Sempre dal file: anche altri processi sullo stesso Mac leggono e scrivono qui
-export async function leggiStato(aziendaId: string): Promise<Stored> {
-  try {
-    return JSON.parse(await readFile(code(aziendaId), "utf8")) as Stored;
-  } catch {
-    return { schema: "", version: 0, state: null };
-  }
+// File assente: state null. File presente ma illeggibile o corrotto: errore (ArchivioIlleggibile), mai da sovrascrivere.
+export function leggiStato(aziendaId: string): Promise<Stored> {
+  return leggiStatoDaFile(code(aziendaId));
 }
 
 // Si scrive in un file temporaneo e poi lo si rinomina: un arresto a metà non lascia un file tronco
@@ -81,7 +79,8 @@ export interface NuovoEvento {
 export async function aggiungiEventi(aziendaId: string, eventi: NuovoEvento[]): Promise<void> {
   if (!eventi.length) return;
   await aggiornaStato(aziendaId, (s) => {
-    if (!s.state) return { stored: s, risultato: undefined };
+    // Senza archivio non c'è dove scrivere: meglio un errore che un evento perso in silenzio
+    if (!s.state) throw new Error("Archivio dell'azienda assente: registro attività non aggiornato.");
     const st = { ...s.state };
     const counters = { ...((st.counters as Record<string, number> | undefined) ?? {}) };
     const audit = [...((st.audit as Rec[] | undefined) ?? [])];
