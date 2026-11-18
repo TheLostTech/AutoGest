@@ -6,6 +6,7 @@ import { missingFields, monthKey } from "./periodo";
 import { groupKey } from "./annunci";
 import { buildAnnuncio } from "./annuncio-build";
 import { isShippable } from "./spedizione";
+import { twinSource, withTwins } from "./seed-twins";
 import type {
   Annuncio,
   AuditEvent,
@@ -219,19 +220,25 @@ export function buildSeed() {
     });
   }
 
-  // Due cerchi gemelli del primo cerchio pubblicato con codice verificato (stesso veicolo, condizione e prezzo):
-  // così i dati demo hanno un annuncio con più pezzi uguali
-  const twinOf = published.find((p) => p.typeId === "cerchio" && p.status === "disponibile" && p.oemVerified && !!p.oem);
-  if (twinOf)
-    for (const h of [1, 2]) {
-      const id = `R-${pad(++pn)}`;
-      const at = new Date(new Date(twinOf.createdAt).getTime() + h * 36e5).toISOString();
-      const twin: Part = { ...twinOf, id, createdAt: at, photos: [...twinOf.photos], location: twinOf.location && { ...twinOf.location } };
+  // Due gemelli di un pezzo pubblicato (prima un cerchio): stesso veicolo, codice, condizione e prezzo.
+  // Così i dati demo hanno sempre un annuncio con più pezzi uguali. Non usa r(): il resto dei dati non cambia.
+  const catalogOf = (p: Part) => {
+    const v = SEED_VEHICLES.find((x) => x.id === p.vehicleId);
+    return v ? catalogFor(p.typeId, v.platform, p.side) : null;
+  };
+  const twinOf = twinSource(published, catalogOf, (typeId) => typeById(typeId).shippable);
+  if (twinOf) {
+    const { source, twins } = withTwins(twinOf, catalogOf(twinOf)!, [`R-${pad(++pn)}`, `R-${pad(++pn)}`]);
+    // Se il codice non era verificato, ora lo è (dal catalogo, come per gli altri pezzi verificati)
+    parts[parts.indexOf(twinOf)] = source;
+    published[published.indexOf(twinOf)] = source;
+    for (const twin of twins) {
       parts.push(twin);
       published.push(twin);
-      log({ at, user: twin.createdBy, role: "smontatore", device: "Smartphone campo 1", entity: "ricambio", entityId: id, action: "Ricambio catalogato", detail: `${typeById(twin.typeId).name} da ${twin.vehicleId}` });
-      if (twin.location) log({ at, user: "Paolo (magazzino)", role: "magazziniere", device: "Smartphone magazzino", entity: "ricambio", entityId: id, action: "Posizione assegnata", detail: locToString(twin.location) });
+      log({ at: twin.createdAt, user: twin.createdBy, role: "smontatore", device: "Smartphone campo 1", entity: "ricambio", entityId: twin.id, action: "Ricambio catalogato", detail: `${typeById(twin.typeId).name} da ${twin.vehicleId}` });
+      if (twin.location) log({ at: twin.createdAt, user: "Paolo (magazzino)", role: "magazziniere", device: "Smartphone magazzino", entity: "ricambio", entityId: twin.id, action: "Posizione assegnata", detail: locToString(twin.location) });
     }
+  }
 
   // Annunci sul negozio: i pezzi pubblicati uguali (stessa chiave) stanno nello stesso annuncio
   const groups = new Map<string, Part[]>();
