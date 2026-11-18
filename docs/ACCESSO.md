@@ -29,7 +29,7 @@ Si crea impostando le variabili `SUPERADMIN_*` al primo avvio (la password non v
 
 ## Dispositivi condivisi (nome e PIN)
 
-Il responsabile entra con email e password, apre Impostazioni, Dispositivi e usa "Usa come dispositivo dell'azienda": il suo account esce e il browser mostra l'elenco dei nomi. Chi lavora tocca il proprio nome e scrive il PIN (4 cifre). Dopo 5 minuti senza tocchi (in qualunque scheda dello stesso browser, anche le etichette) il dispositivo salva il lavoro, chiude la sessione e torna all'elenco. Le modifiche che non riesce a inviare restano nel browser e partono al prossimo accesso.
+Il responsabile entra con email e password, apre Impostazioni, Dispositivi e usa "Usa come dispositivo dell'azienda": il suo account esce e il browser mostra l'elenco dei nomi. Chi lavora tocca il proprio nome e scrive il PIN (4 cifre). Dopo 5 minuti senza tocchi (in qualunque scheda dello stesso browser, anche le etichette) il dispositivo tiene nel browser le modifiche non ancora inviate, chiude la sessione e torna all'elenco; le invia al prossimo accesso su quel dispositivo.
 
 ## Dove stanno i dati
 
@@ -38,5 +38,5 @@ Il responsabile entra con email e password, apre Impostazioni, Dispositivi e usa
 
 ## Limite noto
 
-I ruoli sono controllati **solo nelle schermate**: finché non arriva il database dei dati, chi ha accesso all'azienda può leggere e scrivere tutto l'archivio dell'azienda dalle API (la separazione tra aziende, invece, è sempre garantita dalla sessione).
+**Ruoli:** Il server controlla l'accesso, la separazione tra aziende e, per ruolo, alcune azioni delicate (collegamenti, collegamento e politiche eBay, ripristino dei dati, gestione dei dispositivi, Piattaforma); tutto il resto è limitato per ruolo solo nelle schermate fino al database dei dati (A1).
 Il pagamento simulato del negozio vale solo nel negozio dell'azienda demo; in ogni altra azienda un ordine senza pagamento attivo viene rifiutato.

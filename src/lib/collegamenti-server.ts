@@ -44,7 +44,7 @@ export async function leggiValori(aziendaId: string, id: string): Promise<Record
 }
 
 // Il login vero c'è: ogni route chiama prima accessoDaRichiesta, che ricava azienda e ruoli dalla sessione (mai dalla richiesta).
-// Limite noto: finché non c'è il database dei dati, i ruoli si fanno rispettare solo dove una route li chiede (soloRuoli) e nelle schermate.
+// Limite noto: il server controlla l'accesso, la separazione tra aziende e, per ruolo, alcune azioni delicate (collegamenti, collegamento e politiche eBay, ripristino dei dati, gestione dei dispositivi, Piattaforma); tutto il resto è limitato per ruolo solo nelle schermate fino al database dei dati (A1).
 // In più si bloccano le richieste partite da pagine di altri siti (il browser manda sempre Origin su PUT e DELETE).
 export function altroSito(req: Request) {
   const origin = req.headers.get("origin");
