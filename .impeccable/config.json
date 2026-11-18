@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/app/news/[slug]/page.tsx"
+        ],
+        "createdAt": "2026-11-18T07:40:01.072Z",
+        "reason": "Claude: L113 is the timeline track of the dates list (DESIGN.md Lifecycle Route Line: 4px track with ring stations), not a card side accent"
+      }
+    ]
+  }
+}

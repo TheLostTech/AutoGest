@@ -1,12 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { startSync } from "@/lib/sync";
 
 export function Hydrator({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
+  // La pagina di presentazione è pubblica: non legge né allinea i dati del gestionale
+  const percorso = usePathname();
+  const pubblica = percorso === "/scopri" || percorso.startsWith("/news");
   useEffect(() => {
+    if (pubblica) return;
     // Prima i dati salvati nel browser, poi l'allineamento con gli altri dispositivi (al massimo 2 secondi)
     const done = () => void startSync().finally(() => setReady(true));
     const unsub = useStore.persist.onFinishHydration(done);
@@ -17,8 +22,8 @@ export function Hydrator({ children }: { children: React.ReactNode }) {
     }
     if (useStore.persist.hasHydrated()) done();
     return unsub;
-  }, []);
-  if (!ready) {
+  }, [pubblica]);
+  if (!ready && !pubblica) {
     return (
       <div className="grid min-h-dvh place-items-center bg-ground">
         <div className="code text-2xl font-semibold tracking-wide text-band">CARICAMENTO…</div>
