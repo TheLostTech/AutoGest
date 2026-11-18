@@ -18,6 +18,7 @@ const MESSAGGI: Record<Negato["motivo"], string> = {
   "non-membro": "Non hai accesso a questa azienda.",
   "assistenza-scaduta": "L'ingresso di assistenza non è attivo.",
   "due-fattori": "Serve il codice dal telefono per entrare in un'azienda.",
+  impersonazione: "Questo tipo di accesso non è consentito.",
 };
 
 function negata(stato: 401 | 403, motivo: Negato["motivo"]): Response {
@@ -33,9 +34,10 @@ function eSuperadmin(role: string | null | undefined): boolean {
 }
 
 // Lettura autorevole dal database: il cookie cache di Better Auth viene escluso, così una sessione
-// revocata o un utente bannito si vedono subito.
+// revocata o un utente bannito si vedono subito. disableRefresh: Better Auth non deve riscrivere updatedAt
+// prima del controllo di inattività del PIN: l'unico a scriverlo, su questa strada, è l'aggiornamento più sotto.
 async function leggiSessione(req: Request) {
-  return auth.api.getSession({ headers: req.headers, query: { disableCookieCache: true } });
+  return auth.api.getSession({ headers: req.headers, query: { disableCookieCache: true, disableRefresh: true } });
 }
 
 // metadata è salvata come stringa JSON: demo solo se è un oggetto con demo === true.
@@ -57,14 +59,16 @@ export async function accessoDaRichiesta(req: Request): Promise<Accesso | Respon
   if (!dati) return negata(401, "nessuna-sessione");
 
   const { session, user } = dati;
-  const extra = session as typeof session & { activeOrganizationId?: string | null; tipoAccesso?: string | null };
+  const extra = session as typeof session & { activeOrganizationId?: string | null; tipoAccesso?: string | null; impersonatedBy?: string | null; dueFattoriVerificato?: boolean | null };
   const u = user as typeof user & { role?: string | null; twoFactorEnabled?: boolean | null };
 
   const vista: SessioneVista = {
     userId: user.id,
     nome: user.name,
     ruoloPiattaforma: eSuperadmin(u.role) ? "superadmin" : (u.role ?? null),
-    dueFattori: u.twoFactorEnabled === true,
+    // Il secondo fattore vale per la SESSIONE (campo scritto dall'hook in assistenza.ts), non per l'utente.
+    dueFattori: u.twoFactorEnabled === true && extra.dueFattoriVerificato === true,
+    impersonata: !!extra.impersonatedBy,
     aziendaAttiva: extra.activeOrganizationId ?? null,
     tipo: extra.tipoAccesso === "pin" ? "pin" : "password",
     creata: ms(session.createdAt),
@@ -122,6 +126,7 @@ export async function accessoDaRichiesta(req: Request): Promise<Accesso | Respon
     return negata(esito.negato, esito.motivo);
   }
 
+  // Finestra reale di inattività: 4-5 minuti, perché updatedAt si aggiorna al massimo ogni 60 s.
   // Sessione PIN: segna l'attività (updatedAt) con l'adapter interno di Better Auth, al massimo una volta al minuto.
   if (vista.tipo === "pin" && ora - vista.ultimaAttivita > PIN_AGGIORNA_OGNI_MS) {
     await ctx.internalAdapter.updateSession(session.token, { updatedAt: new Date(ora) });
@@ -139,10 +144,11 @@ export async function superadminDaRichiesta(req: Request): Promise<{ utente: { i
   if (!dati) return negata(401, "nessuna-sessione");
   const { session, user } = dati;
   const u = user as typeof user & { role?: string | null; twoFactorEnabled?: boolean | null };
-  const extra = session as typeof session & { tipoAccesso?: string | null };
+  const extra = session as typeof session & { tipoAccesso?: string | null; impersonatedBy?: string | null; dueFattoriVerificato?: boolean | null };
+  if (extra.impersonatedBy) return negata(403, "impersonazione");
   if (extra.tipoAccesso === "pin" || !eSuperadmin(u.role)) {
     return Response.json({ error: "Area riservata.", motivo: "non-superadmin" }, { status: 403, headers: { "Cache-Control": "no-store" } });
   }
-  if (u.twoFactorEnabled !== true) return negata(403, "due-fattori");
+  if (u.twoFactorEnabled !== true || extra.dueFattoriVerificato !== true) return negata(403, "due-fattori");
   return { utente: { id: user.id, nome: user.name } };
 }

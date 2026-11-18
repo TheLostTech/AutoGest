@@ -14,9 +14,14 @@ export const ruoliAzienda = {
   consulente: acAzienda.newRole(memberAc.statements),
 };
 
-// Permessi del plugin "admin" (la piattaforma): il super admin ha tutti i permessi di serie.
+// Permessi del plugin "admin" (la piattaforma): il super admin ha i permessi di serie TRANNE
+// "impersonate" e "impersonate-admins": "vedi come questo utente" non esiste, perché creerebbe una
+// sessione vera dentro un'azienda senza ingresso di assistenza (motivo, 2 ore, codice dal telefono).
 export const acPiattaforma = createAccessControl(statementsPiattaforma);
 export const ruoliPiattaforma = {
-  superadmin: acPiattaforma.newRole(statementsPiattaforma),
+  superadmin: acPiattaforma.newRole({
+    ...statementsPiattaforma,
+    user: statementsPiattaforma.user.filter((p) => p !== "impersonate" && p !== "impersonate-admins"),
+  }),
   user: acPiattaforma.newRole(userAc.statements),
 };

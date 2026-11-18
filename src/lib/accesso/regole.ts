@@ -11,7 +11,8 @@ export type SessioneVista = {
   userId: string;
   nome: string;
   ruoloPiattaforma: string | null;
-  dueFattori: boolean;
+  dueFattori: boolean; // true solo se QUESTA sessione ha superato il secondo fattore
+  impersonata: boolean;
   aziendaAttiva: string | null;
   tipo: "password" | "pin";
   creata: number;
@@ -34,7 +35,7 @@ export type Accesso = {
 
 export type Negato = {
   negato: 401 | 403;
-  motivo: "nessuna-sessione" | "sessione-scaduta" | "nessuna-azienda" | "non-membro" | "assistenza-scaduta" | "due-fattori";
+  motivo: "nessuna-sessione" | "sessione-scaduta" | "nessuna-azienda" | "non-membro" | "assistenza-scaduta" | "due-fattori" | "impersonazione";
 };
 
 type Input = {
@@ -49,6 +50,9 @@ type Input = {
 export function decidiAccesso(i: Input): Accesso | Negato {
   const { sessione, azienda, ora } = i;
   if (!sessione) return { negato: 401, motivo: "nessuna-sessione" };
+
+  // Le sessioni create con "impersonate" non entrano mai: aggirerebbero assistenza e secondo fattore.
+  if (sessione.impersonata) return { negato: 403, motivo: "impersonazione" };
 
   if (sessione.tipo === "pin" && (ora - sessione.ultimaAttivita > PIN_INATTIVITA_MS || ora - sessione.creata > PIN_TURNO_MS)) {
     return { negato: 401, motivo: "sessione-scaduta" };

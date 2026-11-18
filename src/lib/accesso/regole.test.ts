@@ -21,6 +21,7 @@ function base(): Input {
       nome: "Mario",
       ruoloPiattaforma: null,
       dueFattori: false,
+      impersonata: false,
       aziendaAttiva: "a1",
       tipo: "password",
       creata: ORA - 1000,
@@ -210,4 +211,16 @@ test("utente non superadmin con assistenza (dati incoerenti): non-membro", () =>
   i.ruoliMembro = null;
   i.assistenza = { id: "s1", organizationId: "a1", motivo: "x", scade: ORA + 1000 };
   assert.deepEqual(decidiAccesso(i), { negato: 403, motivo: "non-membro" });
+});
+
+test("sessione impersonata: 403 impersonazione, anche per un membro valido", () => {
+  const i = base();
+  i.sessione = { ...i.sessione!, impersonata: true };
+  assert.deepEqual(decidiAccesso(i), { negato: 403, motivo: "impersonazione" });
+});
+
+test("sessione impersonata: negata anche con super admin, due fattori e assistenza valida", () => {
+  const i = superadmin();
+  i.sessione = { ...i.sessione!, impersonata: true };
+  assert.deepEqual(decidiAccesso(i), { negato: 403, motivo: "impersonazione" });
 });
