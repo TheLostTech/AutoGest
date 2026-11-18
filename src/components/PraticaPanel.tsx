@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useState } from "react";
 import { CircleAlert, Check, Loader2, Printer } from "lucide-react";
-import { ROLE_USER, useStore } from "@/lib/store";
+import { useStore } from "@/lib/store";
 import { ATTESTAZIONE, cfOk, identOk, CONFERENTI, docsFor, nextCertNumber, praticaSteps, RADIAZIONE, simulateVisura, type StepState } from "@/lib/pratica";
 import { dateIt } from "@/lib/logic";
 
@@ -14,7 +14,7 @@ import { Button, Panel } from "./ui";
 
 // La pratica come percorso RVFU: un passo alla volta, l'azione compare solo sul passo attuale.
 export function PraticaPanel({ v }: { v: Vehicle }) {
-  const { updateVehicle, vehicles, role } = useStore();
+  const { updateVehicle, vehicles, role, operatore } = useStore();
   const steps = praticaSteps(v);
   // La pratica la gestisce l'ufficio: gli altri ruoli la vedono in sola lettura
   const canEdit = role === "accettazione" || role === "responsabile";
@@ -156,7 +156,7 @@ export function PraticaPanel({ v }: { v: Vehicle }) {
                 updateVehicle(
                   v.id,
                   {
-                    presaInCarico: { at: new Date().toISOString(), by: ROLE_USER[role].user },
+                    presaInCarico: { at: new Date().toISOString(), by: operatore ? `${operatore.nome}${operatore.assistenza ? " (assistenza)" : ""}` : "Operatore" },
                     dossier: { ...v.dossier, number, kind: "Certificato di Rottamazione Digitale", status: "in corso" },
                     radiazione: { stato: "da richiedere" },
                   },

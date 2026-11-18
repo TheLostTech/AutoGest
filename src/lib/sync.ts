@@ -2,7 +2,10 @@
 
 // Sincronizzazione della demo tra dispositivi (telefono, computer) tramite /api/demo-state.
 // Ruolo e veicolo attivo restano propri di ogni dispositivo; tutto il resto è condiviso.
+import { useSyncExternalStore } from "react";
 import { STORE_SCHEMA, useStore } from "./store";
+import { devePubblicareStatoLocale } from "./sync-regole";
+import { percorsoPubblico } from "./accesso/percorsi";
 
 const PREPEND = ["vehicles", "parts", "annunci", "orders", "docs", "firs"] as const;
 const APPEND = ["audit", "wasteMoves", "inventory"] as const;
@@ -14,6 +17,7 @@ type S = ReturnType<typeof useStore.getState>;
 type Rec = { id?: string; typeId?: string };
 
 let version = 0;
+let demoAzienda = false; // aggiornato a ogni lettura: solo l'azienda demo può avere lo stato intero scritto dal browser
 let applying = false;
 let dirty = false;
 let pushing = 0; // scritture in corso (a pezzi o intere): un contatore, così la fine di una non sblocca l'altra
@@ -33,6 +37,55 @@ const primoAllineamento = new Promise<void>((r) => {
 /** Si risolve dopo la prima lettura riuscita dal server (o la prima scrittura dello stato intero). Il timeout di avvio non conta. */
 export const syncPronto = (): Promise<void> => primoAllineamento;
 export const syncAllineato = (): boolean => allineato;
+
+// Avviso per l'utente quando la sincronizzazione si ferma (archivio di versione diversa, accesso perso).
+// Dopo l'avviso non si riprova da soli: niente cicli di richieste.
+let avviso: string | null = null;
+let fermata = false;
+const ascoltatoriAvviso = new Set<() => void>();
+function fermaConAvviso(testo: string) {
+  fermata = true;
+  clearTimeout(timer);
+  avviso = testo;
+  ascoltatoriAvviso.forEach((f) => f());
+}
+export const useSyncAvviso = (): string | null =>
+  useSyncExternalStore(
+    (f) => (ascoltatoriAvviso.add(f), () => void ascoltatoriAvviso.delete(f)),
+    () => avviso,
+    () => null,
+  );
+
+class ErroreApi extends Error {
+  constructor(
+    readonly stato: number,
+    readonly motivo?: string,
+  ) {
+    super(`demo-state ${stato}`);
+  }
+}
+
+// 401: la sessione non vale più, si torna all'accesso (tranne sulle pagine pubbliche). 403/409: ci si ferma con un avviso.
+function gestisciRifiuto(e: unknown): boolean {
+  if (!(e instanceof ErroreApi)) return false;
+  if (e.stato === 401) {
+    fermata = true;
+    if (typeof window !== "undefined" && !percorsoPubblico(window.location.pathname)) {
+      window.location.assign(`/accesso?da=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+    }
+    return true;
+  }
+  if (e.stato === 409) {
+    fermaConAvviso("L'archivio dell'azienda ha una versione diversa da quella di questo dispositivo: i dati non vengono più sincronizzati. Contatta l'assistenza.");
+    return true;
+  }
+  if (e.stato === 403 && e.motivo === "ruolo") return true; // operazione non permessa a questo ruolo: nulla è stato scritto
+  if (e.stato === 403) {
+    fermaConAvviso("Non hai più accesso a questa azienda: i dati non vengono più sincronizzati. Accedi di nuovo.");
+    return true;
+  }
+  return false;
+}
 
 const pick = (s: S) => Object.fromEntries(SHARED.map((k) => [k, s[k]])) as Partial<S>;
 
@@ -63,13 +116,17 @@ async function api(method: "GET" | "PUT", body?: unknown) {
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!r.ok) throw new Error(`demo-state ${r.status}`);
+  if (!r.ok) {
+    const j = (await r.json().catch(() => ({}))) as { motivo?: string };
+    throw new ErroreApi(r.status, j.motivo);
+  }
   return r.json();
 }
 
 // Scrive lo stato intero. Intanto `pushing` ferma le letture (un pull in corso non riapplica lo stato vecchio)
 // e una scrittura a pezzi in attesa si annulla: lo stato intero la comprende già.
 async function pushAll() {
+  if (fermata || !demoAzienda) return; // lo stato intero si manda solo per l'azienda demo
   pushing++;
   clearTimeout(timer);
   try {
@@ -78,13 +135,15 @@ async function pushAll() {
     version = res.version;
     synced = pick(s);
     segnaAllineato();
+  } catch (e) {
+    if (!gestisciRifiuto(e)) throw e;
   } finally {
     pushing--;
   }
 }
 
 async function pushChanges() {
-  if (pushing) return;
+  if (pushing || fermata) return;
   pushing++;
   dirty = false;
   try {
@@ -100,18 +159,25 @@ async function pushChanges() {
     synced = pick(s);
     // Se nel frattempo altri hanno scritto, al prossimo giro si scarica la versione fusa
     if (res.version === version + 1) version = res.version;
-  } catch {
-    dirty = true; // rete assente: riprova al prossimo giro
+  } catch (e) {
+    // Rifiutato (401/403/409): non si riprova. Altrimenti rete assente: riprova al prossimo giro
+    dirty = !gestisciRifiuto(e);
   } finally {
     pushing--;
   }
 }
 
 async function pull() {
-  if (dirty || pushing) return;
+  if (dirty || pushing || fermata) return;
   try {
     const res = await api("GET");
-    if (!res.state || res.schema !== STORE_SCHEMA) return await pushAll();
+    demoAzienda = res.demo === true;
+    if (devePubblicareStatoLocale({ state: res.state, schema: res.schema, demo: demoAzienda }, STORE_SCHEMA)) return await pushAll();
+    if (!res.state || res.schema !== STORE_SCHEMA) {
+      // Azienda vera con archivio vuoto o di un'altra versione: il browser non lo riempie e non lo sovrascrive.
+      if (res.state) fermaConAvviso("L'archivio dell'azienda ha una versione diversa da quella di questo dispositivo: i dati non vengono più sincronizzati. Contatta l'assistenza.");
+      return segnaAllineato();
+    }
     if (dirty || pushing) return; // cambiato qualcosa durante la lettura: si riprova al prossimo giro
     if (res.version > version) {
       const clean = sanitize(res.state);
@@ -123,8 +189,8 @@ async function pull() {
       synced = pick(useStore.getState());
     }
     segnaAllineato();
-  } catch {
-    /* server non raggiungibile: si continua in locale */
+  } catch (e) {
+    gestisciRifiuto(e); // altrimenti server non raggiungibile: si continua in locale
   }
 }
 
@@ -151,6 +217,7 @@ export function startSync(): Promise<void> {
 // Ripristino dei dati demo: vale per tutti i dispositivi
 // pushAll segna `pushing` e annulla la scrittura a pezzi messa in coda dal reset: un pull in corso non riapplica lo stato vecchio
 export async function resetShared() {
+  if (!demoAzienda) return; // il ripristino dei dati demo non esiste per le aziende vere
   useStore.getState().reset();
   clearTimeout(timer);
   dirty = false;

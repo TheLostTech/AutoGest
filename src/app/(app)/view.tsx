@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { ArrowRight, Boxes, CarFront, CircleCheck, FileText, Leaf, PackageCheck, TrendingDown, type LucideIcon } from "lucide-react";
-import { ROLE_USER, useStore } from "@/lib/store";
+import { useStore } from "@/lib/store";
+import { RUOLO_LABEL } from "@/lib/accesso/ruoli";
 import { BonificaBadge, ButtonLink, Panel, PageTitle, Plate } from "@/components/ui";
 import { bonificaClock, buildAgenda, urgencyOf, type AgendaItem, type Urgency } from "@/lib/agenda";
 import { isDraft, periodsOf } from "@/lib/periodo";
@@ -96,7 +97,7 @@ export default function Oggi() {
         title="Da fare"
         sub={
           <>
-            <span className="first-letter:uppercase">{today}</span> · {ROLE_USER[role].label} ·{" "}
+            <span className="first-letter:uppercase">{today}</span> · {RUOLO_LABEL[role]} ·{" "}
             {agenda.length === 0 ? "niente in sospeso" : `${agenda.length} attività`}
             {late > 0 && <span className="font-semibold text-danger"> · {late} in ritardo</span>}
           </>
@@ -133,7 +134,7 @@ export default function Oggi() {
           {agenda.length === 0 && (
             <div className="label-sheet flex items-center gap-3 p-5">
               <CircleCheck className="size-6 text-ok" aria-hidden />
-              <p className="font-semibold">Tutto in ordine: niente da fare per {ROLE_USER[role].label.toLowerCase()}.</p>
+              <p className="font-semibold">Tutto in ordine: niente da fare per {RUOLO_LABEL[role].toLowerCase()}.</p>
             </div>
           )}
           {GROUPS.map((g) => {

@@ -40,14 +40,10 @@ import type {
 import { euro, publishChecks } from "./logic";
 import { canTransmit, firNumberTaken, isDraft, missingFields, monthLabel, nextRegisterNumber, periodsOf } from "./periodo";
 
-export const ROLE_USER: Record<Role, { user: string; device: string; label: string }> = {
-  accettazione: { user: "Giulia (accettazione)", device: "PC ufficio", label: "Accettazione" },
-  smontatore: { user: "Marco (smontaggio)", device: "Smartphone campo 1", label: "Smontatore" },
-  magazziniere: { user: "Paolo (magazzino)", device: "Smartphone magazzino", label: "Magazziniere" },
-  responsabile: { user: "Sara (responsabile)", device: "PC ufficio", label: "Responsabile" },
-  vendite: { user: "Anna (vendite)", device: "PC banco", label: "Vendite" },
-  consulente: { user: "Laura (consulente ambientale)", device: "PC studio", label: "Consulente ambientale" },
-};
+// Chi sta usando questo dispositivo: arriva dalla sessione (mai dai dati salvati nel browser).
+export type Operatore = { nome: string; dispositivo: string; assistenza: boolean };
+const nomeOperatore = (o: Operatore | null): string => (o ? (o.assistenza ? `${o.nome} (assistenza)` : o.nome) : "Operatore");
+const dispositivoOperatore = (o: Operatore | null): string => o?.dispositivo || "Browser";
 
 interface Counters {
   vehicle: number;
@@ -64,6 +60,8 @@ interface Counters {
 
 interface State {
   role: Role;
+  operatore: Operatore | null;
+  ruoliPermessi: Role[];
   vehicles: Vehicle[];
   parts: Part[];
   annunci: Annuncio[];
@@ -86,6 +84,8 @@ type Actor = { user: string; role: AuditEvent["role"]; device: string };
 
 interface Actions {
   setRole: (r: Role) => void;
+  /** Dalla sessione: chi è, quali ruoli può usare. Il ruolo attivo resta uno di quelli permessi. */
+  setSessione: (operatore: Operatore | null, ruoliPermessi: Role[]) => void;
   setActiveVehicle: (id?: string) => void;
   addVehicle: (v: Omit<Vehicle, "id" | "createdBy" | "intakeAt">) => string;
   updateVehicle: (id: string, patch: Partial<Vehicle>, action: string, detail?: string) => void;
@@ -161,6 +161,8 @@ function initial(): State {
   const s = buildSeed();
   return {
     role: "smontatore",
+    operatore: null,
+    ruoliPermessi: [],
     vehicles: s.vehicles,
     parts: s.parts,
     annunci: s.annunci,
@@ -230,15 +232,14 @@ export const useStore = create<State & Actions>()(
       const event = (
         e: Omit<AuditEvent, "id" | "at" | "user" | "role" | "device"> & Partial<Pick<AuditEvent, "user" | "role" | "device">>,
       ): AuditEvent => {
-        const { role, counters } = get();
-        const who = ROLE_USER[role];
+        const { role, counters, operatore } = get();
         counters.event += 1;
         return {
           id: `E-${pad(counters.event)}`,
           at: now(),
-          user: e.user ?? who.user,
+          user: e.user ?? nomeOperatore(operatore),
           role: e.role ?? role,
-          device: e.device ?? who.device,
+          device: e.device ?? dispositivoOperatore(operatore),
           entity: e.entity,
           entityId: e.entityId,
           action: e.action,
@@ -253,7 +254,7 @@ export const useStore = create<State & Actions>()(
         set((s) => {
           let n = s.counters.move;
           const all = [...s.wasteMoves];
-          const by = ROLE_USER[s.role].user;
+          const by = nomeOperatore(s.operatore);
           for (const m of ms) {
             const id = `M-${pad(++n)}`;
             ids.push(id);
@@ -360,14 +361,16 @@ export const useStore = create<State & Actions>()(
 
       return {
         ...initial(),
-        setRole: (role) => set({ role }),
+        setRole: (role) => set((s) => (s.ruoliPermessi.includes(role) ? { role } : s)),
+        setSessione: (operatore, ruoliPermessi) =>
+          set((s) => ({ operatore, ruoliPermessi, role: ruoliPermessi.includes(s.role) || ruoliPermessi.length === 0 ? s.role : ruoliPermessi[0] })),
         setActiveVehicle: (id) => set({ activeVehicleId: id }),
         log: (e) => push(event(e)),
 
         addVehicle: (v) => {
           const n = get().counters.vehicle + 1;
           const id = `V-${pad(n)}`;
-          const veh: Vehicle = { ...v, id, intakeAt: now(), createdBy: ROLE_USER[get().role].user };
+          const veh: Vehicle = { ...v, id, intakeAt: now(), createdBy: nomeOperatore(get().operatore) };
           set((s) => ({ vehicles: [veh, ...s.vehicles], counters: { ...s.counters, vehicle: n } }));
           push(event({ entity: "veicolo", entityId: id, action: "Ingresso veicolo registrato", detail: `${v.plate} · ${v.make} ${v.model}${v.verification === "da verificare" ? " · da verificare" : ""}` }));
           addMoves(movesForIntake(veh, veh.intakeAt));
@@ -403,7 +406,7 @@ export const useStore = create<State & Actions>()(
         addPart: (p) => {
           const n = get().counters.part + 1;
           const id = `R-${pad(n)}`;
-          const part: Part = { ...p, id, createdAt: now(), createdBy: ROLE_USER[get().role].user, labelPrints: 0 };
+          const part: Part = { ...p, id, createdAt: now(), createdBy: nomeOperatore(get().operatore), labelPrints: 0 };
           const v = get().vehicles.find((x) => x.id === p.vehicleId);
           // Il primo pezzo catalogato da un veicolo accettato ne avvia lo smontaggio
           const starts = v?.work === "accettato" && p.origin !== "inventario";
@@ -974,7 +977,7 @@ export const useStore = create<State & Actions>()(
           const withWeight = { ...v, weightKg: v.weightKg ?? (weightKg || undefined) };
           // Lo scarico interno usa il peso registrato all'ingresso, così carico e scarico del veicolo coincidono
           const { moves, residualKg } = movesForBonifica(carico ? { ...withWeight, weightKg: carico.kg } : withWeight, items, at, carico?.id);
-          set((s) => ({ vehicles: s.vehicles.map((x) => (x.id === vehicleId ? { ...withWeight, bonifica: { at, by: ROLE_USER[s.role].user, items, residualKg } } : x)) }));
+          set((s) => ({ vehicles: s.vehicles.map((x) => (x.id === vehicleId ? { ...withWeight, bonifica: { at, by: nomeOperatore(s.operatore), items, residualKg } } : x)) }));
           addMoves([...intake, ...moves]);
           push(event({ entity: "veicolo", entityId: vehicleId, action: "Bonifica registrata", detail: `${intake.length + moves.length} movimenti nel registro rifiuti · pesi dei componenti stimati per modello` }));
           return intake.length + moves.length;
@@ -994,7 +997,7 @@ export const useStore = create<State & Actions>()(
             ...(patch.pesoPesa !== undefined ? { pesoPesa: patch.pesoPesa } : {}),
           };
           const at = now();
-          const by = ROLE_USER[get().role].user;
+          const by = nomeOperatore(get().operatore);
           const ready = missingFields(next, get().wasteMoves).length === 0;
           set((s) => {
             let all = s.wasteMoves.map((x) => (x.id === id ? { ...next, ...(ready ? { numero: nextRegisterNumber(s.wasteMoves, at), registeredAt: at, by } : {}) } : x));
@@ -1048,7 +1051,7 @@ export const useStore = create<State & Actions>()(
           const n = get().counters.fir + 1;
           const id = `F-${pad(n)}`;
           const at = now();
-          const by = ROLE_USER[get().role].user;
+          const by = nomeOperatore(get().operatore);
           const nome = (sid?: string) => get().soggetti.find((x) => x.id === sid)?.nome;
           const fir: Fir = { ...f, id, at, destinatario: nome(f.destinatarioId), trasportatore: nome(f.trasportatoreId), status: "da firmare", history: [{ at, status: "da firmare", by }] };
           set((s) => ({ firs: [fir, ...s.firs], counters: { ...s.counters, fir: n } }));
@@ -1071,7 +1074,7 @@ export const useStore = create<State & Actions>()(
           const e = eerByCode(f.eer);
           const nome = f.numero ?? id;
           const diff = f.svuota ? differenzaPesata(stock, f.kg) : 0;
-          set((s) => ({ firs: s.firs.map((x) => (x.id === id ? { ...x, status: "firmato", history: [...x.history, { at, status: "firmato", by: ROLE_USER[s.role].user }] } : x)) }));
+          set((s) => ({ firs: s.firs.map((x) => (x.id === id ? { ...x, status: "firmato", history: [...x.history, { at, status: "firmato", by: nomeOperatore(s.operatore) }] } : x)) }));
           addMoves([
             ...(diff
               ? [{ at, kind: diff > 0 ? ("carico" as const) : ("scarico" as const), eer: f.eer, kg: Math.abs(diff), origin: id, note: `Differenza tra giacenza stimata (${stock} kg) e pesata del formulario ${nome} (${f.kg} kg)`, rentri: "da trasmettere" as const, causale: "DIFF" as const, fir: id, statoFisico: e?.stato, hp: e?.hp }]
@@ -1094,7 +1097,7 @@ export const useStore = create<State & Actions>()(
         confirmMove: (id) => {
           const m = get().wasteMoves.find((x) => x.id === id);
           if (!m) return;
-          const by = ROLE_USER[get().role].user;
+          const by = nomeOperatore(get().operatore);
           set((s) => ({ wasteMoves: s.wasteMoves.map((x) => (x.id === id ? { ...x, verificato: { at: now(), by } } : x)) }));
           push(event({ entity: "sistema", entityId: id, action: "Registrazione controllata", detail: `n. ${m.numero ?? "bozza"} · ${m.note ?? ""}` }));
         },
@@ -1161,7 +1164,7 @@ export const useStore = create<State & Actions>()(
           const n = get().counters.inventory + 1;
           const id = `I-${pad(n)}`;
           const at = now();
-          const by = ROLE_USER[get().role].user;
+          const by = nomeOperatore(get().operatore);
           set((s) => ({
             inventory: [...s.inventory, { ...c, id, at, by }],
             counters: { ...s.counters, inventory: n },
@@ -1174,13 +1177,28 @@ export const useStore = create<State & Actions>()(
           return id;
         },
 
-        reset: () => set(initial()),
+        reset: () => set((s) => ({ ...initial(), operatore: s.operatore, ruoliPermessi: s.ruoliPermessi, role: s.role })),
       };
     },
     {
       name: STORE_SCHEMA,
       storage: createJSONStorage(() => deviceStorage),
       skipHydration: true,
+      // Chi usa il dispositivo e i ruoli permessi vengono sempre dalla sessione, mai dal salvataggio locale.
+      partialize: (s) => {
+        const { operatore: _o, ruoliPermessi: _r, ...resto } = s;
+        void _o;
+        void _r;
+        return resto as State & Actions;
+      },
+      // Dopo il caricamento dal browser il ruolo salvato non può superare quelli permessi.
+      merge: (salvato, attuale) => {
+        const m = { ...attuale, ...(salvato as Partial<State & Actions>) };
+        m.operatore = attuale.operatore;
+        m.ruoliPermessi = attuale.ruoliPermessi;
+        if (attuale.ruoliPermessi.length > 0 && !attuale.ruoliPermessi.includes(m.role)) m.role = attuale.ruoliPermessi[0];
+        return m;
+      },
     },
   ),
 );
