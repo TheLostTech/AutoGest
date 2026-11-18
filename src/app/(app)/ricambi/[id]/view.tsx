@@ -15,8 +15,7 @@ import { ShippingChoice } from "@/components/ShippingChoice";
 import { asksShipping, isShippable } from "@/lib/spedizione";
 import { listPrice, ONLINE_FEE_PCT, onlinePrice, suggestUsedPrice } from "@/lib/pricing";
 import { savePhoto } from "@/lib/services";
-import { listingOf } from "@/lib/annunci";
-import { bozzaFor } from "@/lib/annuncio-build";
+import { listingOf, negozioStato, partsOf, quantityOf } from "@/lib/annunci";
 import type { Location } from "@/lib/types";
 import { PartLabel } from "@/components/PartLabel";
 import { Lifecycle } from "@/components/Lifecycle";
@@ -40,6 +39,11 @@ export default function SchedaRicambio() {
   const suggestedWh = warehouseFor(t.category, t.shippable, s.warehouses);
   const pickLoc = loc ?? firstFreeSlot(suggestedWh, s.parts) ?? startLocation(suggestedWh.id, s.warehouses, s.parts);
   const listing = listingOf(p, s.annunci);
+  const annuncio = p.annuncioId ? s.annunci.find((a) => a.id === p.annuncioId) : undefined;
+  const annuncioQty = annuncio ? quantityOf(annuncio, s.parts) : 0;
+  // Pezzi che dividono il prezzo con questo: quelli dell'annuncio non ancora venduti
+  const sharing = annuncio ? partsOf(annuncio, s.parts).filter((x) => x.status !== "venduto").length : 0;
+  const priceMissing = !!annuncio && !(Number(price) > 0);
   const checks = publishChecks(p, v);
   const blocking = checks.filter((c) => c.blocking && !c.ok);
   const history = s.audit.filter((e) => e.entityId === p.id || e.detail?.includes(p.id)).reverse();
@@ -237,12 +241,28 @@ export default function SchedaRicambio() {
                 )}
               </dd>
               <dt className="text-ink-3">Prezzo</dt>
-              <dd className="flex items-center gap-2">
+              <dd className="flex flex-wrap items-center gap-2">
                 <input className="field code h-11 min-h-0 w-28 text-[18px] font-bold" inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ""))} aria-label="Prezzo in euro" />
                 <span className="text-ink-3">€</span>
                 {price !== String(p.price ?? "") && (
-                  <Button size="sm" onClick={() => { s.updatePart(p.id, { price: price ? Number(price) : undefined }, "Prezzo modificato", `${euro(p.price)} → ${euro(Number(price))}`); flash("ok", "Prezzo aggiornato"); }}>Salva</Button>
+                  <Button
+                    size="sm"
+                    disabled={priceMissing}
+                    onClick={() => {
+                      if (annuncio && sharing > 1) {
+                        if (!confirm(`Cambia il prezzo di tutti e ${sharing} i pezzi dell'annuncio ${annuncio.id}: da ${euro(annuncio.price)} a ${euro(Number(price))}. Continuare?`)) return;
+                        s.setAnnuncioPrice(annuncio.id, Number(price));
+                        flash("ok", `Prezzo aggiornato su tutti e ${sharing} i pezzi dell'annuncio ${annuncio.id}`);
+                        return;
+                      }
+                      s.updatePart(p.id, { price: price ? Number(price) : undefined }, "Prezzo modificato", `${euro(p.price)} → ${euro(Number(price))}`);
+                      flash("ok", "Prezzo aggiornato");
+                    }}
+                  >
+                    Salva
+                  </Button>
                 )}
+                {priceMissing && <span className="basis-full text-sm font-medium text-danger">Un pezzo in un annuncio deve avere un prezzo</span>}
               </dd>
               {cat && (
                 <>
@@ -286,6 +306,21 @@ export default function SchedaRicambio() {
 
           <CatalogPanel part={p} vehicle={v} />
 
+          {annuncio && (
+            <Panel title="Annuncio">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 p-4 text-[15px]">
+                <span>
+                  <b className="code">Annuncio {annuncio.id}</b> · {annuncioQty} {annuncioQty === 1 ? "disponibile" : "disponibili"}
+                  {annuncio.negozio && <> · negozio {negozioStato(annuncio, annuncioQty)}</>}
+                  {annuncio.ebay && <> · eBay {annuncio.ebay.stato}{annuncio.ebay.daRiallineare ? " (da riallineare)" : ""}</>}
+                </span>
+                <Link href="/pubblicazione" className="font-semibold text-band underline">Vai a Pubblicazione</Link>
+                {annuncio.ebay?.url && <a href={annuncio.ebay.url} target="_blank" rel="noreferrer" className="font-semibold text-band underline">Vedi su eBay</a>}
+                {annuncio.ebay?.errore && <span className="basis-full font-semibold text-danger">{annuncio.ebay.errore}</span>}
+              </div>
+            </Panel>
+          )}
+
           <Panel title="Controlli per la pubblicazione">
             <ul className="space-y-2 p-4">
               {checks.map((c) => (
@@ -306,21 +341,10 @@ export default function SchedaRicambio() {
                 </Button>
               )}
               {listing !== "pubblicato" ? (
-                <Button
-                  disabled={blocking.length > 0}
-                  onClick={() => {
-                    // Annuncio ritirato: si ripubblica; altrimenti nasce l'annuncio con il testo generato, sul negozio
-                    if (p.annuncioId) {
-                      s.republishAnnuncio(p.annuncioId, { negozio: true, ebay: false });
-                      flash("ok", `Annuncio ${p.annuncioId} di nuovo sul negozio online`);
-                      return;
-                    }
-                    const r = s.publishAnnuncio(p.id, bozzaFor(p, s.vehicles));
-                    flash(r.ok ? "ok" : "danger", r.ok ? `Pubblicato sul negozio online · annuncio ${r.value}` : r.error === "Scheda incompleta" ? `Non pubblicabile: ${r.conflicts?.join(", ")}` : r.error);
-                  }}
-                >
+                // La pubblicazione si fa dalla pagina Pubblicazione, con l'anteprima del testo
+                <Button disabled={blocking.length > 0} onClick={() => router.push("/pubblicazione")}>
                   <Upload className="size-5" aria-hidden />
-                  {blocking.length ? `Pubblica (${blocking.length} da sistemare)` : "Pubblica sul negozio"}
+                  {blocking.length ? `Pubblica (${blocking.length} da sistemare)` : "Vai a Pubblicazione"}
                 </Button>
               ) : (
                 <Button variant="secondary" onClick={() => { if (p.annuncioId) s.withdrawAnnuncio(p.annuncioId, "tutti"); flash("ok", `Annuncio ${p.annuncioId} ritirato`); }}>Ritira l&apos;annuncio</Button>
