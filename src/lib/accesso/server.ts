@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth/server";
+import { richiestaPassiva } from "./attivita";
 import type { Role } from "@/lib/types";
 import {
   decidiAccesso,
@@ -54,7 +55,7 @@ function aziendaVista(o: { id: string; name: string; metadata?: unknown } | null
   return { id: o.id, nome: o.name, demo };
 }
 
-export async function accessoDaRichiesta(req: Request): Promise<Accesso | Response> {
+export async function accessoDaRichiesta(req: Request, opzioni: { attivitaAlle?: number } = {}): Promise<Accesso | Response> {
   const dati = await leggiSessione(req);
   const ora = Date.now();
   if (!dati) return negata(401, "nessuna-sessione");
@@ -144,10 +145,17 @@ export async function accessoDaRichiesta(req: Request): Promise<Accesso | Respon
     return negata(esito.negato, esito.motivo);
   }
 
-  // Finestra reale di inattività: 4-5 minuti, perché updatedAt si aggiorna al massimo ogni 60 s.
   // Sessione PIN: segna l'attività (updatedAt) con l'adapter interno di Better Auth, al massimo una volta al minuto.
-  if (vista.tipo === "pin" && ora - vista.ultimaAttivita > PIN_AGGIORNA_OGNI_MS) {
-    await ctx.internalAdapter.updateSession(session.token, { updatedAt: new Date(ora) });
+  // Le richieste automatiche (intestazione x-attivita: passiva) non contano: con il tablet fermo la sessione scade
+  // anche se una pagina resta aperta. Il battito del blocco di inattività (`attivitaAlle`) la segna sempre.
+  // Il battito porta l'istante dell'ultimo tocco: si usa quello (mai oltre adesso, mai indietro), così il server
+  // scade 5 minuti dopo l'ultimo tocco vero, insieme al blocco sullo schermo.
+  if (vista.tipo === "pin" && !richiestaPassiva(req.headers)) {
+    const battito = opzioni.attivitaAlle !== undefined && Number.isFinite(opzioni.attivitaAlle);
+    const alle = battito ? Math.min(ora, opzioni.attivitaAlle!) : ora;
+    if (battito ? alle > vista.ultimaAttivita : ora - vista.ultimaAttivita > PIN_AGGIORNA_OGNI_MS) {
+      await ctx.internalAdapter.updateSession(session.token, { updatedAt: new Date(alle) });
+    }
   }
   return esito;
 }

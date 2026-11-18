@@ -5,6 +5,7 @@ import { Loader2, Tablet } from "lucide-react";
 import { authClient } from "@/lib/auth/client";
 import type { DispositivoAzienda } from "@/lib/auth/pin-dispositivo-client";
 import { useSessione } from "@/lib/accesso/client";
+import { inviaInSospeso } from "@/lib/sync";
 import { Button, Field, Notice, PageTitle, Panel } from "@/components/ui";
 
 const leggiElenco = () => authClient.pinDispositivo.elenco().catch(() => null);
@@ -48,17 +49,19 @@ export default function Dispositivi() {
 
   async function registra(ev: React.FormEvent) {
     ev.preventDefault();
+    if (!confirm(`Usare questo browser come «${nome.trim()}»? Esci dal tuo account e qui comparirà l'elenco dei nomi con il PIN.`)) return;
     setAttesa(true);
     setFatto("");
+    // Prima il lavoro in sospeso, con la sessione ancora valida: la registrazione chiude la sessione del responsabile
+    await inviaInSospeso().catch(() => false);
     const r = await authClient.pinDispositivo.registra({ nome: nome.trim() }).catch(() => null);
-    setAttesa(false);
     if (!r || r.error) {
+      setAttesa(false);
       setErrore(r?.error?.message ?? "Non riesco a registrare il dispositivo. Riprova.");
       return;
     }
-    setNome("");
-    setFatto(`Questo browser ora è «${r.data?.nome}». Quando esci, qui comparirà l'elenco dei nomi con il PIN.`);
-    await carica();
+    // Da ora è un dispositivo condiviso: si va all'elenco dei nomi (navigazione completa, i dati si scaricano)
+    window.location.assign("/accesso");
   }
 
   async function azione(d: DispositivoAzienda, tipo: "revoca" | "sblocca") {

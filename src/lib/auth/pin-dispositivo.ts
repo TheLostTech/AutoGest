@@ -1,9 +1,19 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { AuthContext, BetterAuthPlugin } from "better-auth";
-import { APIError, createAuthEndpoint } from "better-auth/api";
-import { setSessionCookie } from "better-auth/cookies";
+import { APIError, createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
+import { deleteSessionCookie, setSessionCookie } from "better-auth/cookies";
 import { aggiungiEventi, type NuovoEvento } from "@/lib/archivio-azienda";
-import { bloccoAttivo, dopoTentativo, pinValido, type StatoPinDispositivo, type StatoPinUtente } from "@/lib/accesso/pin";
+import {
+  bloccoAttivo,
+  dopoTentativo,
+  pinValido,
+  PIN_BLOCCHI_DISATTIVA,
+  PIN_ERRORI_DISPOSITIVO,
+  PIN_ERRORI_DISPOSITIVO_GIORNO,
+  PIN_FINESTRA_DISPOSITIVO_MS,
+  type StatoPinDispositivo,
+  type StatoPinUtente,
+} from "@/lib/accesso/pin";
 import { PIN_TURNO_MS } from "@/lib/accesso/regole";
 import type { Accesso } from "@/lib/accesso/regole";
 
@@ -26,15 +36,24 @@ type RigaDispositivo = {
   bloccato: boolean | number;
   erroriPin: string;
 };
-type RigaPin = { id: string; userId: string; organizationId: string; pinHash: string; errori: number; bloccatoFino?: Date | string | null };
+type RigaPin = {
+  id: string;
+  userId: string;
+  organizationId: string;
+  pinHash: string;
+  errori: number;
+  bloccatoFino?: Date | string | null;
+  blocchi?: string | null; // JSON: istanti dei blocchi di 15 minuti nelle ultime 24 ore
+  pinDisattivato?: boolean | number | null;
+};
 type RigaUtente = { id: string; name: string; role?: string | null; banned?: boolean | null; banExpires?: Date | string | null };
 
 const ms = (d: Date | string | null | undefined): number | null => (d === null || d === undefined ? null : new Date(d).getTime());
 const hashToken = (t: string) => createHash("sha256").update(t).digest("hex");
 
-function erroriDa(json: string): number[] {
+function erroriDa(json: string | null | undefined): number[] {
   try {
-    const v = JSON.parse(json) as unknown;
+    const v = JSON.parse(json ?? "[]") as unknown;
     return Array.isArray(v) ? v.filter((x): x is number => typeof x === "number") : [];
   } catch {
     return [];
@@ -106,7 +125,7 @@ async function dispositivoDellAzienda(c: AuthContext, id: unknown, aziendaId: st
   return d;
 }
 
-/** Salva (o sostituisce) il PIN di un membro per un'azienda; azzera errori e blocco. Per le pagine di gestione utenti. */
+/** Salva (o sostituisce) il PIN di un membro per un'azienda; azzera errori, blocchi e disattivazione. Per le pagine di gestione utenti. */
 export async function impostaPin(c: AuthContext, userId: string, organizationId: string, pin: string): Promise<void> {
   if (!pinValido(pin)) throw new Error("PIN non valido: servono 4 cifre.");
   const pinHash = await c.password.hash(pin);
@@ -115,9 +134,17 @@ export async function impostaPin(c: AuthContext, userId: string, organizationId:
     { field: "organizationId", value: organizationId },
   ];
   const esiste = await c.adapter.findOne<RigaPin>({ model: "pinUtente", where });
-  if (esiste) await c.adapter.update({ model: "pinUtente", where: [{ field: "id", value: esiste.id }], update: { pinHash, errori: 0, bloccatoFino: null } });
-  else await c.adapter.create({ model: "pinUtente", data: { userId, organizationId, pinHash, errori: 0, bloccatoFino: null } });
+  if (esiste) await c.adapter.update({ model: "pinUtente", where: [{ field: "id", value: esiste.id }], update: { pinHash, ...PIN_LIBERO } });
+  else await c.adapter.create({ model: "pinUtente", data: { userId, organizationId, pinHash, ...PIN_LIBERO } });
 }
+
+const PIN_LIBERO = { errori: 0, bloccatoFino: null, blocchi: "[]", pinDisattivato: false };
+
+// Con una sessione da PIN, dalle API di Better Auth si può solo uscire (e usare gli endpoint PIN): niente
+// get-session (che rinnoverebbe la sessione a 7 giorni e azzererebbe l'inattività), cambio azienda, profilo, ecc.
+const PERCORSI_PIN = (p: string) => p === "/sign-out" || p === "/ok" || p.startsWith("/pin-dispositivo/");
+
+type SessioneConTipo = { tipoAccesso?: string | null };
 
 // Hash di confronto per i tentativi su nomi inesistenti: stesso lavoro di una verifica vera.
 let hashFinto: Promise<string> | null = null;
@@ -147,8 +174,43 @@ export const pinDispositivo = () =>
           pinHash: { type: "string", required: true },
           errori: { type: "number", required: true, defaultValue: 0 },
           bloccatoFino: { type: "date", required: false },
+          blocchi: { type: "string", required: false, defaultValue: "[]" },
+          pinDisattivato: { type: "boolean", required: false, defaultValue: false },
         },
       },
+    },
+    init() {
+      return {
+        options: {
+          databaseHooks: {
+            session: {
+              update: {
+                // Rinnovo di Better Auth (scrive expiresAt + updatedAt): mai per una sessione da PIN, che ha un turno
+                // fisso di 10 ore e la sua inattività la segna solo accessoDaRichiesta (che scrive soltanto updatedAt).
+                async before(data: Record<string, unknown>, ctx: unknown) {
+                  if (!("expiresAt" in data)) return;
+                  const sessione = (ctx as { context?: { session?: { session?: SessioneConTipo } | null } } | null)?.context?.session?.session;
+                  if (sessione?.tipoAccesso === "pin") return false;
+                },
+              },
+            },
+          },
+        },
+      };
+    },
+    hooks: {
+      before: [
+        {
+          // Solo richieste HTTP: le chiamate interne (auth.api da accessoDaRichiesta) non passano di qui
+          matcher: (ctx) => !!ctx.request && !PERCORSI_PIN(ctx.path ?? ""),
+          handler: createAuthMiddleware(async (ctx) => {
+            const token = await ctx.getSignedCookie(ctx.context.authCookies.sessionToken.name, ctx.context.secret);
+            if (!token) return;
+            const s = await ctx.context.adapter.findOne<SessioneConTipo>({ model: "session", where: [{ field: "token", value: token }] });
+            if (s?.tipoAccesso === "pin") throw new APIError("FORBIDDEN", { message: "Con l'accesso a PIN questa funzione non è disponibile.", code: "SESSIONE_PIN" });
+          }),
+        },
+      ],
     },
     endpoints: {
       registraDispositivo: createAuthEndpoint("/pin-dispositivo/registra", { method: "POST" }, async (ctx) => {
@@ -167,6 +229,11 @@ export const pinDispositivo = () =>
         });
         ctx.setCookie(COOKIE_DISPOSITIVO, token, { httpOnly: true, sameSite: "lax", path: "/", maxAge: DISPOSITIVO_MAX_AGE_S });
         await registra(a.azienda.id, [{ ...firma(a), entity: "sistema", entityId: d.id, action: "Dispositivo registrato", detail: nome }]);
+        // Da ora il browser è un dispositivo condiviso: la sessione con password del responsabile si chiude qui,
+        // così il prossimo che lo prende in mano trova l'elenco dei nomi e non il suo account.
+        const sessione = await ctx.getSignedCookie(c.authCookies.sessionToken.name, c.secret);
+        if (sessione) await c.internalAdapter.deleteSession(sessione);
+        deleteSessionCookie(ctx);
         return ctx.json({ id: d.id, nome });
       }),
 
@@ -194,7 +261,7 @@ export const pinDispositivo = () =>
             const u = perId.get(p.userId) ?? null;
             if (!utenteUtilizzabile(u, ora)) return [];
             const fino = ms(p.bloccatoFino);
-            return [{ userId: u.id, nome: u.name, bloccato: fino !== null && fino > ora }];
+            return [{ userId: u.id, nome: u.name, bloccato: !!p.pinDisattivato || (fino !== null && fino > ora) }];
           })
           .sort((x, y) => x.nome.localeCompare(y.nome, "it"));
         ctx.setHeader("Cache-Control", "no-store");
@@ -236,11 +303,13 @@ export const pinDispositivo = () =>
           const valido = !!riga && !!membro && utenteUtilizzabile(utente, ora);
 
           const stato: { utente: StatoPinUtente; dispositivo: StatoPinDispositivo } = {
-            utente: valido ? { errori: riga!.errori ?? 0, bloccatoFino: ms(riga!.bloccatoFino) } : { errori: 0, bloccatoFino: null },
+            utente: valido
+              ? { errori: riga!.errori ?? 0, bloccatoFino: ms(riga!.bloccatoFino), blocchi: erroriDa(riga!.blocchi), disattivato: !!riga!.pinDisattivato }
+              : { errori: 0, bloccatoFino: null, blocchi: [], disattivato: false },
             dispositivo: { errori: erroriDa(d.erroriPin), bloccato: !!d.bloccato },
           };
           const blocco = bloccoAttivo(stato, ora);
-          if (blocco) return { esito: blocco, d, utente: valido ? utente : null, appena: null } as const;
+          if (blocco) return { esito: blocco, d, utente: valido ? utente : null, appena: null, disattivato: stato.utente.disattivato } as const;
 
           // Confronto a tempo costante dell'hasher di Better Auth; per i nomi non validi si fa lo stesso lavoro
           let corretto: boolean;
@@ -259,31 +328,43 @@ export const pinDispositivo = () =>
               update: { erroriPin: JSON.stringify(r.dispositivo.errori), bloccato: r.dispositivo.bloccato },
             });
           }
-          if (valido && (r.utente.errori !== stato.utente.errori || r.utente.bloccatoFino !== stato.utente.bloccatoFino)) {
+          if (valido && JSON.stringify(r.utente) !== JSON.stringify(stato.utente)) {
             await c.adapter.update({
               model: "pinUtente",
               where: [{ field: "id", value: riga!.id }],
-              update: { errori: r.utente.errori, bloccatoFino: r.utente.bloccatoFino === null ? null : new Date(r.utente.bloccatoFino) },
+              update: {
+                errori: r.utente.errori,
+                bloccatoFino: r.utente.bloccatoFino === null ? null : new Date(r.utente.bloccatoFino),
+                blocchi: JSON.stringify(r.utente.blocchi),
+                pinDisattivato: r.utente.disattivato,
+              },
             });
           }
           const eventi: NuovoEvento[] = [];
           const nomeAppenaBloccato = valido && r.utente.bloccatoFino !== null && stato.utente.bloccatoFino !== r.utente.bloccatoFino;
           const dispositivoAppenaBloccato = r.dispositivo.bloccato && !stato.dispositivo.bloccato;
-          if (nomeAppenaBloccato) {
+          const pinAppenaDisattivato = valido && r.utente.disattivato && !stato.utente.disattivato;
+          if (pinAppenaDisattivato) {
+            eventi.push({ user: utente!.name, role: "sistema", device: d.nome, entity: "sistema", entityId: userId, action: "PIN disattivato", detail: `${PIN_BLOCCHI_DISATTIVA} blocchi in 24 ore: serve un nuovo PIN dal responsabile` });
+          } else if (nomeAppenaBloccato) {
             eventi.push({ user: utente!.name, role: "sistema", device: d.nome, entity: "sistema", entityId: userId, action: "Nome bloccato per 15 minuti", detail: "5 PIN sbagliati di fila" });
           }
           if (dispositivoAppenaBloccato) {
-            eventi.push({ user: "Sistema", role: "sistema", device: d.nome, entity: "sistema", entityId: d.id, action: "Dispositivo bloccato", detail: "20 PIN sbagliati in 15 minuti: serve lo sblocco del responsabile" });
+            const inBreve = r.dispositivo.errori.filter((t) => ora - t < PIN_FINESTRA_DISPOSITIVO_MS).length >= PIN_ERRORI_DISPOSITIVO;
+            const perche = inBreve ? `${PIN_ERRORI_DISPOSITIVO} PIN sbagliati in 15 minuti` : `${PIN_ERRORI_DISPOSITIVO_GIORNO} PIN sbagliati in 24 ore`;
+            eventi.push({ user: "Sistema", role: "sistema", device: d.nome, entity: "sistema", entityId: d.id, action: "Dispositivo bloccato", detail: `${perche}: serve lo sblocco del responsabile` });
           }
           if (eventi.length) await registra(aziendaId, eventi);
-          const appena = dispositivoAppenaBloccato ? "dispositivo" : nomeAppenaBloccato ? "nome" : null;
-          return { esito: r.esito, d, utente: valido ? utente : null, appena } as const;
+          const appena = dispositivoAppenaBloccato ? "dispositivo" : pinAppenaDisattivato ? "disattivato" : nomeAppenaBloccato ? "nome" : null;
+          return { esito: r.esito, d, utente: valido ? utente : null, appena, disattivato: false } as const;
         });
 
         // Il tentativo che fa scattare un blocco lo dice subito (il nome bloccato compare comunque nell'elenco)
         if (esito.appena === "dispositivo") throw new APIError("FORBIDDEN", { message: "PIN non corretto. Dispositivo bloccato per troppi PIN sbagliati: serve il responsabile.", code: "DISPOSITIVO_BLOCCATO" });
+        if (esito.appena === "disattivato") throw new APIError("FORBIDDEN", { message: "PIN non corretto. Troppi blocchi oggi: il PIN è disattivato, chiedi al responsabile un PIN nuovo.", code: "PIN_DISATTIVATO" });
         if (esito.appena === "nome") throw new APIError("FORBIDDEN", { message: "PIN non corretto. Nome bloccato per 15 minuti.", code: "NOME_BLOCCATO" });
         if (esito.esito === "dispositivo-bloccato") throw new APIError("FORBIDDEN", { message: "Dispositivo bloccato per troppi PIN sbagliati: serve il responsabile.", code: "DISPOSITIVO_BLOCCATO" });
+        if (esito.esito === "utente-bloccato" && esito.disattivato) throw new APIError("FORBIDDEN", { message: "PIN disattivato per troppi errori: chiedi al responsabile un PIN nuovo.", code: "PIN_DISATTIVATO" });
         if (esito.esito === "utente-bloccato") throw new APIError("FORBIDDEN", { message: "Nome bloccato per troppi PIN sbagliati: riprova tra 15 minuti.", code: "NOME_BLOCCATO" });
         if (esito.esito !== "ok" || !esito.utente) throw new APIError("UNAUTHORIZED", { message: "PIN non corretto.", code: "PIN_SBAGLIATO" });
 

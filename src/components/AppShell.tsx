@@ -10,7 +10,6 @@ import { esci, useSessione } from "@/lib/accesso/client";
 import { useSyncAvviso } from "@/lib/sync";
 import type { Role } from "@/lib/types";
 import { BRAND, DEMO_NOTICE } from "@/lib/config";
-import { BloccoInattivita } from "./BloccoInattivita";
 import { GlobalSearch } from "./GlobalSearch";
 import { LostarCredit } from "./Lostar";
 import { resetShared } from "@/lib/sync";
@@ -194,7 +193,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className={`min-h-dvh md:grid md:grid-cols-[232px_1fr] ${accesso?.assistenza ? "pt-11" : ""}`}>
-      <BloccoInattivita attivo={accesso?.tipo === "pin"} />
       {accesso?.assistenza && (
         <div role="status" className="no-print fixed inset-x-0 top-0 z-50 flex h-11 items-center justify-center gap-3 bg-ink px-4 text-[14px] font-semibold text-white">
           <span className="truncate">Assistenza in corso · {accesso.azienda.nome}</span>
@@ -340,7 +338,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
         {avviso && (
           <p role="alert" className="no-print border-b border-warn/40 bg-warn-bg px-4 py-2 text-center text-[14px] text-ink">
-            <b>Archivio con versione diversa.</b> {avviso}
+            <b>{avviso.titolo}</b> {avviso.testo}
           </p>
         )}
         {storageFull && (

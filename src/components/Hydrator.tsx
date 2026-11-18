@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { abilitaSalvataggioLocale, STORE_SCHEMA, useStore } from "@/lib/store";
-import { startSync } from "@/lib/sync";
+import { avviaVuotoPrimaDelSync, startSync } from "@/lib/sync";
+import { BloccoInattivita } from "./BloccoInattivita";
 import { caricaSessione } from "@/lib/accesso/client";
 import { percorsoPubblico } from "@/lib/accesso/percorsi";
 import type { Accesso } from "@/lib/accesso/regole";
@@ -13,6 +14,8 @@ const operatoreDa = (a: Accesso) => ({ nome: a.utente.nome, dispositivo: a.dispo
 
 export function Hydrator({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
+  // Sessione da PIN: blocco dopo 5 minuti senza tocchi su OGNI pagina della gestione (anche quelle di stampa)
+  const [pin, setPin] = useState(false);
   const path = usePathname();
   // Le pagine pubbliche (accesso, negozio, eBay simulato, ...) non toccano i dati della gestione:
   // niente salvataggio nel browser e niente sincronizzazione con l'archivio di un'azienda.
@@ -33,6 +36,7 @@ export function Hydrator({ children }: { children: React.ReactNode }) {
         window.location.assign(`/accesso?da=${encodeURIComponent(window.location.pathname + window.location.search)}`);
         return;
       }
+      setPin(e.accesso.tipo === "pin");
       const chiave = `${STORE_SCHEMA}:${e.accesso.azienda.id}`;
       // Prima la chiave dell'azienda, poi ogni altra scrittura: niente può finire nella chiave sbagliata
       useStore.persist.setOptions({ name: chiave });
@@ -44,7 +48,8 @@ export function Hydrator({ children }: { children: React.ReactNode }) {
       } catch {}
       useStore.getState().setSessione(operatoreDa(e.accesso), e.accesso.ruoli);
       // Azienda vera senza copia locale: si parte da un archivio vuoto, mai dai dati demo
-      if (!e.accesso.azienda.demo && !copiaLocale) useStore.getState().avviaVuoto();
+      // (solo prima che la sincronizzazione parta: dopo, un archivio vuoto locale finirebbe sul server)
+      if (!e.accesso.azienda.demo && !copiaLocale) avviaVuotoPrimaDelSync();
       // Prima i dati salvati nel browser, poi l'allineamento con gli altri dispositivi (al massimo 2 secondi)
       const done = () => void startSync().finally(() => attivo && setReady(true));
       unsub = useStore.persist.onFinishHydration(done);
@@ -68,5 +73,10 @@ export function Hydrator({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-  return <>{children}</>;
+  return (
+    <>
+      {!pubblica && <BloccoInattivita attivo={pin} />}
+      {children}
+    </>
+  );
 }

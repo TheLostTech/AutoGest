@@ -6,6 +6,8 @@ import { useSyncExternalStore } from "react";
 import { STORE_SCHEMA, useStore } from "./store";
 import { devePubblicareStatoLocale } from "./sync-regole";
 import { percorsoPubblico } from "./accesso/percorsi";
+import { intestazioniPassive } from "./accesso/attivita";
+import { aggiungiInSospeso, corpoDaRiprendere } from "./sync-in-sospeso";
 
 const PREPEND = ["vehicles", "parts", "annunci", "orders", "docs", "firs"] as const;
 const APPEND = ["audit", "wasteMoves", "inventory"] as const;
@@ -40,17 +42,21 @@ export const syncAllineato = (): boolean => allineato;
 
 // Avviso per l'utente quando la sincronizzazione si ferma (archivio di versione diversa, accesso perso).
 // Dopo l'avviso non si riprova da soli: niente cicli di richieste.
-let avviso: string | null = null;
+export type AvvisoSync = { titolo: string; testo: string };
+let avviso: AvvisoSync | null = null;
 let fermata = false;
 let inUscita = false; // uscita in corso (blocco per inattività, "Esci"): chi esce porta già all'accesso
 const ascoltatoriAvviso = new Set<() => void>();
-function fermaConAvviso(testo: string) {
-  fermata = true;
-  clearTimeout(timer);
-  avviso = testo;
+function mostraAvviso(titolo: string, testo: string) {
+  avviso = { titolo, testo };
   ascoltatoriAvviso.forEach((f) => f());
 }
-export const useSyncAvviso = (): string | null =>
+function fermaConAvviso(testo: string, titolo = "Archivio con versione diversa.") {
+  fermata = true;
+  clearTimeout(timer);
+  mostraAvviso(titolo, testo);
+}
+export const useSyncAvviso = (): AvvisoSync | null =>
   useSyncExternalStore(
     (f) => (ascoltatoriAvviso.add(f), () => void ascoltatoriAvviso.delete(f)),
     () => avviso,
@@ -71,6 +77,12 @@ function gestisciRifiuto(e: unknown): boolean {
   if (!(e instanceof ErroreApi)) return false;
   if (e.stato === 401) {
     fermata = true;
+    // Sessione finita (per esempio scaduta sul server prima del blocco sullo schermo): le modifiche non inviate
+    // restano per il prossimo accesso. Solo dopo il primo allineamento: prima non si sa cosa è davvero nuovo.
+    if (allineato && !inUscita) {
+      const d = differenze(useStore.getState());
+      if (d) salvaInSospeso(d);
+    }
     if (typeof window !== "undefined" && !inUscita && !percorsoPubblico(window.location.pathname)) {
       window.location.assign(`/accesso?da=${encodeURIComponent(window.location.pathname + window.location.search)}`);
     }
@@ -82,7 +94,7 @@ function gestisciRifiuto(e: unknown): boolean {
   }
   if (e.stato === 403 && e.motivo === "ruolo") return true; // operazione non permessa a questo ruolo: nulla è stato scritto
   if (e.stato === 403) {
-    fermaConAvviso("Non hai più accesso a questa azienda: i dati non vengono più sincronizzati. Accedi di nuovo.");
+    fermaConAvviso("Non hai più accesso a questa azienda: i dati non vengono più sincronizzati. Accedi di nuovo.", "Accesso cambiato.");
     return true;
   }
   return false;
@@ -114,7 +126,8 @@ async function api(method: "GET" | "PUT", body?: unknown) {
   const r = await fetch("/api/demo-state", {
     method,
     cache: "no-store",
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    // Le letture partono da sole ogni 2,5 s: non sono attività della persona (le scritture sì)
+    headers: body ? { "Content-Type": "application/json" } : method === "GET" ? intestazioniPassive() : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!r.ok) {
@@ -151,7 +164,9 @@ function differenze(s: S) {
     const changed = (s[k] as Rec[]).filter((r) => before.get(keyOf(r)) !== r);
     if (changed.length) changes[k] = changed;
   }
-  const whole = Object.fromEntries(WHOLE.filter((k) => s[k] !== synced[k]).map((k) => [k, s[k]]));
+  // Regole, listini, magazzini e soggetti si mandano interi: solo dopo il primo allineamento con il server, mai
+  // valori locali (copia vecchia o archivio vuoto di partenza) prima di aver letto quelli dell'azienda.
+  const whole = allineato ? Object.fromEntries(WHOLE.filter((k) => s[k] !== synced[k]).map((k) => [k, s[k]])) : {};
   const vuote = Object.keys(changes).length === 0 && Object.keys(whole).length === 0 && s.counters === synced.counters;
   return vuote ? null : { schema: STORE_SCHEMA, changes, whole, counters: s.counters };
 }
@@ -207,42 +222,48 @@ const chiaveInSospeso = () => `${useStore.persist.getOptions().name}:in-sospeso`
 
 function salvaInSospeso(diff: NonNullable<ReturnType<typeof differenze>>) {
   try {
-    const prima = JSON.parse(localStorage.getItem(chiaveInSospeso()) ?? "null") as typeof diff | null;
-    // Già qualcosa in attesa: si uniscono le liste per id (vince la copia più recente) e si tengono gli interi nuovi
-    if (prima && prima.schema === diff.schema) {
-      const changes: Record<string, Rec[]> = { ...prima.changes };
-      for (const [k, righe] of Object.entries(diff.changes)) {
-        const m = new Map((changes[k] ?? []).map((r) => [keyOf(r), r]));
-        for (const r of righe) m.set(keyOf(r), r);
-        changes[k] = [...m.values()];
-      }
-      diff = { ...diff, changes, whole: { ...prima.whole, ...diff.whole } };
-    }
-    localStorage.setItem(chiaveInSospeso(), JSON.stringify(diff));
+    const prima = JSON.parse(localStorage.getItem(chiaveInSospeso()) ?? "null") as unknown;
+    // Solo record con id e contatori: gli interi (regole, listini, ...) non si rimandano più tardi
+    const coda = aggiungiInSospeso(prima, STORE_SCHEMA, diff.changes, diff.counters, Date.now(), LISTS);
+    localStorage.setItem(chiaveInSospeso(), JSON.stringify(coda));
   } catch {
     // memoria piena o non disponibile: resta solo la copia locale
   }
 }
 
-async function inviaSalvateInSospeso() {
-  let corpo: unknown = null;
+function togliInSospeso() {
   try {
-    corpo = JSON.parse(localStorage.getItem(chiaveInSospeso()) ?? "null");
+    localStorage.removeItem(chiaveInSospeso());
+  } catch {}
+}
+
+async function inviaSalvateInSospeso() {
+  let raw: unknown = null;
+  try {
+    raw = JSON.parse(localStorage.getItem(chiaveInSospeso()) ?? "null");
   } catch {
-    corpo = null;
+    raw = null;
   }
-  if (!corpo) return;
+  if (raw === null) return;
+  // Ricostruito campo per campo: mai l'oggetto salvato così com'è, mai whole né replace, niente più vecchio di 24 ore
+  const corpo = corpoDaRiprendere(raw, STORE_SCHEMA, Date.now(), LISTS);
+  if (!corpo) return togliInSospeso();
   try {
     await api("PUT", corpo);
-    localStorage.removeItem(chiaveInSospeso());
+    togliInSospeso();
   } catch (e) {
-    // Rifiutate dal server (versione o accesso): riprovarle non serve. Rete assente: restano per la prossima volta
-    if (e instanceof ErroreApi && e.stato !== 401) {
-      try {
-        localStorage.removeItem(chiaveInSospeso());
-      } catch {}
+    if (!(e instanceof ErroreApi) || e.stato === 401) return; // rete assente o accesso perso: restano per la prossima volta
+    // Rifiutate dal server: riprovarle non serve, ma chi lavora deve saperlo
+    togliInSospeso();
+    if (e.stato === 403 || e.stato === 409) {
+      gestisciRifiuto(e);
+      mostraAvviso(
+        "Modifiche non accettate.",
+        e.stato === 409
+          ? "Alcune modifiche fatte su questo dispositivo prima dell'ultima uscita non sono entrate nell'archivio dell'azienda (versione diversa). Contatta l'assistenza."
+          : "Alcune modifiche fatte su questo dispositivo prima dell'ultima uscita non sono state accettate dal server per questo accesso. Controllale e rifalle se servono.",
+      );
     }
-    gestisciRifiuto(e);
   }
 }
 
@@ -282,6 +303,19 @@ export async function inviaInSospeso(): Promise<boolean> {
 }
 
 let started = false;
+
+/**
+ * Azienda vera senza copia locale: si parte da un archivio vuoto. Solo prima che la sincronizzazione parta, e come
+ * stato già "noto": regole, listini, magazzini e soggetti vuoti di partenza non si mandano mai al server.
+ */
+export function avviaVuotoPrimaDelSync(): boolean {
+  if (started) return false;
+  applying = true;
+  useStore.getState().avviaVuoto();
+  applying = false;
+  synced = pick(useStore.getState());
+  return true;
+}
 
 // Avvia la sincronizzazione; la promessa si risolve dopo il primo allineamento (o dopo un timeout)
 export function startSync(): Promise<void> {

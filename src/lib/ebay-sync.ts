@@ -14,6 +14,8 @@ import { EBAY_CATEGORY_QUERY, compatVehicles } from "./annuncio-testo";
 import { PLATFORMS, typeById } from "./catalog";
 import { onlinePrice } from "./pricing";
 import type { Annuncio } from "./types";
+// Riallineamento e controlli eBay partono da soli: non sono attività della persona (sessione da PIN)
+import { intestazioniPassive } from "./accesso/attivita";
 
 type Store = ReturnType<typeof useStore.getState>;
 const OGNI_MS = 60_000;
@@ -55,7 +57,7 @@ function richiestaDi(a: Annuncio, st: Store): { r: RichiestaAllinea; avvisi: str
 async function manda(r: RichiestaAllinea): Promise<EsitoAllinea | "salta" | "fermati"> {
   let res: Response;
   try {
-    res = await fetch("/api/ebay/allinea", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(r) });
+    res = await fetch("/api/ebay/allinea", { method: "POST", headers: { "Content-Type": "application/json", ...intestazioniPassive() }, body: JSON.stringify(r) });
   } catch {
     return "fermati"; // niente rete: si riprova al giro dopo
   }
@@ -104,7 +106,7 @@ export async function riallinea(force = false): Promise<void> {
 
 export async function statoPonte(): Promise<StatoPonte | undefined> {
   try {
-    const res = await fetch("/api/ebay/stato", { cache: "no-store" });
+    const res = await fetch("/api/ebay/stato", { cache: "no-store", headers: intestazioniPassive() });
     return res.ok ? ((await res.json()) as StatoPonte) : undefined;
   } catch {
     return undefined;
@@ -128,7 +130,7 @@ export async function controllaVendite(): Promise<{ ok: boolean; nuove: number; 
   try {
     const res = await fetch("/api/ebay/vendite", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...intestazioniPassive() },
       body: JSON.stringify({ da: leggiDa() }),
       cache: "no-store",
     });
