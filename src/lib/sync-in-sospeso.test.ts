@@ -46,9 +46,23 @@ test("schema diverso, dati non validi o vuoti: niente da riprendere", () => {
   assert.equal(corpoDaRiprendere(aggiungiInSospeso(null, SCHEMA, {}, undefined, ORA, LISTE), SCHEMA, ORA, LISTE), null);
 });
 
-test("contatori: solo numeri", () => {
-  const coda = aggiungiInSospeso(null, SCHEMA, {}, { part: 4, cattivo: "x", annidato: { a: 1 } }, ORA, LISTE);
-  assert.deepEqual(corpoDaRiprendere(coda, SCHEMA, ORA, LISTE), { schema: SCHEMA, changes: {}, counters: { part: 4 } });
+test("contatori: numeri e un solo livello annidato di numeri (docs: P, DC, FT, NC); il resto si scarta", () => {
+  const coda = aggiungiInSospeso(
+    null,
+    SCHEMA,
+    {},
+    { part: 4, cattivo: "x", docs: { P: 1, DC: 2, FT: 5, NC: 0, testo: "x", profondo: { a: 1 }, infinito: Infinity }, profondo: { a: { b: 1 } }, vuoto: {}, lista: [1, 2] },
+    ORA,
+    LISTE,
+  );
+  const c = corpoDaRiprendere(JSON.parse(JSON.stringify(coda)), SCHEMA, ORA, LISTE);
+  assert.deepEqual(c, { schema: SCHEMA, changes: {}, counters: { part: 4, docs: { P: 1, DC: 2, FT: 5, NC: 0 } } });
+});
+
+test("contatori annidati di salvataggi successivi si uniscono chiave per chiave", () => {
+  let coda = aggiungiInSospeso(null, SCHEMA, {}, { part: 1, docs: { FT: 5, P: 2 } }, ORA, LISTE);
+  coda = aggiungiInSospeso(coda, SCHEMA, {}, { docs: { FT: 6 } }, ORA + 1000, LISTE);
+  assert.deepEqual(corpoDaRiprendere(coda, SCHEMA, ORA + 2000, LISTE)?.counters, { part: 1, docs: { FT: 6, P: 2 } });
 });
 
 test("una coda salvata con un altro schema viene sostituita, non unita", () => {

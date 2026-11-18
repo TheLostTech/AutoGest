@@ -144,6 +144,10 @@ const PIN_LIBERO = { errori: 0, bloccatoFino: null, blocchi: "[]", pinDisattivat
 // get-session (che rinnoverebbe la sessione a 7 giorni e azzererebbe l'inattività), cambio azienda, profilo, ecc.
 const PERCORSI_PIN = (p: string) => p === "/sign-out" || p === "/ok" || p.startsWith("/pin-dispositivo/");
 
+// Percorsi che aprono una sessione nuova (accesso con email, secondo passo col codice): permessi anche da un browser
+// con una sessione da PIN, che però viene chiusa prima.
+const APRE_SESSIONE = (p: string) => p.startsWith("/sign-in/") || p.startsWith("/two-factor/");
+
 type SessioneConTipo = { tipoAccesso?: string | null };
 
 // Hash di confronto per i tentativi su nomi inesistenti: stesso lavoro di una verifica vera.
@@ -207,7 +211,15 @@ export const pinDispositivo = () =>
             const token = await ctx.getSignedCookie(ctx.context.authCookies.sessionToken.name, ctx.context.secret);
             if (!token) return;
             const s = await ctx.context.adapter.findOne<SessioneConTipo>({ model: "session", where: [{ field: "token", value: token }] });
-            if (s?.tipoAccesso === "pin") throw new APIError("FORBIDDEN", { message: "Con l'accesso a PIN questa funzione non è disponibile.", code: "SESSIONE_PIN" });
+            if (s?.tipoAccesso !== "pin") return;
+            // Accesso con email (o secondo passo col codice) da un browser con una sessione da PIN: chi sceglie di
+            // entrare con l'account esce dal PIN. La sessione PIN si chiude subito, prima che ne nasca una nuova, così
+            // non ne resta nessuna vecchia (nemmeno se la password è sbagliata). Il responsabile può sempre entrare.
+            if (APRE_SESSIONE(ctx.path ?? "")) {
+              await ctx.context.internalAdapter.deleteSession(token);
+              return;
+            }
+            throw new APIError("FORBIDDEN", { message: "Con l'accesso a PIN questa funzione non è disponibile.", code: "SESSIONE_PIN" });
           }),
         },
       ],
