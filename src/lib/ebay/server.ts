@@ -11,7 +11,7 @@ const piena = (v: unknown): v is string => typeof v === "string" && v.trim() !==
 export async function credenzialiSandbox(aziendaId: string): Promise<CredSandbox | undefined> {
   const v = await leggiValori(aziendaId, "ebay");
   if (v.ambiente !== "Sandbox" || !piena(v.appId) || !piena(v.certId) || !piena(v.ruName)) return undefined;
-  return { appId: v.appId.trim(), certId: v.certId.trim(), ruName: v.ruName.trim() };
+  return { aziendaId, appId: v.appId.trim(), certId: v.certId.trim(), ruName: v.ruName.trim() };
 }
 
 /** Sandbox con le chiavi; altrimenti Simulato. */

@@ -12,7 +12,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { cifra, decifra } from "@/lib/cifratura";
-import { PHOTO_DIR } from "@/lib/server-data";
+import { cartellaFotoAzienda } from "@/lib/server-data";
 import type { EsitoAllinea, Ponte, RichiestaAllinea, SpedizioneEbay, StatoPonte, VenditaEbay } from "./contratto";
 import {
   ALBERO_CATEGORIE, aspettiPerEbay, CATEGORIA_DA_SCRIVERE, categoriaFresca, categoriaRifiutata, controllaAspetti, daCreare, ErroreEbay, fileFoto,
@@ -24,7 +24,7 @@ import {
 import type { CodiceCollegamento } from "./codici";
 import { aggiornaArchivio, leggiArchivio, type ArchivioEbay, type RuoloPolitica } from "./archivio";
 
-export interface CredSandbox { appId: string; certId: string; ruName: string }
+export interface CredSandbox { aziendaId: string; appId: string; certId: string; ruName: string }
 
 const API = "https://api.sandbox.ebay.com";
 const MEDIA = "https://apim.sandbox.ebay.com/commerce/media/v1_beta";
@@ -94,10 +94,11 @@ async function chiediToken(c: CredSandbox, corpo: Record<string, string>, cosa: 
 
 const traMs = (s: number | undefined, predefinito: number) => new Date(Date.now() + (s ?? predefinito) * 1000).toISOString();
 
-let rinnovo: Promise<string> | undefined;
+// Un rinnovo alla volta per azienda: i token di un'azienda non passano mai a un'altra
+const rinnovi = new Map<string, Promise<string>>();
 
 async function rinnova(c: CredSandbox): Promise<string> {
-  const a = await leggiArchivio();
+  const a = await leggiArchivio(c.aziendaId);
   if (!a.token || a.conto !== c.appId) throw new ErroreEbay(NON_COLLEGATO);
   if (Date.parse(a.token.refreshScade) <= Date.now()) {
     throw new ErroreEbay("Il collegamento con eBay è scaduto (dura circa 18 mesi). Cosa fare: in Impostazioni → Collegamenti tocca «Collega account eBay».");
@@ -111,7 +112,7 @@ async function rinnova(c: CredSandbox): Promise<string> {
   }
   const t = await chiediToken(c, { grant_type: "refresh_token", refresh_token: refresh, scope: SCOPE_UTENTE.join(" ") }, "rinnovo del token");
   const access = await cifra(Buffer.from(t.access_token!, "utf8"));
-  await aggiornaArchivio((x) => {
+  await aggiornaArchivio(c.aziendaId, (x) => {
     if (x.token) x.token = { ...x.token, access, scade: traMs(t.expires_in, 7200) };
   });
   return t.access_token!;
@@ -119,7 +120,7 @@ async function rinnova(c: CredSandbox): Promise<string> {
 
 /** Token del conto collegato; si rinnova da solo quando mancano meno di 5 minuti (o se `forza`). */
 async function tokenUtente(c: CredSandbox, forza = false): Promise<string> {
-  const a = await leggiArchivio();
+  const a = await leggiArchivio(c.aziendaId);
   if (!a.token || a.conto !== c.appId) throw new ErroreEbay(NON_COLLEGATO);
   if (!forza && Date.parse(a.token.scade) - Date.now() > MARGINE_TOKEN) {
     try {
@@ -128,18 +129,23 @@ async function tokenUtente(c: CredSandbox, forza = false): Promise<string> {
       // token illeggibile (chiave cambiata): si prova a rinnovarlo
     }
   }
-  rinnovo ??= rinnova(c).finally(() => (rinnovo = undefined));
-  return rinnovo;
+  let r = rinnovi.get(c.aziendaId);
+  if (!r) {
+    r = rinnova(c).finally(() => rinnovi.delete(c.aziendaId));
+    rinnovi.set(c.aziendaId, r);
+  }
+  return r;
 }
 
-let tokenApp: { token: string; scade: number; conto: string } | undefined;
+const tokenApp = new Map<string, { token: string; scade: number; conto: string }>();
 
 /** Token dell'applicazione (client credentials) per la Taxonomy API. Solo in memoria. */
 async function tokenApplicazione(c: CredSandbox): Promise<string> {
-  if (tokenApp && tokenApp.conto === c.appId && tokenApp.scade - Date.now() > MARGINE_TOKEN) return tokenApp.token;
+  const gia = tokenApp.get(c.aziendaId);
+  if (gia && gia.conto === c.appId && gia.scade - Date.now() > MARGINE_TOKEN) return gia.token;
   const t = await chiediToken(c, { grant_type: "client_credentials", scope: SCOPE_APP.join(" ") }, "token dell'applicazione");
-  tokenApp = { token: t.access_token!, scade: Date.now() + (t.expires_in ?? 7200) * 1000, conto: c.appId };
-  return tokenApp.token;
+  tokenApp.set(c.aziendaId, { token: t.access_token!, scade: Date.now() + (t.expires_in ?? 7200) * 1000, conto: c.appId });
+  return t.access_token!;
 }
 
 // ── Chiamate alle API REST ──
@@ -253,10 +259,10 @@ function scegli(o: OpzioniEbay, a: ArchivioEbay): Pick<ArchivioEbay, "politiche"
 /** Legge politiche e magazzini; se mancano li crea (Sandbox) e sceglie quelli di serie dove non c'è una scelta. */
 async function prepara(c: CredSandbox): Promise<void> {
   let o = await leggiOpzioni(c, true);
-  const a = await leggiArchivio();
+  const a = await leggiArchivio(c.aziendaId);
   if (await creaPredefiniti(c, o, a)) o = await leggiOpzioni(c);
   const s = scegli(o, a);
-  await aggiornaArchivio((x) => {
+  await aggiornaArchivio(c.aziendaId, (x) => {
     x.politiche = s.politiche;
     x.magazzino = s.magazzino;
   });
@@ -284,17 +290,17 @@ async function attivaEsaurito(c: CredSandbox): Promise<void> {
     console.error(`[ebay] ${log}`);
     throw new ErroreEbay(`eBay non ha attivato «esaurito»${codice ? ` (codice ${codice})` : ""}. Cosa fare: in Impostazioni → Collegamenti tocca di nuovo «Collega account eBay».`, log);
   }
-  await aggiornaArchivio((x) => {
+  await aggiornaArchivio(c.aziendaId, (x) => {
     x.esauritoAttivo = true;
   });
 }
 
 // ── Collegamento ──
 /** Indirizzo della pagina di consenso di eBay, con un `state` casuale salvato per 10 minuti. */
-export async function avviaCollegamento(c: CredSandbox): Promise<string> {
+export async function avviaCollegamento(c: CredSandbox, userId: string): Promise<string> {
   const state = randomBytes(24).toString("base64url");
-  await aggiornaArchivio((x) => {
-    x.state = { valore: state, scade: new Date(Date.now() + DURATA_STATE).toISOString() };
+  await aggiornaArchivio(c.aziendaId, (x) => {
+    x.state = { valore: state, userId, scade: new Date(Date.now() + DURATA_STATE).toISOString() };
   });
   return urlConsenso(CONSENSO, c.appId, c.ruName, SCOPE_UTENTE, state);
 }
@@ -309,15 +315,18 @@ const uguali = (a: string, b: string) => {
  * Ritorno dal consenso: controlla lo state, scambia il codice, salva i token cifrati, attiva "esaurito",
  * legge (o crea, in Sandbox) politiche e magazzino. Restituisce un messaggio in italiano se qualcosa non va.
  */
-export async function completaCollegamento(c: CredSandbox, code: string, state: string): Promise<{ ok: true } | { ok: false; codice: CodiceCollegamento }> {
-  const atteso = await aggiornaArchivio((x) => {
-    const s = x.state;
-    delete x.state; // un solo uso
-    return s;
-  });
+export async function completaCollegamento(c: CredSandbox, userId: string, code: string, state: string): Promise<{ ok: true } | { ok: false; codice: CodiceCollegamento }> {
   // Senza codice (consenso rifiutato su eBay) non si scambia niente: basta dirlo
   if (!code) return { ok: false, codice: "rifiutato" };
-  if (!atteso || Date.parse(atteso.scade) < Date.now() || !state || !uguali(atteso.valore, state)) return { ok: false, codice: "stato" };
+  // Lo state si consuma solo dopo un confronto riuscito: un tentativo sbagliato (altro utente, valore diverso)
+  // non deve poterlo bruciare. Confronto e consumo stanno nello stesso aggiornamento, quindi un solo uso.
+  const valido = await aggiornaArchivio(c.aziendaId, (x) => {
+    const s = x.state;
+    if (!s || !state || s.userId !== userId || Date.parse(s.scade) < Date.now() || !uguali(s.valore, state)) return false;
+    delete x.state;
+    return true;
+  });
+  if (!valido) return { ok: false, codice: "stato" };
   // Il codice nell'indirizzo dice solo a che passo si è fermato; il dettaglio va in archivio.errore (StatoPonte.errore)
   let passo: CodiceCollegamento = "token";
   try {
@@ -325,7 +334,7 @@ export async function completaCollegamento(c: CredSandbox, code: string, state: 
     if (!t.refresh_token) throw new ErroreEbay("eBay non ha dato il permesso di rinnovo. Cosa fare: tocca di nuovo «Collega account eBay».", "risposta senza refresh_token");
     const access = await cifra(Buffer.from(t.access_token!, "utf8"));
     const refresh = await cifra(Buffer.from(t.refresh_token, "utf8"));
-    await aggiornaArchivio((x) => {
+    await aggiornaArchivio(c.aziendaId, (x) => {
       x.conto = c.appId;
       x.token = { access, scade: traMs(t.expires_in, 7200), refresh, refreshScade: traMs(t.refresh_token_expires_in, 47_304_000) };
       x.esauritoAttivo = false;
@@ -339,7 +348,7 @@ export async function completaCollegamento(c: CredSandbox, code: string, state: 
   } catch (e) {
     const noto = e instanceof ErroreEbay;
     if (!noto) console.error("[ebay] collegamento", e);
-    await aggiornaArchivio((x) => {
+    await aggiornaArchivio(c.aziendaId, (x) => {
       x.errore = noto ? e.message : IMPREVISTO;
     });
     return { ok: false, codice: noto ? passo : "imprevisto" };
@@ -347,8 +356,8 @@ export async function completaCollegamento(c: CredSandbox, code: string, state: 
 }
 
 /** Scollega il conto: toglie token e scelte (l'annuncio già su eBay resta lì). */
-export async function scollega(): Promise<void> {
-  await aggiornaArchivio((x) => {
+export async function scollega(aziendaId: string): Promise<void> {
+  await aggiornaArchivio(aziendaId, (x) => {
     delete x.token;
     delete x.conto;
     delete x.state;
@@ -362,7 +371,7 @@ export async function scollega(): Promise<void> {
 /** Politiche e magazzini del conto, con le scelte attuali (per la pagina Collegamenti). Nessun segreto. */
 export async function politicheConScelte(c: CredSandbox): Promise<{ opzioni: OpzioniEbay; scelte: ArchivioEbay["politiche"]; magazzino?: { id: string; nome: string } }> {
   const opzioni = await leggiOpzioni(c);
-  const a = await leggiArchivio();
+  const a = await leggiArchivio(c.aziendaId);
   return { opzioni, scelte: a.politiche, magazzino: a.magazzino };
 }
 
@@ -387,7 +396,7 @@ export async function salvaScelte(c: CredSandbox, b: unknown): Promise<{ ok: tru
     if (!m) return { ok: false, messaggio: "Il magazzino scelto non esiste più su eBay: ricarica la pagina." };
     magazzino = { id: m.id, nome: m.nome };
   }
-  await aggiornaArchivio((x) => {
+  await aggiornaArchivio(c.aziendaId, (x) => {
     x.politiche = { ...x.politiche, ...politiche };
     if (magazzino) x.magazzino = magazzino;
   });
@@ -421,15 +430,15 @@ async function categoriaPer(c: CredSandbox, r: RichiestaAllinea, a: ArchivioEbay
   const cat = corpo?.categorySuggestions?.find((s) => s.category?.categoryId)?.category;
   if (!cat?.categoryId) throw new ErroreEbay(`eBay non trova una categoria per «${q.slice(0, 60)}». Cosa fare: ${CATEGORIA_DA_SCRIVERE}`);
   const trovata = { id: cat.categoryId, nome: cat.categoryName ?? cat.categoryId };
-  await aggiornaArchivio((x) => {
+  await aggiornaArchivio(c.aziendaId, (x) => {
     x.categorie[chiave] = { ...trovata, at: new Date().toISOString() };
   });
   return trovata;
 }
 
 /** eBay ha rifiutato la categoria: si toglie dalla cache, così alla prossima ricerca si chiede di nuovo a eBay. */
-async function dimenticaCategoria(id: string): Promise<void> {
-  await aggiornaArchivio((x) => {
+async function dimenticaCategoria(aziendaId: string, id: string): Promise<void> {
+  await aggiornaArchivio(aziendaId, (x) => {
     for (const [k, v] of Object.entries(x.categorie)) if (v.id === id) delete x.categorie[k];
   });
 }
@@ -459,7 +468,7 @@ async function caricaFoto(c: CredSandbox, foto: string[], a: ArchivioEbay, avvis
       avvisi.push("Una foto non è del gestionale e non è stata mandata a eBay.");
       continue;
     }
-    const cartella = f.cartella === "foto" ? PHOTO_DIR : path.join(/*turbopackIgnore: true*/ process.cwd(), "public");
+    const cartella = f.cartella === "foto" ? cartellaFotoAzienda(c.aziendaId) : path.join(/*turbopackIgnore: true*/ process.cwd(), "public");
     let dati: Buffer;
     try {
       dati = await readFile(path.join(cartella, f.nome));
@@ -469,7 +478,7 @@ async function caricaFoto(c: CredSandbox, foto: string[], a: ArchivioEbay, avvis
     }
     const caricata = await caricaUna(c, dati, f.tipo, path.basename(f.nome));
     out.push(caricata.url);
-    await aggiornaArchivio((x) => {
+    await aggiornaArchivio(c.aziendaId, (x) => {
       x.foto[url] = caricata;
     });
   }
@@ -564,7 +573,7 @@ const link = (listingId?: string) => (listingId ? `${VISTA}${enc(listingId)}` : 
 async function allineaSandbox(c: CredSandbox, r: RichiestaAllinea, usata: { categoria?: string }): Promise<EsitoAllinea> {
   const avvisi: string[] = [];
   const offerta = await offertaPer(c, r.sku);
-  let a = await leggiArchivio();
+  let a = await leggiArchivio(c.aziendaId);
   const statoOff = statoDaOfferta(offerta);
   const listingPrima = offerta?.listing?.listingId ?? a.pubblicati[r.sku];
 
@@ -573,7 +582,7 @@ async function allineaSandbox(c: CredSandbox, r: RichiestaAllinea, usata: { cate
     if (offerta?.offerId && statoOff === "pubblicata") {
       await sell(c, "POST", `/sell/inventory/v1/offer/${enc(offerta.offerId)}/withdraw`, "ritiro dell'annuncio");
     }
-    await aggiornaArchivio((x) => {
+    await aggiornaArchivio(c.aziendaId, (x) => {
       x.ritirati[r.sku] = true;
     });
     return { stato: "ritirato", listingId: listingPrima, url: link(listingPrima), avvisi };
@@ -588,7 +597,7 @@ async function allineaSandbox(c: CredSandbox, r: RichiestaAllinea, usata: { cate
   // Politiche e magazzino: se manca qualcosa si rilegge (e in Sandbox si crea)
   if (!a.politiche.pagamento || !a.politiche.reso || !a.politiche[r.spedizione] || !a.magazzino) {
     await prepara(c);
-    a = await leggiArchivio();
+    a = await leggiArchivio(c.aziendaId);
   }
   const sped = a.politiche[r.spedizione];
   if (!a.politiche.pagamento || !a.politiche.reso || !sped || !a.magazzino) {
@@ -641,7 +650,7 @@ async function allineaSandbox(c: CredSandbox, r: RichiestaAllinea, usata: { cate
   }
   // "Ritirato da noi" si toglie solo con l'annuncio di nuovo online: riattivato a zero pezzi resta ritirato,
   // così al giro dopo non sembra chiuso da eBay
-  await aggiornaArchivio((x) => {
+  await aggiornaArchivio(c.aziendaId, (x) => {
     if (!listingId) return;
     x.pubblicati[r.sku] = listingId;
     delete x.ritirati[r.sku];
@@ -668,7 +677,7 @@ async function allineaSandbox(c: CredSandbox, r: RichiestaAllinea, usata: { cate
 async function venditeSandbox(c: CredSandbox, da: string): Promise<VenditaEbay[]> {
   const avvio = Date.now();
   // getOrders restituisce al più due anni di ordini (inizioVendite non va oltre)
-  const inizio = inizioVendite(da, (await leggiArchivio()).ultimoControllo, avvio);
+  const inizio = inizioVendite(da, (await leggiArchivio(c.aziendaId)).ultimoControllo, avvio);
   const ordini: OrdineEbay[] = [];
   const LIMITE = 200;
   for (let offset = 0, pagine = 0; pagine < 20; pagine++, offset += LIMITE) {
@@ -679,7 +688,7 @@ async function venditeSandbox(c: CredSandbox, da: string): Promise<VenditaEbay[]
   }
   const tutte = venditeDaOrdini(ordini);
   // Lettura e scrittura nello stesso aggiornamento: due controlli insieme non si passano lo stesso ordine
-  return aggiornaArchivio((x) => {
+  return aggiornaArchivio(c.aziendaId, (x) => {
     const quando = new Date(avvio).toISOString();
     if (!x.ultimoControllo || x.ultimoControllo < quando) x.ultimoControllo = quando;
     const f = filtraConsegnate(tutte, x.consegnati ?? {}, Date.now());
@@ -696,7 +705,7 @@ export function creaPonteSandbox(cred: CredSandbox): Ponte {
         return await allineaSandbox(cred, r, usata);
       } catch (e) {
         if (e instanceof ErroreEbay && usata.categoria && categoriaRifiutata(e.codici)) {
-          await dimenticaCategoria(usata.categoria).catch(() => undefined);
+          await dimenticaCategoria(cred.aziendaId, usata.categoria).catch(() => undefined);
           return { stato: "errore", avvisi: [], errore: e.message, categoriaRifiutata: true };
         }
         if (e instanceof ErroreEbay) return { stato: "errore", avvisi: [], errore: e.message };
@@ -706,7 +715,7 @@ export function creaPonteSandbox(cred: CredSandbox): Ponte {
     },
     vendite: (da: string) => venditeSandbox(cred, da),
     async stato(): Promise<StatoPonte> {
-      const a = await leggiArchivio();
+      const a = await leggiArchivio(cred.aziendaId);
       const collegato = !!a.token && a.conto === cred.appId && Date.parse(a.token.refreshScade) > Date.now();
       const p = a.politiche;
       return {

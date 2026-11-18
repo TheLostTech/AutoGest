@@ -1,12 +1,12 @@
-// Archivio del ponte eBay sul server: file ebay.json nella cartella dati, leggibile solo dal processo (0600).
+// Archivio del ponte eBay sul server: file ebay.json nella cartella di ogni azienda (aziende/<id>/ebay.json), leggibile solo dal processo (0600).
 // Token di accesso e di rinnovo cifrati con cifra(); niente di questo file va mai al browser.
 // Solo server.
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DATA_DIR } from "@/lib/server-data";
+import { cartellaAzienda } from "@/lib/server-data";
 import type { SpedizioneEbay } from "./contratto";
 
-const FILE = path.join(DATA_DIR, "ebay.json");
+const fileDi = (aziendaId: string) => path.join(cartellaAzienda(aziendaId), "ebay.json");
 
 export type RuoloPolitica = "pagamento" | "reso" | SpedizioneEbay;
 
@@ -15,8 +15,8 @@ export interface ArchivioEbay {
   conto?: string;
   /** access e refresh cifrati; scadenze in ISO */
   token?: { access: string; scade: string; refresh: string; refreshScade: string };
-  /** Valore casuale del consenso in corso (anti-CSRF), valido pochi minuti */
-  state?: { valore: string; scade: string };
+  /** Valore casuale del consenso in corso (anti-CSRF), valido pochi minuti e solo per chi lo ha avviato (userId) */
+  state?: { valore: string; userId: string; scade: string };
   /** Inizio dell'ultimo controllo delle vendite (da qualunque dispositivo): i controlli dopo non guardano prima di questa data meno un'ora */
   ultimoControllo?: string;
   /** Numeri d'ordine eBay già passati a un dispositivo → quando (gli ultimi 500), per non importarli due volte */
@@ -38,31 +38,37 @@ export interface ArchivioEbay {
 
 const vuoto = (): ArchivioEbay => ({ consegnati: {}, foto: {}, categorie: {}, politiche: {}, pubblicati: {}, ritirati: {} });
 
-export async function leggiArchivio(): Promise<ArchivioEbay> {
+export async function leggiArchivio(aziendaId: string): Promise<ArchivioEbay> {
   try {
-    return { ...vuoto(), ...(JSON.parse(await readFile(FILE, "utf8")) as Partial<ArchivioEbay>) };
+    return { ...vuoto(), ...(JSON.parse(await readFile(fileDi(aziendaId), "utf8")) as Partial<ArchivioEbay>) };
   } catch {
     return vuoto();
   }
 }
 
-async function scrivi(a: ArchivioEbay) {
-  await mkdir(DATA_DIR, { recursive: true });
-  const tmp = `${FILE}.${process.pid}.tmp`;
+async function scrivi(aziendaId: string, a: ArchivioEbay) {
+  const file = fileDi(aziendaId);
+  await mkdir(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
   await writeFile(tmp, JSON.stringify(a), { mode: 0o600 });
-  await rename(tmp, FILE);
+  await rename(tmp, file);
 }
 
-let lock: Promise<unknown> = Promise.resolve();
+// Una coda per azienda: le modifiche di un'azienda non aspettano quelle di un'altra
+const lock = new Map<string, Promise<unknown>>();
 
 /** Legge, modifica e riscrive l'archivio, una modifica alla volta. */
-export function aggiornaArchivio<T>(fn: (a: ArchivioEbay) => T | Promise<T>): Promise<T> {
-  const run = lock.then(async () => {
-    const a = await leggiArchivio();
+export function aggiornaArchivio<T>(aziendaId: string, fn: (a: ArchivioEbay) => T | Promise<T>): Promise<T> {
+  const run = (lock.get(aziendaId) ?? Promise.resolve()).then(async () => {
+    const a = await leggiArchivio(aziendaId);
     const out = await fn(a);
-    await scrivi(a);
+    await scrivi(aziendaId, a);
     return out;
   });
-  lock = run.catch(() => undefined);
+  const coda = run.catch(() => undefined);
+  lock.set(aziendaId, coda);
+  void coda.then(() => {
+    if (lock.get(aziendaId) === coda) lock.delete(aziendaId);
+  });
   return run;
 }
