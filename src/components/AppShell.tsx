@@ -6,13 +6,13 @@ import { useEffect, useRef, useState } from "react";
 import { Boxes, Briefcase, CarFront, ClipboardList, LayoutGrid, Leaf, Menu, ScanLine, Send, Settings, ShoppingCart, Wrench, X, type LucideIcon } from "lucide-react";
 import { useDeviceStorageFull, useStore } from "@/lib/store";
 import { RUOLO_LABEL } from "@/lib/accesso/ruoli";
-import { esci, useSessione } from "@/lib/accesso/client";
+import { esci, esciDallAssistenza, useSessione } from "@/lib/accesso/client";
 import { useSyncAvviso } from "@/lib/sync";
 import type { Role } from "@/lib/types";
 import { BRAND, DEMO_NOTICE } from "@/lib/config";
 import { GlobalSearch } from "./GlobalSearch";
 import { LostarCredit } from "./Lostar";
-import { resetShared } from "@/lib/sync";
+import { inviaInSospeso, resetShared } from "@/lib/sync";
 import { useEbaySync } from "@/lib/ebay-sync";
 
 // Navigazione per aree di lavoro: poche voci, le sottosezioni compaiono solo dentro l'area aperta.
@@ -198,9 +198,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span className="truncate">Assistenza in corso · {accesso.azienda.nome}</span>
           <button
             onClick={async () => {
-              await fetch("/api/piattaforma/assistenza", { method: "DELETE" }).catch(() => undefined);
+              // Prima le modifiche non ancora inviate, con l'assistenza ancora aperta; poi l'uscita
+              setUscendo(true);
+              await inviaInSospeso().catch(() => false);
+              await esciDallAssistenza();
               window.location.assign("/piattaforma");
             }}
+            disabled={uscendo}
             className="shrink-0 rounded border border-white/60 px-3 py-1 hover:bg-white/15"
           >
             Esci
@@ -339,6 +343,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {avviso && (
           <p role="alert" className="no-print border-b border-warn/40 bg-warn-bg px-4 py-2 text-center text-[14px] text-ink">
             <b>{avviso.titolo}</b> {avviso.testo}
+            {avviso.ricarica && (
+              <button onClick={() => window.location.reload()} className="ml-2 rounded border border-ink/40 px-2 py-0.5 font-semibold hover:bg-white/60">
+                Ricarica
+              </button>
+            )}
           </p>
         )}
         {storageFull && (

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decidiAccesso, PIN_INATTIVITA_MS, PIN_TURNO_MS, ASSISTENZA_MS } from "./regole.ts";
+import { aziendaCambiata, decidiAccesso, PIN_INATTIVITA_MS, PIN_TURNO_MS, ASSISTENZA_MS } from "./regole.ts";
 import { RUOLI } from "./ruoli.ts";
 import type { SessioneVista, AziendaVista, AssistenzaVista } from "./regole.ts";
 
@@ -250,4 +250,49 @@ test("PIN scaduto e senza dispositivo: prima la scadenza", () => {
 
 test("sessione password senza dispositivo: accesso (il dispositivo serve solo al PIN)", () => {
   assert.ok(!("negato" in decidiAccesso(base())));
+});
+
+test("scheda partita con un'altra azienda (x-azienda diversa dalla sessione): rifiuto", () => {
+  assert.equal(aziendaCambiata("b", "c"), true);
+  // La sessione non ha più un'azienda (uscita dall'assistenza in un'altra scheda): rifiuto
+  assert.equal(aziendaCambiata("b", null), true);
+  assert.equal(aziendaCambiata(" b ", "b"), false);
+  assert.equal(aziendaCambiata("b", "b"), false);
+});
+
+test("senza intestazione x-azienda (o vuota) decide solo la sessione", () => {
+  assert.equal(aziendaCambiata(null, "c"), false);
+  assert.equal(aziendaCambiata(undefined, "c"), false);
+  assert.equal(aziendaCambiata("", "c"), false);
+  assert.equal(aziendaCambiata("  ", null), false);
+});
+
+test("password su dispositivo condiviso: 5 minuti senza attività, 401 sessione-scaduta", () => {
+  const i = base();
+  i.sessione = { ...i.sessione!, dispositivoCondiviso: true, ultimaAttivita: ORA - PIN_INATTIVITA_MS - 1 };
+  assert.deepEqual(decidiAccesso(i), { negato: 401, motivo: "sessione-scaduta" });
+});
+
+test("password su dispositivo condiviso: turno di 10 ore anche con attività recente", () => {
+  const i = base();
+  i.sessione = { ...i.sessione!, dispositivoCondiviso: true, creata: ORA - PIN_TURNO_MS - 1, ultimaAttivita: ORA };
+  assert.deepEqual(decidiAccesso(i), { negato: 401, motivo: "sessione-scaduta" });
+});
+
+test("password su dispositivo condiviso e attiva: accesso, con dispositivoCondiviso per il blocco nel browser", () => {
+  const i = base();
+  i.sessione = { ...i.sessione!, dispositivoCondiviso: true, ultimaAttivita: ORA - 1000 };
+  const r = decidiAccesso(i);
+  assert.ok(!("negato" in r));
+  if ("negato" in r) return;
+  assert.equal(r.dispositivoCondiviso, true);
+});
+
+test("password fuori da un dispositivo condiviso: nessun limite di inattività", () => {
+  const i = base();
+  i.sessione = { ...i.sessione!, ultimaAttivita: ORA - PIN_TURNO_MS * 2, creata: ORA - PIN_TURNO_MS * 2 };
+  const r = decidiAccesso(i);
+  assert.ok(!("negato" in r));
+  if ("negato" in r) return;
+  assert.equal(r.dispositivoCondiviso, undefined);
 });

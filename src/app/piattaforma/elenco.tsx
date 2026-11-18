@@ -1,5 +1,6 @@
 "use client";
 
+import { annunciaAziendaSessione } from "@/lib/accesso/azienda-client";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { LifeBuoy, Plus } from "lucide-react";
@@ -42,6 +43,8 @@ export default function ElencoAziende() {
       setAttesa(false);
       return;
     }
+    // Le schede della gestione aperte su un'altra azienda si fermano e si ricaricano (evento storage)
+    annunciaAziendaSessione(entra.id);
     // Navigazione completa: la gestione parte da zero con i dati dell'azienda
     window.location.assign("/");
   }

@@ -1,5 +1,6 @@
 import type { BetterAuthPlugin } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
+import { chiudiAssistenzeAperte } from "./assistenza-chiusura";
 
 // Percorsi che creano una sessione dopo un secondo fattore riuscito (codice TOTP o codice di riserva).
 const VERIFICA_DUE_FATTORI = new Set(["/two-factor/verify-totp", "/two-factor/verify-backup-code"]);
@@ -7,6 +8,8 @@ const VERIFICA_DUE_FATTORI = new Set(["/two-factor/verify-totp", "/two-factor/ve
 // Plugin minimo: la tabella degli ingressi di assistenza del super admin e tre campi facoltativi
 // sulla sessione: tipoAccesso ("pin"), dispositivoId e dueFattoriVerificato.
 // Nessun endpoint: le scritture le fanno le funzioni server dei task successivi.
+// Uscita dall'account (/sign-out) con un ingresso di assistenza aperto: prima che la sessione sparisca si chiude
+// l'ingresso e in ogni azienda resta "Uscita assistenza", come con il pulsante della fascia.
 export const assistenzaPlugin = {
   id: "assistenza",
   schema: {
@@ -31,6 +34,18 @@ export const assistenzaPlugin = {
     },
   },
   hooks: {
+    before: [
+      {
+        matcher: (context) => context.path === "/sign-out",
+        handler: createAuthMiddleware(async (ctx) => {
+          const token = await ctx.getSignedCookie(ctx.context.authCookies.sessionToken.name, ctx.context.secret);
+          if (!token) return;
+          const s = await ctx.context.adapter.findOne<{ userId: string }>({ model: "session", where: [{ field: "token", value: token }] });
+          if (!s) return;
+          await chiudiAssistenzeAperte(ctx.context, s.userId, "uscita dall'account").catch((e) => console.error("[assistenza] uscita non chiusa", e));
+        }),
+      },
+    ],
     after: [
       {
         matcher: (context) => VERIFICA_DUE_FATTORI.has(context.path ?? ""),
@@ -48,9 +63,14 @@ export const assistenzaPlugin = {
               model: "session",
               where: [{ field: "userId", value: nuova.user.id }],
             });
+            let chiuse = false;
             for (const s of altre) {
-              if (s.token !== nuova.session.token) await ctx.context.internalAdapter.deleteSession(s.token);
+              if (s.token !== nuova.session.token) {
+                await ctx.context.internalAdapter.deleteSession(s.token);
+                chiuse = true;
+              }
             }
+            if (chiuse) await chiudiAssistenzeAperte(ctx.context, nuova.user.id, "sessioni chiuse dall'attivazione del codice").catch(() => undefined);
           }
         }),
       },

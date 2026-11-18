@@ -7,6 +7,7 @@ import { ACCESSO, completo, MODO, SERVIZI, type Campo, type Servizio, type Stato
 import type { StatoPonte } from "@/lib/ebay/contratto";
 import { testoErroreCollegamento } from "@/lib/ebay/codici";
 import { Button, Notice, PageTitle, Panel } from "@/components/ui";
+import { fetchAzienda } from "@/lib/accesso/azienda-client";
 
 type Stati = Record<string, StatoServizio>;
 
@@ -24,7 +25,7 @@ export default function Collegamenti() {
   const [aperto, setAperto] = useState<string | null>(() => (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("ebay") ? "ebay" : null));
 
   useEffect(() => {
-    fetch("/api/collegamenti", { cache: "no-store" })
+    fetchAzienda("/api/collegamenti", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error())))
       .then((d: Stati) => setStati(d))
       .catch(() => setErrore("Non riesco a leggere i collegamenti dal server dell'azienda."));
@@ -200,13 +201,13 @@ function EbayCollegamento({ aggiornato }: { aggiornato?: string }) {
 
   useEffect(() => {
     let vivo = true;
-    fetch("/api/ebay/stato", { cache: "no-store" })
+    fetchAzienda("/api/ebay/stato", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error())))
       .then(async (s: StatoPonte) => {
         if (!vivo) return;
         setStato(s);
         if (s.modo !== "Sandbox" || !s.collegato) return;
-        const r = await fetch("/api/ebay/politiche", { cache: "no-store" });
+        const r = await fetchAzienda("/api/ebay/politiche", { cache: "no-store" });
         const d = await r.json();
         if (!vivo) return;
         if (!r.ok) return setPolErrore(d.error || "Non riesco a leggere le politiche da eBay.");
@@ -229,7 +230,7 @@ function EbayCollegamento({ aggiornato }: { aggiornato?: string }) {
     setBusy(true);
     setEsito(null);
     try {
-      const r = await fetch("/api/ebay/politiche", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(scelte) });
+      const r = await fetchAzienda("/api/ebay/politiche", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(scelte) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       mostra(d as PoliticheEbay);
@@ -244,7 +245,7 @@ function EbayCollegamento({ aggiornato }: { aggiornato?: string }) {
   const scollega = async () => {
     if (!confirm("Scollegare il conto eBay? Gli annunci già su eBay restano dove sono.")) return;
     setBusy(true);
-    const r = await fetch("/api/ebay/collega", { method: "DELETE" });
+    const r = await fetchAzienda("/api/ebay/collega", { method: "DELETE" });
     setBusy(false);
     if (!r.ok) return setEsito({ tone: "danger", text: "Non riesco a scollegare il conto." });
     setStato((s) => (s ? { ...s, collegato: false, esauritoAttivo: undefined } : s));
@@ -358,7 +359,7 @@ function Modulo({ s, st, onSaved }: { s: Servizio; st?: StatoServizio; onSaved: 
     setBusy(true);
     setMsg(null);
     try {
-      const r = await fetch("/api/collegamenti", {
+      const r = await fetchAzienda("/api/collegamenti", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: s.id, valori, segreti, file, togli }),
@@ -375,7 +376,7 @@ function Modulo({ s, st, onSaved }: { s: Servizio; st?: StatoServizio; onSaved: 
   const scollega = async () => {
     if (!confirm(`Cancellare tutti i dati salvati di ${s.nome}?`)) return;
     setBusy(true);
-    const r = await fetch(`/api/collegamenti?id=${encodeURIComponent(s.id)}`, { method: "DELETE" });
+    const r = await fetchAzienda(`/api/collegamenti?id=${encodeURIComponent(s.id)}`, { method: "DELETE" });
     if (r.ok) onSaved(null);
     else {
       setMsg({ tone: "danger", text: "Non riesco a cancellare i dati." });

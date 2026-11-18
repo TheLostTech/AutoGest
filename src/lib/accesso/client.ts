@@ -3,6 +3,7 @@
 // Sessione nel browser: si carica una volta da /api/sessione e la leggono Hydrator, menu e fascia di assistenza.
 import { useEffect, useState } from "react";
 import type { Accesso } from "./regole";
+import { annunciaAziendaSessione, fetchAzienda } from "./azienda-client";
 
 export type EsitoSessione = { ok: true; accesso: Accesso } | { ok: false; stato: number; motivo?: string };
 
@@ -12,7 +13,8 @@ const ascoltatori = new Set<() => void>();
 
 async function leggi(): Promise<EsitoSessione> {
   try {
-    const r = await fetch("/api/sessione", { cache: "no-store" });
+    // x-azienda (se la scheda ha già un'azienda): una sessione passata a un'altra azienda risponde 409
+    const r = await fetchAzienda("/api/sessione", { cache: "no-store" });
     if (r.ok) return { ok: true, accesso: (await r.json()) as Accesso };
     const j = (await r.json().catch(() => ({}))) as { motivo?: string };
     return { ok: false, stato: r.status, motivo: j.motivo };
@@ -49,11 +51,20 @@ export function useSessione(): { accesso: Accesso | null; ricarica: () => Promis
 /**
  * Esce dall'account e torna alla pagina di accesso (su un dispositivo dell'azienda: all'elenco dei nomi).
  * Prima prova a inviare le modifiche in sospeso; quelle non inviate restano per il prossimo accesso.
+ * Durante un ingresso di assistenza prima si esce dall'assistenza (uscita nel registro dell'azienda); se non riesce,
+ * la chiude comunque il server all'uscita dall'account.
  */
 export async function esci(): Promise<void> {
   const { inviaInSospeso } = await import("../sync");
   await inviaInSospeso().catch(() => false);
+  if (cache?.ok && cache.accesso.assistenza) await esciDallAssistenza();
   const { authClient } = await import("../auth/client");
   await authClient.signOut().catch(() => undefined);
   window.location.assign("/accesso");
+}
+
+/** Chiude l'ingresso di assistenza (DELETE /api/piattaforma/assistenza) e avvisa le altre schede del browser. */
+export async function esciDallAssistenza(): Promise<void> {
+  await fetch("/api/piattaforma/assistenza", { method: "DELETE" }).catch(() => undefined);
+  annunciaAziendaSessione(null);
 }

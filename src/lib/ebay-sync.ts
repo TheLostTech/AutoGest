@@ -16,11 +16,17 @@ import { onlinePrice } from "./pricing";
 import type { Annuncio } from "./types";
 // Riallineamento e controlli eBay partono da soli: non sono attività della persona (sessione da PIN)
 import { intestazioniPassive } from "./accesso/attivita";
+// Ogni chiamata dice con quale azienda è partita la scheda: se la sessione è cambiata il server rifiuta e qui ci si ferma
+import { aziendaCambiataQui, aziendaFissata, fetchAzienda } from "./accesso/azienda-client";
 
 type Store = ReturnType<typeof useStore.getState>;
 const OGNI_MS = 60_000;
 const VENDITE_OGNI_MS = 5 * 60_000;
-const ULTIMO_CONTROLLO = "ebay-vendite-ultimo-controllo";
+// Una data per azienda: nello stesso browser possono passare più aziende (super admin in assistenza)
+const chiaveUltimoControllo = (): string | null => {
+  const a = aziendaFissata();
+  return a ? `ebay-vendite-ultimo-controllo:${a}` : null;
+};
 
 // Una sola sincronizzazione alla volta per scheda. Altre schede o dispositivi possono mandare lo stesso annuncio: il ponte è idempotente.
 let inCorso = false;
@@ -57,10 +63,11 @@ function richiestaDi(a: Annuncio, st: Store): { r: RichiestaAllinea; avvisi: str
 async function manda(r: RichiestaAllinea): Promise<EsitoAllinea | "salta" | "fermati"> {
   let res: Response;
   try {
-    res = await fetch("/api/ebay/allinea", { method: "POST", headers: { "Content-Type": "application/json", ...intestazioniPassive() }, body: JSON.stringify(r) });
+    res = await fetchAzienda("/api/ebay/allinea", { method: "POST", headers: { "Content-Type": "application/json", ...intestazioniPassive() }, body: JSON.stringify(r) });
   } catch {
     return "fermati"; // niente rete: si riprova al giro dopo
   }
+  if (aziendaCambiataQui()) return "fermati";
   if (!res.ok) return esitoDaStato(res.status);
   try {
     return (await res.json()) as EsitoAllinea;
@@ -70,8 +77,8 @@ async function manda(r: RichiestaAllinea): Promise<EsitoAllinea | "salta" | "fer
 }
 
 export async function riallinea(force = false): Promise<void> {
-  // Prima dell'allineamento con gli altri dispositivi i dati di questo potrebbero essere vecchi
-  if (!syncAllineato()) return;
+  // Prima dell'allineamento con gli altri dispositivi i dati di questo potrebbero essere vecchi; con l'azienda cambiata mai
+  if (!syncAllineato() || aziendaCambiataQui()) return;
   if (inCorso) {
     ripeti = true;
     return;
@@ -106,7 +113,7 @@ export async function riallinea(force = false): Promise<void> {
 
 export async function statoPonte(): Promise<StatoPonte | undefined> {
   try {
-    const res = await fetch("/api/ebay/stato", { cache: "no-store", headers: intestazioniPassive() });
+    const res = await fetchAzienda("/api/ebay/stato", { cache: "no-store", headers: intestazioniPassive() });
     return res.ok ? ((await res.json()) as StatoPonte) : undefined;
   } catch {
     return undefined;
@@ -117,7 +124,8 @@ export async function statoPonte(): Promise<StatoPonte | undefined> {
 function leggiDa(): string {
   let v: string | null = null;
   try {
-    v = localStorage.getItem(ULTIMO_CONTROLLO);
+    const k = chiaveUltimoControllo();
+    v = k ? localStorage.getItem(k) : null;
   } catch {}
   return daPerVendite(v, Date.now());
 }
@@ -126,14 +134,16 @@ function leggiDa(): string {
 export async function controllaVendite(): Promise<{ ok: boolean; nuove: number; errore?: string }> {
   // Con dati vecchi la vendita finirebbe su pezzi già venduti altrove, e la lettura dopo la cancellerebbe
   if (!syncAllineato()) return { ok: false, nuove: 0, errore: "Dati non ancora allineati con gli altri dispositivi: riprova tra poco" };
+  if (aziendaCambiataQui()) return { ok: false, nuove: 0, errore: "In un'altra scheda è stata aperta un'altra azienda: ricarica la pagina" };
   const prima = new Date().toISOString();
   try {
-    const res = await fetch("/api/ebay/vendite", {
+    const res = await fetchAzienda("/api/ebay/vendite", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...intestazioniPassive() },
       body: JSON.stringify({ da: leggiDa() }),
       cache: "no-store",
     });
+    if (aziendaCambiataQui()) return { ok: false, nuove: 0, errore: "In un'altra scheda è stata aperta un'altra azienda: ricarica la pagina" };
     if (!res.ok) return { ok: false, nuove: 0, errore: "eBay non risponde" };
     const { vendite } = (await res.json()) as { vendite: VenditaEbay[] };
     const st = useStore.getState();
@@ -148,7 +158,8 @@ export async function controllaVendite(): Promise<{ ok: boolean; nuove: number; 
     // Se una vendita non si è importata, la data non avanza: al prossimo controllo si riprova (le già importate si ignorano)
     if (fallite > 0) return { ok: false, nuove, errore: `${fallite} ${fallite === 1 ? "vendita" : "vendite"} eBay non importate` };
     try {
-      localStorage.setItem(ULTIMO_CONTROLLO, prima);
+      const k = chiaveUltimoControllo();
+      if (k) localStorage.setItem(k, prima);
     } catch {}
     return { ok: true, nuove };
   } catch {
@@ -190,6 +201,7 @@ export function useEbaySync(): void {
       t = setTimeout(() => attivo && void riallinea(false), 400);
     };
     const controlloAutomatico = async () => {
+      if (aziendaCambiataQui()) return;
       const p = await statoPonte();
       if (attivo && p?.modo === "Sandbox" && p.collegato) void controllaVendite();
     };

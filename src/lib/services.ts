@@ -1,5 +1,6 @@
 // Servizi esterni SIMULATI. In produzione: OCR targhe, banca dati veicoli/VIN, IA riconoscimento.
 // Ogni risposta va confermata dall'operatore.
+import { fetchAzienda } from "./accesso/azienda-client";
 
 export interface VehicleLookup {
   make: string;
@@ -71,7 +72,7 @@ export const VIN_RE = /^[A-HJ-NPR-Z0-9]{17}$/;
 export async function savePhoto(file: File, max = 1000): Promise<string> {
   const data = await compressImage(file, max);
   try {
-    const r = await fetch("/api/foto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data }) });
+    const r = await fetchAzienda("/api/foto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data }) });
     if (!r.ok) return data;
     const { url } = (await r.json()) as { url?: string };
     return url ?? data;

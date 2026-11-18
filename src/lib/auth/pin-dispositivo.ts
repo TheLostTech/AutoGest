@@ -15,6 +15,7 @@ import {
   type StatoPinUtente,
 } from "@/lib/accesso/pin";
 import { PIN_TURNO_MS } from "@/lib/accesso/regole";
+import { chiudiAssistenzeAperte } from "./assistenza-chiusura";
 import type { Accesso } from "@/lib/accesso/regole";
 
 // Dispositivi condivisi dell'azienda (tablet del piazzale) e accesso con nome + PIN.
@@ -76,6 +77,8 @@ function utenteUtilizzabile(u: RigaUtente | null, ora: number): u is RigaUtente 
 const CODA = Symbol.for("gestionale.pin-dispositivo.code");
 const g = globalThis as typeof globalThis & { [CODA]?: Map<string, Promise<unknown>> };
 const code = (g[CODA] ??= new Map());
+// Esportata come inFilaPin: anche lo sblocco dalla Piattaforma passa da questa fila (non si azzera un contatore a metà tentativo).
+export const inFilaPin = <T>(aziendaId: string, fn: () => Promise<T>): Promise<T> => inFila(aziendaId, fn);
 function inFila<T>(chiave: string, fn: () => Promise<T>): Promise<T> {
   const run = (code.get(chiave) ?? Promise.resolve()).then(fn);
   const coda = run.catch(() => undefined);
@@ -93,6 +96,36 @@ async function dispositivoDaToken(c: AuthContext, token: string | null | undefin
   return d;
 }
 
+/** Il valore del cookie del dispositivo da un'intestazione Cookie (senza Better Auth: serve anche ad accessoDaRichiesta). */
+function cookieDispositivo(cookie: string | null | undefined): string | null {
+  for (const parte of (cookie ?? "").split(";")) {
+    const i = parte.indexOf("=");
+    if (i < 0 || parte.slice(0, i).trim() !== COOKIE_DISPOSITIVO) continue;
+    try {
+      return decodeURIComponent(parte.slice(i + 1).trim()) || null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** Il browser è un dispositivo condiviso registrato e non revocato (cookie valido)? Per il blocco di inattività di ogni sessione su di esso. */
+export async function dispositivoDelBrowser(c: AuthContext, intestazioneCookie: string | null | undefined): Promise<{ id: string; organizationId: string } | null> {
+  const d = await dispositivoDaToken(c, cookieDispositivo(intestazioneCookie));
+  return d ? { id: d.id, organizationId: d.organizationId } : null;
+}
+
+/** Chiude la sessione di questo browser (con le eventuali assistenze aperte del suo utente) e toglie il cookie. */
+async function chiudiSessioneDelBrowser(ctx: { context: AuthContext; getSignedCookie: (n: string, s: string) => Promise<string | null | false> }, motivo: string) {
+  const c = ctx.context;
+  const token = await ctx.getSignedCookie(c.authCookies.sessionToken.name, c.secret);
+  if (!token) return;
+  const s = await c.adapter.findOne<{ userId: string }>({ model: "session", where: [{ field: "token", value: token }] });
+  if (s) await chiudiAssistenzeAperte(c, s.userId, motivo).catch(() => undefined);
+  await c.internalAdapter.deleteSession(token).catch(() => undefined);
+}
+
 async function registra(aziendaId: string, eventi: NuovoEvento[]) {
   // Il registro è utile ma non deve far fallire l'accesso o il blocco
   await aggiungiEventi(aziendaId, eventi).catch((e) => console.error("[pin-dispositivo] registro non scritto", e));
@@ -104,7 +137,9 @@ async function responsabile(headers: Headers | undefined, conPassword: boolean):
   const { accessoDaRichiesta } = await import("@/lib/accesso/server");
   const a = await accessoDaRichiesta(new Request("http://localhost/", { headers: headers ?? new Headers() }));
   if (a instanceof Response) {
-    const j = (await a.json().catch(() => ({}))) as { error?: string };
+    const j = (await a.json().catch(() => ({}))) as { error?: string; motivo?: string };
+    // Scheda partita con un'altra azienda: 409 come le altre API, così il browser si ferma e chiede di ricaricare
+    if (a.status === 409) throw new APIError("CONFLICT", { message: j.error ?? "Azienda cambiata.", code: "AZIENDA_CAMBIATA" });
     throw new APIError(a.status === 401 ? "UNAUTHORIZED" : "FORBIDDEN", { message: j.error ?? "Accesso negato." });
   }
   if (!a.ruoli.includes("responsabile")) throw new APIError("FORBIDDEN", { message: "Solo il responsabile gestisce i dispositivi." });
@@ -243,8 +278,7 @@ export const pinDispositivo = () =>
         await registra(a.azienda.id, [{ ...firma(a), entity: "sistema", entityId: d.id, action: "Dispositivo registrato", detail: nome }]);
         // Da ora il browser è un dispositivo condiviso: la sessione con password del responsabile si chiude qui,
         // così il prossimo che lo prende in mano trova l'elenco dei nomi e non il suo account.
-        const sessione = await ctx.getSignedCookie(c.authCookies.sessionToken.name, c.secret);
-        if (sessione) await c.internalAdapter.deleteSession(sessione);
+        await chiudiSessioneDelBrowser(ctx, "dispositivo registrato");
         deleteSessionCookie(ctx);
         return ctx.json({ id: d.id, nome });
       }),
@@ -381,8 +415,7 @@ export const pinDispositivo = () =>
         if (esito.esito !== "ok" || !esito.utente) throw new APIError("UNAUTHORIZED", { message: "PIN non corretto.", code: "PIN_SBAGLIATO" });
 
         // Una sessione già aperta su questo browser (es. il responsabile che ha registrato il tablet) si chiude.
-        const vecchio = await ctx.getSignedCookie(c.authCookies.sessionToken.name, c.secret);
-        if (vecchio) await c.internalAdapter.deleteSession(vecchio).catch(() => undefined);
+        await chiudiSessioneDelBrowser(ctx, "accesso con PIN sullo stesso browser");
 
         const ora = Date.now();
         const session = await c.internalAdapter.createSession(
@@ -456,6 +489,14 @@ export const pinDispositivo = () =>
           c.adapter.update({ model: "dispositivo", where: [{ field: "id", value: d.id }], update: { bloccato: false, erroriPin: "[]" } }),
         );
         await registra(a.azienda.id, [{ ...firma(a), entity: "sistema", entityId: d.id, action: "Dispositivo sbloccato", detail: d.nome }]);
+        // Sbloccato proprio questo browser (il responsabile è entrato con la password sul tablet bloccato): la sua
+        // sessione si chiude qui, così il tablet torna all'elenco dei nomi e non resta aperto sul suo account.
+        const questo = ctx.getCookie(COOKIE_DISPOSITIVO);
+        if (questo && hashToken(questo) === d.tokenHash) {
+          await chiudiSessioneDelBrowser(ctx, "dispositivo sbloccato");
+          deleteSessionCookie(ctx);
+          return ctx.json({ ok: true, esci: true });
+        }
         return ctx.json({ ok: true });
       }),
     },

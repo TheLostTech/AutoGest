@@ -1,9 +1,15 @@
+import type { AuthContext } from "better-auth";
 import { auth } from "@/lib/auth/server";
+import { chiudiAssistenzeAperte } from "@/lib/auth/assistenza-chiusura";
+import { dispositivoDelBrowser } from "@/lib/auth/pin-dispositivo";
 import { richiestaPassiva } from "./attivita";
 import { rispostaNonPronta } from "./pronta";
 import type { Role } from "@/lib/types";
 import {
+  aziendaCambiata,
   decidiAccesso,
+  INTESTAZIONE_AZIENDA,
+  MOTIVO_AZIENDA_CAMBIATA,
   type Accesso,
   type AssistenzaVista,
   type AziendaVista,
@@ -73,6 +79,14 @@ export async function accessoDaRichiesta(req: Request, opzioni: { attivitaAlle?:
   };
   const u = user as typeof user & { role?: string | null; twoFactorEnabled?: boolean | null };
 
+  // La scheda è partita con un'altra azienda (x-azienda) e la sessione nel frattempo è cambiata: 409, nulla si legge o scrive.
+  if (aziendaCambiata(req.headers.get(INTESTAZIONE_AZIENDA), extra.activeOrganizationId ?? null)) {
+    return Response.json(
+      { error: "In un'altra scheda è stata aperta un'altra azienda: ricarica questa pagina.", motivo: MOTIVO_AZIENDA_CAMBIATA },
+      { status: 409, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
   const vista: SessioneVista = {
     userId: user.id,
     nome: user.name,
@@ -86,7 +100,10 @@ export async function accessoDaRichiesta(req: Request, opzioni: { attivitaAlle?:
     ultimaAttivita: ms(session.updatedAt),
   };
 
-  const ctx = await auth.$context;
+  const ctx = (await auth.$context) as unknown as AuthContext;
+
+  // Browser registrato come dispositivo condiviso: anche la sessione con password ha il blocco di 5 minuti e il turno di 10 ore
+  if (vista.tipo === "password" && (await dispositivoDelBrowser(ctx, req.headers.get("cookie")))) vista.dispositivoCondiviso = true;
 
   // Sessione da PIN: il dispositivo deve esistere, non essere revocato ed essere dell'azienda attiva.
   // Altrimenti `dispositivo` resta vuoto e la regola nega con "dispositivo-revocato".
@@ -144,7 +161,10 @@ export async function accessoDaRichiesta(req: Request, opzioni: { attivitaAlle?:
   const esito = decidiAccesso({ sessione: vista, azienda, ruoliMembro, assistenza, ora });
   if ("negato" in esito) {
     // Sessione PIN scaduta o senza dispositivo valido: la revoca, così il cookie non vale più nemmeno se riprovato.
-    if (esito.motivo === "sessione-scaduta" || esito.motivo === "dispositivo-revocato") await ctx.internalAdapter.deleteSession(session.token);
+    if (esito.motivo === "sessione-scaduta" || esito.motivo === "dispositivo-revocato") {
+      if (vista.ruoloPiattaforma === "superadmin") await chiudiAssistenzeAperte(ctx, user.id, "sessione scaduta").catch(() => undefined);
+      await ctx.internalAdapter.deleteSession(session.token);
+    }
     return negata(esito.negato, esito.motivo);
   }
 
@@ -153,7 +173,7 @@ export async function accessoDaRichiesta(req: Request, opzioni: { attivitaAlle?:
   // anche se una pagina resta aperta. Il battito del blocco di inattività (`attivitaAlle`) la segna sempre.
   // Il battito porta l'istante dell'ultimo tocco: si usa quello (mai oltre adesso, mai indietro), così il server
   // scade 5 minuti dopo l'ultimo tocco vero, insieme al blocco sullo schermo.
-  if (vista.tipo === "pin" && !richiestaPassiva(req.headers)) {
+  if ((vista.tipo === "pin" || vista.dispositivoCondiviso) && !richiestaPassiva(req.headers)) {
     const battito = opzioni.attivitaAlle !== undefined && Number.isFinite(opzioni.attivitaAlle);
     const alle = battito ? Math.min(ora, opzioni.attivitaAlle!) : ora;
     if (battito ? alle > vista.ultimaAttivita : ora - vista.ultimaAttivita > PIN_AGGIORNA_OGNI_MS) {

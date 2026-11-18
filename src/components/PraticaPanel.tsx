@@ -11,6 +11,7 @@ import { dateIt } from "@/lib/logic";
 const eur = (n: number) => n.toLocaleString("it-IT", { style: "currency", currency: "EUR" });
 import type { ConferenteTipo, Vehicle } from "@/lib/types";
 import { Button, Panel } from "./ui";
+import { fetchAzienda } from "@/lib/accesso/azienda-client";
 
 // La pratica come percorso RVFU: un passo alla volta, l'azione compare solo sul passo attuale.
 export function PraticaPanel({ v }: { v: Vehicle }) {
@@ -288,7 +289,7 @@ function VisuraPra({ v }: { v: Vehicle }) {
     setErrore("");
     setAvviso("");
     try {
-      const d = (await leggi(await fetch(`/api/visura/${rq.id}`, { cache: "no-store" }))) as { stato: string; pdf?: string; messaggio?: string };
+      const d = (await leggi(await fetchAzienda(`/api/visura/${rq.id}`, { cache: "no-store" }))) as { stato: string; pdf?: string; messaggio?: string };
       if (d.messaggio) setAvviso(d.messaggio);
       else if (!d.pdf) setAvviso("Visura non ancora pronta: Openapi la evade entro 24 ore lavorative.");
       if (d.stato !== rq.stato || d.pdf !== rq.pdf)
@@ -302,7 +303,7 @@ function VisuraPra({ v }: { v: Vehicle }) {
 
   // All'apertura della pratica: come lavora la visura e, se ce n'è una in attesa, se il PDF è arrivato
   useEffect(() => {
-    fetch("/api/visura", { cache: "no-store" })
+    fetchAzienda("/api/visura", { cache: "no-store" })
       .then(leggi)
       .then((d) => {
         const m = String(d.modo);
@@ -355,7 +356,7 @@ function VisuraPra({ v }: { v: Vehicle }) {
               setBusy(true);
               setErrore("");
               try {
-                const d = await leggi(await fetch("/api/visura", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targa: v.plate, tipo }) }));
+                const d = await leggi(await fetchAzienda("/api/visura", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targa: v.plate, tipo }) }));
                 updateVehicle(
                   v.id,
                   { visuraRichiesta: { id: String(d.id), at: new Date().toISOString(), stato: String(d.stato), modo: String(d.modo) } },

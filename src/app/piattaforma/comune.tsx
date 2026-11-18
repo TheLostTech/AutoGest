@@ -1,5 +1,6 @@
 "use client";
 
+import { annunciaAziendaSessione } from "@/lib/accesso/azienda-client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
@@ -63,7 +64,9 @@ export function Guscio({ children }: { children: React.ReactNode }) {
   }, [ricarica]);
 
   async function esci() {
+    // L'uscita dall'account chiude anche l'ingresso di assistenza aperto (lo registra il server); le altre schede lo sanno subito
     await authClient.signOut().catch(() => undefined);
+    annunciaAziendaSessione(null);
     window.location.assign("/accesso");
   }
 

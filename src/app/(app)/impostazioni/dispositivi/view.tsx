@@ -6,9 +6,17 @@ import { authClient } from "@/lib/auth/client";
 import type { DispositivoAzienda } from "@/lib/auth/pin-dispositivo-client";
 import { useSessione } from "@/lib/accesso/client";
 import { inviaInSospeso } from "@/lib/sync";
+import { segnalaAziendaCambiata } from "@/lib/accesso/azienda-client";
 import { Button, Field, Notice, PageTitle, Panel } from "@/components/ui";
 
-const leggiElenco = () => authClient.pinDispositivo.elenco().catch(() => null);
+const leggiElenco = () =>
+  authClient.pinDispositivo
+    .elenco()
+    .then((r) => {
+      if (r.error?.status === 409) segnalaAziendaCambiata();
+      return r;
+    })
+    .catch(() => null);
 const data = (iso: string) => new Date(iso).toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" });
 
 export default function Dispositivi() {
@@ -55,6 +63,7 @@ export default function Dispositivi() {
     // Prima il lavoro in sospeso, con la sessione ancora valida: la registrazione chiude la sessione del responsabile
     await inviaInSospeso().catch(() => false);
     const r = await authClient.pinDispositivo.registra({ nome: nome.trim() }).catch(() => null);
+    if (r?.error?.status === 409) segnalaAziendaCambiata();
     if (!r || r.error) {
       setAttesa(false);
       setErrore(r?.error?.message ?? "Non riesco a registrare il dispositivo. Riprova.");
@@ -67,9 +76,17 @@ export default function Dispositivi() {
   async function azione(d: DispositivoAzienda, tipo: "revoca" | "sblocca") {
     if (tipo === "revoca" && !confirm(`Revocare «${d.nome}»? Chi lo sta usando esce subito e il dispositivo torna all'accesso con email.`)) return;
     setFatto("");
+    // Sbloccare questo stesso browser chiude la sessione del responsabile: prima il lavoro non ancora inviato
+    if (tipo === "sblocca" && d.questo) await inviaInSospeso().catch(() => false);
     const r = await (tipo === "revoca" ? authClient.pinDispositivo.revoca({ dispositivoId: d.id }) : authClient.pinDispositivo.sblocca({ dispositivoId: d.id })).catch(() => null);
+    if (r?.error?.status === 409) segnalaAziendaCambiata();
     if (!r || r.error) {
       setErrore(r?.error?.message ?? "Operazione non riuscita. Riprova.");
+      return;
+    }
+    // Sbloccato il tablet su cui si è entrati con la password: si torna all'elenco dei nomi (la sessione è già chiusa)
+    if (r.data && "esci" in r.data && r.data.esci) {
+      window.location.assign("/accesso");
       return;
     }
     setFatto(tipo === "revoca" ? `«${d.nome}» revocato.` : `«${d.nome}» sbloccato.`);

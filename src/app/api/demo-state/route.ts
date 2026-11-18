@@ -18,7 +18,8 @@ export async function GET(req: Request) {
   if (a instanceof Response) return a;
   try {
     const s = await leggiStato(a.azienda.id);
-    return Response.json({ ...s, demo: a.azienda.demo }, { headers: NOSTORE });
+    // aziendaId: la scheda controlla che la risposta sia della sua azienda (mai applicare i dati di un'altra)
+    return Response.json({ ...s, demo: a.azienda.demo, aziendaId: a.azienda.id }, { headers: NOSTORE });
   } catch (e) {
     return erroreArchivio(e);
   }

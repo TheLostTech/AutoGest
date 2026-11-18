@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { esci } from "@/lib/accesso/client";
 import { BATTITO_OGNI_MS, CHIAVE_BLOCCO, CHIAVE_ULTIMO_TOCCO } from "@/lib/accesso/attivita";
 import { PIN_INATTIVITA_MS } from "@/lib/accesso/regole";
+import { fetchAzienda } from "@/lib/accesso/azienda-client";
 
 // Sessione da PIN (tablet del piazzale): dopo 5 minuti senza tocchi né tasti il dispositivo prova a inviare le
 // modifiche in sospeso, chiude la sessione e torna all'elenco dei nomi.
@@ -56,7 +57,7 @@ export function BloccoInattivita({ attivo }: { attivo: boolean }) {
       if (fatto || ultimo <= mandato) return;
       battito = Date.now();
       mandato = ultimo;
-      void fetch("/api/sessione/attivita", {
+      void fetchAzienda("/api/sessione/attivita", {
         method: "POST",
         cache: "no-store",
         keepalive: true,

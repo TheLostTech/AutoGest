@@ -3,11 +3,13 @@
 // Sincronizzazione della demo tra dispositivi (telefono, computer) tramite /api/demo-state.
 // Ruolo e veicolo attivo restano propri di ogni dispositivo; tutto il resto è condiviso.
 import { useSyncExternalStore } from "react";
-import { STORE_SCHEMA, useStore } from "./store";
+import { abilitaSalvataggioLocale, STORE_SCHEMA, useStore } from "./store";
 import { devePubblicareStatoLocale } from "./sync-regole";
 import { percorsoPubblico } from "./accesso/percorsi";
 import { intestazioniPassive } from "./accesso/attivita";
 import { aggiungiInSospeso, corpoDaRiprendere } from "./sync-in-sospeso";
+import { aziendaFissata, fetchAzienda, segnalaAziendaCambiata, suAziendaCambiata } from "./accesso/azienda-client";
+import { MOTIVO_AZIENDA_CAMBIATA } from "./accesso/regole";
 
 const PREPEND = ["vehicles", "parts", "annunci", "orders", "docs", "firs"] as const;
 const APPEND = ["audit", "wasteMoves", "inventory"] as const;
@@ -42,19 +44,19 @@ export const syncAllineato = (): boolean => allineato;
 
 // Avviso per l'utente quando la sincronizzazione si ferma (archivio di versione diversa, accesso perso).
 // Dopo l'avviso non si riprova da soli: niente cicli di richieste.
-export type AvvisoSync = { titolo: string; testo: string };
+export type AvvisoSync = { titolo: string; testo: string; ricarica?: boolean };
 let avviso: AvvisoSync | null = null;
 let fermata = false;
 let inUscita = false; // uscita in corso (blocco per inattività, "Esci"): chi esce porta già all'accesso
 const ascoltatoriAvviso = new Set<() => void>();
-function mostraAvviso(titolo: string, testo: string) {
-  avviso = { titolo, testo };
+function mostraAvviso(titolo: string, testo: string, ricarica = false) {
+  avviso = { titolo, testo, ...(ricarica ? { ricarica } : {}) };
   ascoltatoriAvviso.forEach((f) => f());
 }
-function fermaConAvviso(testo: string, titolo = "Archivio con versione diversa.") {
+function fermaConAvviso(testo: string, titolo = "Archivio con versione diversa.", ricarica = false) {
   fermata = true;
   clearTimeout(timer);
-  mostraAvviso(titolo, testo);
+  mostraAvviso(titolo, testo, ricarica);
 }
 export const useSyncAvviso = (): AvvisoSync | null =>
   useSyncExternalStore(
@@ -72,9 +74,35 @@ class ErroreApi extends Error {
   }
 }
 
+// La sessione è passata a un'altra azienda (altra scheda): questa scheda smette subito di leggere e scrivere.
+// Le modifiche non ancora inviate restano nella coda in sospeso di QUESTA azienda (la chiave dello store è la sua) e
+// partono al prossimo ingresso in questa azienda; il salvataggio nel browser si spegne, così la copia locale di questa
+// azienda non viene riscritta mentre un'altra scheda lavora su un'altra.
+function fermaPerAziendaCambiata() {
+  if (fermata && avviso?.ricarica) return;
+  const giaFermata = fermata;
+  fermata = true;
+  clearTimeout(timer);
+  if (allineato && !giaFermata) {
+    const d = differenze(useStore.getState());
+    if (d) salvaInSospeso(d);
+  }
+  abilitaSalvataggioLocale(false);
+  mostraAvviso(
+    "Azienda cambiata.",
+    "In un'altra scheda di questo browser è stata aperta un'altra azienda: questa pagina non legge e non salva più nulla. Ricarica per continuare.",
+    true,
+  );
+}
+suAziendaCambiata(fermaPerAziendaCambiata);
+
 // 401: la sessione non vale più, si torna all'accesso (tranne sulle pagine pubbliche). 403/409: ci si ferma con un avviso.
 function gestisciRifiuto(e: unknown): boolean {
   if (!(e instanceof ErroreApi)) return false;
+  if (e.stato === 409 && e.motivo === MOTIVO_AZIENDA_CAMBIATA) {
+    segnalaAziendaCambiata(); // già segnalato da fetchAzienda: qui per sicurezza
+    return true;
+  }
   if (e.stato === 401) {
     fermata = true;
     // Sessione finita (per esempio scaduta sul server prima del blocco sullo schermo): le modifiche non inviate
@@ -123,7 +151,7 @@ function sanitize(raw: unknown): Partial<S> | null {
 const keyOf = (r: Rec) => r.id ?? r.typeId ?? "";
 
 async function api(method: "GET" | "PUT", body?: unknown) {
-  const r = await fetch("/api/demo-state", {
+  const r = await fetchAzienda("/api/demo-state", {
     method,
     cache: "no-store",
     // Le letture partono da sole ogni 2,5 s: non sono attività della persona (le scritture sì)
@@ -150,6 +178,12 @@ async function pushAll() {
     synced = pick(s);
     segnaAllineato();
   } catch (e) {
+    // Archivio demo da aggiornare (vuoto o di una versione vecchia): lo può sostituire solo il responsabile.
+    // Riprovare ogni 2,5 secondi non serve: ci si ferma finché un responsabile non apre il gestionale.
+    if (e instanceof ErroreApi && e.stato === 403 && e.motivo === "ruolo") {
+      fermaConAvviso("Serve il responsabile per aggiornare l'archivio demo: finché non lo apre, questo dispositivo non sincronizza i dati.", "Archivio demo da aggiornare.", true);
+      return;
+    }
     if (!gestisciRifiuto(e)) throw e;
   } finally {
     pushing--;
@@ -193,6 +227,8 @@ async function pull() {
   if (dirty || pushing || fermata) return;
   try {
     const res = await api("GET");
+    // Risposta di un'altra azienda (la sessione è cambiata): mai applicarla a questa scheda
+    if (typeof res.aziendaId === "string" && aziendaFissata() && res.aziendaId !== aziendaFissata()) return segnalaAziendaCambiata();
     demoAzienda = res.demo === true;
     if (devePubblicareStatoLocale({ state: res.state, schema: res.schema, demo: demoAzienda }, STORE_SCHEMA)) return await pushAll();
     if (!res.state || res.schema !== STORE_SCHEMA) {
@@ -253,6 +289,8 @@ async function inviaSalvateInSospeso() {
     togliInSospeso();
   } catch (e) {
     if (!(e instanceof ErroreApi) || e.stato === 401) return; // rete assente o accesso perso: restano per la prossima volta
+    // Sessione passata a un'altra azienda: le modifiche restano in coda per la prossima volta in questa azienda
+    if (e.stato === 409 && e.motivo === MOTIVO_AZIENDA_CAMBIATA) return void gestisciRifiuto(e);
     // Rifiutate dal server: riprovarle non serve, ma chi lavora deve saperlo
     togliInSospeso();
     if (e.stato === 403 || e.stato === 409) {

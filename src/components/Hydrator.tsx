@@ -8,6 +8,8 @@ import { BloccoInattivita } from "./BloccoInattivita";
 import { caricaSessione } from "@/lib/accesso/client";
 import { percorsoNegozio, percorsoPiattaforma, percorsoPubblico } from "@/lib/accesso/percorsi";
 import type { Accesso } from "@/lib/accesso/regole";
+import { aziendaDaAnnuncio, aziendaFissata, fissaAzienda, segnalaAziendaCambiata } from "@/lib/accesso/azienda-client";
+import { chiaviDaTogliere } from "@/lib/accesso/copie-locali";
 
 // Nome da mostrare per chi usa il dispositivo: dal collegamento a PIN il dispositivo ha un nome, altrimenti "Browser"
 const operatoreDa = (a: Accesso) => ({ nome: a.utente.nome, dispositivo: a.dispositivo?.nome ?? "Browser", assistenza: !!a.assistenza });
@@ -80,7 +82,10 @@ export function Hydrator({ children }: { children: React.ReactNode }) {
         window.location.assign(`/accesso?da=${encodeURIComponent(window.location.pathname + window.location.search)}`);
         return;
       }
-      setPin(e.accesso.tipo === "pin");
+      // Blocco dopo 5 minuti: sessione da PIN, o qualunque sessione su un dispositivo condiviso (es. il responsabile sul tablet)
+      setPin(e.accesso.tipo === "pin" || e.accesso.dispositivoCondiviso === true);
+      // Questa scheda resta di questa azienda: ogni chiamata alle API lo dice al server (x-azienda)
+      fissaAzienda(e.accesso.azienda.id);
       const chiave = `${STORE_SCHEMA}:${e.accesso.azienda.id}`;
       // Prima la chiave dell'azienda, poi ogni altra scrittura: niente può finire nella chiave sbagliata
       useStore.persist.setOptions({ name: chiave });
@@ -88,6 +93,13 @@ export function Hydrator({ children }: { children: React.ReactNode }) {
       let copiaLocale: string | null = null;
       try {
         localStorage.removeItem(STORE_SCHEMA); // vecchia chiave senza azienda
+        // Cambio di azienda: le copie locali delle altre aziende si tolgono (restano solo le loro modifiche in sospeso)
+        const tutte: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k) tutte.push(k);
+        }
+        for (const k of chiaviDaTogliere(tutte, STORE_SCHEMA, e.accesso.azienda.id)) localStorage.removeItem(k);
         copiaLocale = localStorage.getItem(chiave);
       } catch {}
       useStore.getState().setSessione(operatoreDa(e.accesso), e.accesso.ruoli);
@@ -104,9 +116,19 @@ export function Hydrator({ children }: { children: React.ReactNode }) {
       }
       if (useStore.persist.hasHydrated()) done();
     })();
+    // Un'altra scheda ha cambiato l'azienda della sessione (ingresso o uscita di assistenza): questa scheda si ferma
+    // (le modifiche non inviate restano in sospeso per questa azienda) e si ricarica con l'azienda nuova.
+    const daAltraScheda = (ev: StorageEvent) => {
+      const nuova = aziendaDaAnnuncio(ev);
+      if (nuova === undefined || !aziendaFissata() || nuova === aziendaFissata()) return;
+      segnalaAziendaCambiata();
+      window.location.reload();
+    };
+    window.addEventListener("storage", daAltraScheda);
     return () => {
       attivo = false;
       unsub();
+      window.removeEventListener("storage", daAltraScheda);
     };
   }, [pubblica, negozio]);
 
