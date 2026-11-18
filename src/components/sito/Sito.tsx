@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BRAND, PRODUTTORE } from "@/lib/config";
+import { Logo } from "@/components/Logo";
 import { LostarCredit } from "@/components/Lostar";
 
 // Testata e piede delle pagine pubbliche (presentazione e normative): la fascia blu della scatola.
@@ -18,8 +19,8 @@ export function Testata({ attiva }: { attiva?: "news" }) {
       </a>
       <header className="relative z-20 bg-band text-white">
         <div className="mx-auto flex h-16 max-w-[1240px] items-center justify-between gap-4 px-4 md:h-[72px] md:px-8">
-          <Link href="/scopri" className="code text-[24px] font-bold uppercase leading-none tracking-[0.02em] md:text-[28px]">
-            {BRAND.azienda}
+          <Link href="/scopri" aria-label={`${BRAND.azienda}, presentazione`}>
+            <Logo className="text-[30px] md:text-[34px]" />
           </Link>
           <nav className="flex items-center gap-1 md:gap-2" aria-label="Sito">
             <Link href="/scopri#percorso" className={voce}>

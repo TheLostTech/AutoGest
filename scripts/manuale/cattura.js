@@ -1,4 +1,4 @@
-// Cattura gli screenshot del manuale operativo (Autodemolizione 4.0).
+// Cattura gli screenshot del manuale operativo (AutoLost).
 // Ogni file ha lo stesso nome del segnaposto nel manuale: «[Screenshot · accettazione-01-oggi]» → accettazione-01-oggi.png
 //
 // Uso (con il gestionale avviato):
