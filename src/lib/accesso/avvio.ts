@@ -6,6 +6,8 @@ import { copyFile, cp, mkdir, readFile, rename, stat, writeFile } from "node:fs/
 import path from "node:path";
 import type { AuthContext } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
+import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
+import { SEGRETO_DI_PROVA } from "@/lib/auth/segreto";
 import { auth } from "@/lib/auth/server";
 import { creaStatoAzienda } from "@/lib/archivio-azienda";
 import { DEFAULT_LISTINI } from "@/lib/pricing";
@@ -173,11 +175,32 @@ async function superadmin(c: AuthContext) {
   console.log("[avvio] super admin creato");
 }
 
+// Codici del secondo fattore salvati quando il segreto era ancora il valore di prova di Better Auth (prima di segreto.ts):
+// si ricifrano con il segreto vero, altrimenti il super admin non potrebbe più entrare. Ogni avvio, senza effetti se già fatto.
+async function ricifraDueFattori(c: AuthContext) {
+  const segreto = c.secretConfig;
+  if (typeof segreto !== "string" || segreto === SEGRETO_DI_PROVA) return;
+  const righe = await c.adapter.findMany<{ id: string; secret: string }>({ model: "twoFactor" });
+  for (const r of righe) {
+    if (typeof r.secret !== "string" || !r.secret) continue;
+    const giaBuono = await symmetricDecrypt({ key: segreto, data: r.secret }).then(() => true, () => false);
+    if (giaBuono) continue;
+    const chiaro = await symmetricDecrypt({ key: SEGRETO_DI_PROVA, data: r.secret }).catch(() => null);
+    if (chiaro === null) {
+      console.error("[avvio] codice del secondo fattore non leggibile (segreto cambiato?): l'utente dovrà riattivarlo.");
+      continue;
+    }
+    await c.adapter.update({ model: "twoFactor", where: [{ field: "id", value: r.id }], update: { secret: await symmetricEncrypt({ key: segreto, data: chiaro }) } });
+    console.log("[avvio] codice del secondo fattore ricifrato con il segreto della cartella dati");
+  }
+}
+
 export async function avviaPiattaforma(): Promise<void> {
   try {
     const { runMigrations } = await getMigrations(auth.options);
     await runMigrations();
     const c = (await auth.$context) as unknown as AuthContext;
+    await ricifraDueFattori(c);
 
     const demo = await aziendaDemo(c);
     if (demo && !demo.preparata) await preparaDemo(c, demo.id);
