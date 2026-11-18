@@ -56,8 +56,16 @@ function cutWords(s: string, max: number): string {
   return i > 0 ? cut.slice(0, i) : "";
 }
 
+// Toglie dal lato le parole già presenti nel tipo: "Faro anteriore" + "Anteriore sx" → "sx".
+function sideWithoutType(tipo: string, lato?: string): string | undefined {
+  if (!lato) return lato;
+  const inTipo = new Set(tipo.toLowerCase().split(/\s+/).filter(Boolean));
+  const rest = lato.split(/\s+/).filter((w) => w && !inTipo.has(w.toLowerCase()));
+  return rest.length ? rest.join(" ") : undefined;
+}
+
 export function buildTitle(t: TitleInput): string {
-  let cur: TitleInput = { ...t };
+  let cur: TitleInput = { ...t, lato: sideWithoutType(t.tipo, t.lato) };
   let s = compose(cur);
   if (s.length <= MAX_TITOLO) return s;
   cur = { ...cur, versione: undefined };

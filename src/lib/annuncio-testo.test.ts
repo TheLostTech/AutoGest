@@ -27,6 +27,15 @@ test("il titolo completo sta in 80 caratteri", () => {
   assert.ok(t.length <= 80);
 });
 
+test("il lato non ripete le parole già nel tipo di pezzo", () => {
+  assert.equal(
+    buildTitle({ ...base, lato: "Anteriore sx" }),
+    "Faro anteriore sx Alfa Romeo Giulietta 1.4 T-Jet 120 CV 2014 OE 50510123 usato",
+  );
+  assert.ok(buildTitle({ ...base, tipo: "Fanale posteriore", lato: "POSTERIORE dx" }).startsWith("Fanale posteriore dx "));
+  assert.ok(buildTitle({ ...base, tipo: "Porta", lato: "Anteriore sx" }).startsWith("Porta Anteriore sx "));
+});
+
 test("se è troppo lungo toglie prima la versione, poi gli anni, e tiene il codice", () => {
   const t = buildTitle({ ...base, versione: "2.0 JTDm Distinctive Business Plus 170 CV" });
   assert.ok(!t.includes("JTDm"));
