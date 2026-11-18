@@ -1,7 +1,7 @@
 // Ordine e pagamento del negozio: stesse regole per lo store del browser e per il server. Si eseguono con: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ordineNegozio, pagaOrdine, type StatoCondiviso } from "./negozio-ordine.ts";
+import { ordineNegozio, pagaOrdine, rilasciaScaduti, type StatoCondiviso } from "./negozio-ordine.ts";
 
 const cliente = { user: "Anna Verdi", role: "cliente", device: "Negozio online" };
 const pezzo = (id: string, over: Record<string, unknown> = {}) => ({
@@ -79,6 +79,19 @@ test("pagamento rifiutato: il pezzo torna disponibile e nell'annuncio", () => {
   assert.equal(st.orders[0].status, "pagamento fallito");
   assert.equal(st.parts[0].status, "disponibile");
   assert.equal(st.parts[0].annuncioId, "A-000001");
+});
+
+test("riserva scaduta: ordine non pagato rilasciato, pezzo disponibile, riga di registro", () => {
+  const o = ordineNegozio(stato(), { annuncioIds: ["A-000001"], cliente: "Anna", attore: cliente }, "2026-03-01T10:00:00.000Z");
+  assert.ok(o.ok);
+  if (!o.ok) return;
+  const t0 = Date.parse("2026-03-01T10:00:00.000Z");
+  assert.equal(rilasciaScaduti(o.st, t0 + 30 * 60_000), o.st);
+  const r = rilasciaScaduti(o.st, t0 + 30 * 60_000 + 1);
+  assert.equal(r.orders[0].status, "pagamento fallito");
+  assert.equal(r.parts[0].status, "disponibile");
+  assert.ok(r.audit.some((e) => e.action === "Riserva scaduta" && e.entityId === o.ordineId));
+  assert.equal(r.annunci[0].negozio?.stato, "online");
 });
 
 test("pagamento: ordine inesistente o già chiuso non cambia nulla (stesso oggetto)", () => {

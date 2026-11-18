@@ -15,7 +15,7 @@ import { nextToShip, partsOf, quantityOf } from "@/lib/annunci";
 type Step = "carrello" | "pagamento" | "esito";
 type Consegna = "corriere" | "ritiro";
 // Ordine fatto sul server: il token serve a pagarlo; importo e consegna arrivano dalle risposte
-type Ordine = { id: string; token: string; amount: number; delivery: Consegna; pagato?: boolean };
+type Ordine = { id: string; token: string; amount: number; delivery: Consegna; pagato?: boolean; pagamentoAttivo: boolean };
 
 export default function Carrello() {
   // Il catalogo pubblico (annunci e pezzi in vendita): lo carica l'Hydrator dal server
@@ -50,7 +50,7 @@ export default function Carrello() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ annuncioIds: cart.ids, nome: form.nome || "Cliente online", consegna: delivery }),
       });
-      const j = (await r.json().catch(() => ({}))) as { ordineId?: string; token?: string; importo?: number; conflicts?: string[]; error?: string };
+      const j = (await r.json().catch(() => ({}))) as { ordineId?: string; token?: string; importo?: number; pagamentoAttivo?: boolean; conflicts?: string[]; error?: string };
       if (r.status === 409) {
         setError(`Mentre completavi l'ordine, ${(j.conflicts ?? []).join(", ")} è stato venduto o riservato su un altro canale. Toglilo dal carrello per continuare.`);
         return;
@@ -59,7 +59,7 @@ export default function Carrello() {
         setError(j.error ?? "Non riesco a registrare l'ordine: riprova tra poco.");
         return;
       }
-      setOrder({ id: j.ordineId, token: j.token, amount: j.importo ?? total, delivery });
+      setOrder({ id: j.ordineId, token: j.token, amount: j.importo ?? total, delivery, pagamentoAttivo: j.pagamentoAttivo === true });
       setStep("pagamento");
     } catch {
       setError("Non riesco a raggiungere il negozio: riprova tra poco.");
@@ -99,9 +99,12 @@ export default function Carrello() {
       <div className="mx-auto max-w-md">
         <div className="rounded-md border border-hair bg-label p-6">
           <h1 className="text-[26px] font-bold">Ordine {order.id}</h1>
-          <p className="mt-1 text-ink-2">Pagina del provider di pagamento (simulata). I pezzi sono riservati per te mentre completi il pagamento. Nessun dato della carta passa dal negozio.</p>
+          <p className="mt-1 text-ink-2">I pezzi sono riservati per te per 30 minuti. Pagina del provider di pagamento (simulata). Nessun dato della carta passa dal negozio.</p>
           <div className="code my-5 text-[44px] font-bold leading-none">{euro(order.amount)}</div>
           {error && <div className="mb-3"><Notice tone="danger">{error}</Notice></div>}
+          {!order.pagamentoAttivo ? (
+            <Notice tone="warn">Pagamento online non ancora attivo. I pezzi restano riservati per 30 minuti: chiamaci per completare l&apos;ordine.</Notice>
+          ) : (
           <div className="grid gap-2">
             <Button size="lg" onClick={() => pay(true)} disabled={paying}>
               {paying ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <CreditCard className="size-5" aria-hidden />}
@@ -109,6 +112,7 @@ export default function Carrello() {
             </Button>
             <Button size="lg" variant="secondary" onClick={() => pay(false)} disabled={paying}>Simula pagamento rifiutato</Button>
           </div>
+          )}
         </div>
       </div>
     );

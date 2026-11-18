@@ -11,8 +11,8 @@ import { eerByCode, movesForBonifica, movesForIntake, stockByEer } from "./ambie
 import { differenzaPesata } from "./stime";
 import { DEFAULT_LISTINI, onlinePrice, type Listino } from "./pricing";
 import { typeById } from "./catalog";
-import { GPSR_ERRORE, categoriaEbayDa, gpsrAfterVehicleChange, gpsrBlocksEbay, alignedPrice, groupKey, listingFieldsChanged, listingOf, membershipAfter, missingNote, partsOf, pickForSale, placementFor, quantityOf, refreshAnnuncio, shopPicks } from "./annunci";
-import { buildAnnuncio, fieldsFromPart, gpsrOf, textFor, type BozzaAnnuncio } from "./annuncio-build";
+import { GPSR_ERRORE, categoriaEbayDa, gpsrAfterVehicleChange, gpsrBlocksEbay, groupKey, listingFieldsChanged, listingOf, missingNote, partsOf, pickForSale, placementFor, quantityOf } from "./annunci";
+import { buildAnnuncio, fieldsFromPart, gpsrOf, type BozzaAnnuncio } from "./annuncio-build";
 import { isShippable } from "./spedizione";
 import type { EsitoAllinea, VenditaEbay } from "./ebay/contratto";
 import { applyEsito, type Inviato } from "./ebay/sync-puro";
@@ -39,7 +39,7 @@ import type {
   WasteMove,
 } from "./types";
 import { euro, publishChecks } from "./logic";
-import { ordineNegozio, pagaOrdine } from "./negozio-ordine";
+import { assestaPezzi, collocaPezzoInAnnuncio, ordineNegozio, pagaOrdine, ricalcolaAnnuncio } from "./negozio-ordine";
 import { canTransmit, firNumberTaken, isDraft, missingFields, monthLabel, nextRegisterNumber, periodsOf } from "./periodo";
 
 // Chi sta usando questo dispositivo: arriva dalla sessione (mai dai dati salvati nel browser).
@@ -299,36 +299,32 @@ export const useStore = create<State & Actions>()(
       const keyOf = (p: Part) => groupKey(p, shipOf(p));
       // Dati del pezzo che decidono l'annuncio: se cambiano, il pezzo può dover cambiare annuncio
       const sigOf = (p: Part) => JSON.stringify([p.typeId, p.oem ?? "", p.oemVerified, p.side ?? "", p.condition, shipOf(p)]);
-      const checksPass = (p: Part) => publishChecks(p, get().vehicles.find((v) => v.id === p.vehicleId)).every((c) => c.ok || !c.blocking);
       const annuncioEvent = (aid: string, action: string, detail?: string, actor?: Actor) => event({ entity: "annuncio", entityId: aid, action, detail, ...actor });
       const setAnnuncioOf = (partId: string, aid: string | undefined) =>
         set((st) => ({ parts: st.parts.map((x) => (x.id === partId ? { ...x, annuncioId: aid } : x)) }));
 
-      // Ricalcolo dopo ogni cambiamento che tocca quantità o dati: stato del negozio, data a zero,
-      // eBay da riallineare, testo riscritto se l'operatore non l'ha modificato
-      const touchAnnuncio = (aid: string) => {
-        let esaurito = false;
-        set((st) => {
-          const a = st.annunci.find((x) => x.id === aid);
-          if (!a) return {};
-          const next = refreshAnnuncio(a, st.parts, now(), (q) => textFor(a, st.parts, st.vehicles, q));
-          esaurito = !!next.esauritoDa && !a.esauritoDa;
-          return { annunci: st.annunci.map((x) => (x.id === aid ? next : x)) };
-        });
-        if (esaurito) push(annuncioEvent(aid, "Annuncio esaurito", "Nessun pezzo disponibile: l'annuncio resta, a zero"));
+      // Annunci e pezzi: la logica sta in negozio-ordine.ts (la usa anche il server); qui si prende una copia dello stato,
+      // si applica e si scrivono solo le chiavi cambiate (se nulla cambia, nessuna scrittura: la sincronizzazione non parte)
+      const lavora = (fn: (st: State, at: string, pred: Actor) => State) => {
+        const cur = get();
+        const pred = { user: nomeOperatore(cur.operatore), role: cur.role, device: dispositivoOperatore(cur.operatore) };
+        const next = fn(cur, now(), pred);
+        const patch: Partial<State> = {};
+        if (next.parts !== cur.parts) patch.parts = next.parts;
+        if (next.annunci !== cur.annunci) patch.annunci = next.annunci;
+        if (next.audit.length !== cur.audit.length) {
+          patch.audit = next.audit;
+          patch.counters = next.counters;
+        }
+        if (Object.keys(patch).length) set(patch);
       };
 
+      // Ricalcolo dopo ogni cambiamento che tocca quantità o dati: stato del negozio, data a zero,
+      // eBay da riallineare, testo riscritto se l'operatore non l'ha modificato
+      const touchAnnuncio = (aid: string) => lavora((st, at, pred) => ricalcolaAnnuncio(st, aid, at, pred));
+
       // Un pezzo disponibile, senza annuncio e che passa i controlli entra da solo nell'annuncio uguale con lo stesso prezzo
-      const placePart = (partId: string) => {
-        const s = get();
-        const p = s.parts.find((x) => x.id === partId);
-        if (!p || p.status !== "disponibile" || p.annuncioId || !checksPass(p)) return;
-        const place = placementFor(p, keyOf(p), s.annunci);
-        if (place.kind !== "unisci") return;
-        setAnnuncioOf(partId, place.annuncioId);
-        push(annuncioEvent(place.annuncioId, "Pezzo aggiunto all'annuncio", partId));
-        touchAnnuncio(place.annuncioId);
-      };
+      const placePart = (partId: string) => lavora((st, at, pred) => collocaPezzoInAnnuncio(st, partId, at, pred));
 
       // I pezzi in coda uguali a un annuncio appena creato, ripubblicato o con un prezzo nuovo vi entrano da soli
       const joinQueued = (aid: string) => {
@@ -342,34 +338,7 @@ export const useStore = create<State & Actions>()(
       // Dopo un cambio di stato: scartato o invendibile escono dall'annuncio; chi torna disponibile
       // resta solo se passa i controlli (altrimenti torna in coda); poi si ricalcolano gli annunci toccati
       // e i pezzi disponibili senza annuncio cercano un annuncio uguale
-      const settle = (ids: string[]) => {
-        const touched = new Set<string>();
-        for (const id of ids) {
-          const p = get().parts.find((x) => x.id === id);
-          if (!p?.annuncioId) continue;
-          touched.add(p.annuncioId);
-          if (membershipAfter(p, checksPass(p)) === p.annuncioId) {
-            // Resta o rientra disponibile: prende il prezzo dell'annuncio (un prezzo solo per i pezzi uguali)
-            const a = get().annunci.find((x) => x.id === p.annuncioId);
-            const price = alignedPrice(p, a);
-            if (price !== undefined) {
-              set((st) => ({ parts: st.parts.map((x) => (x.id === id ? { ...x, price } : x)) }));
-              push(event({ entity: "ricambio", entityId: id, action: `Prezzo allineato all'annuncio ${p.annuncioId}: ${euro(p.price)} → ${euro(price)}` }));
-            }
-            continue;
-          }
-          setAnnuncioOf(id, undefined);
-          push(
-            annuncioEvent(
-              p.annuncioId,
-              "Pezzo uscito dall'annuncio",
-              `${id} · ${p.status === "disponibile" ? "controlli di pubblicazione non superati: torna in coda" : p.status}`,
-            ),
-          );
-        }
-        touched.forEach(touchAnnuncio);
-        ids.forEach(placePart);
-      };
+      const settle = (ids: string[]) => lavora((st, at, pred) => assestaPezzi(st, ids, at, pred));
 
       return {
         ...initial(),

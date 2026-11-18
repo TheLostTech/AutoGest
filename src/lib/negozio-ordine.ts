@@ -4,6 +4,7 @@ import { alignedPrice, membershipAfter, placementFor, refreshAnnuncio, groupKey,
 import { textFor } from "./annuncio-build.ts";
 import { typeById } from "./catalog.ts";
 import { euro, publishChecks } from "./logic.ts";
+import { ordiniScaduti } from "./negozio-regole.ts";
 import { onlinePrice } from "./pricing.ts";
 import { isShippable } from "./spedizione.ts";
 import type { Annuncio, AuditEvent, Order, Part, Vehicle } from "./types";
@@ -91,6 +92,24 @@ function assesta(w: StatoCondiviso, at: string, ids: string[], predefinito: Atto
   ids.forEach((id) => collocaPezzo(w, at, id, predefinito));
 }
 
+// Le stesse operazioni sullo stato intero (copia di lavoro dentro): le usa lo store del browser al posto di copie proprie
+type Pred = Attore;
+export function ricalcolaAnnuncio<S extends StatoCondiviso>(st: S, aid: string, at: string, predefinito: Pred): S {
+  const w = copia(st);
+  toccaAnnuncio(w, at, aid, predefinito);
+  return w;
+}
+export function collocaPezzoInAnnuncio<S extends StatoCondiviso>(st: S, partId: string, at: string, predefinito: Pred): S {
+  const w = copia(st);
+  collocaPezzo(w, at, partId, predefinito);
+  return w;
+}
+export function assestaPezzi<S extends StatoCondiviso>(st: S, ids: string[], at: string, predefinito: Pred): S {
+  const w = copia(st);
+  assesta(w, at, ids, predefinito);
+  return w;
+}
+
 export type EsitoOrdine<S extends StatoCondiviso> =
   | { ok: true; st: S; ordineId: string }
   // Anche un rifiuto lascia una riga nel registro ("Riserva rifiutata"): st è lo stato con quella riga
@@ -139,20 +158,33 @@ export function ordineNegozio<S extends StatoCondiviso>(
  * Pagamento (simulato) di un ordine in attesa: riuscito, i pezzi sono venduti; rifiutato, tornano disponibili.
  * Un ordine che non c'è o non è in attesa non cambia nulla. predefinito: firma delle righe di sistema, se diversa da attore.
  */
-export function pagaOrdine<S extends StatoCondiviso>(st: S, ordineId: string, riuscito: boolean, attore: Attore, at: string, predefinito?: Attore): S {
+export function pagaOrdine<S extends StatoCondiviso>(st: S, ordineId: string, riuscito: boolean, attore: Attore, at: string, predefinito?: Attore, scaduta = false): S {
   const o = st.orders.find((x) => x.id === ordineId);
   if (!o || o.status !== "in attesa di pagamento") return st;
   const w = copia(st);
   const status = riuscito ? "pagato" : "pagamento fallito";
   w.orders = w.orders.map((x) =>
-    x.id === ordineId ? { ...x, status, paymentRef: riuscito ? `PAY-DEMO-${ordineId.slice(2)}` : undefined, history: [...x.history, { at, status, note: riuscito ? "Conferma dal provider (simulata)" : "Rifiuto dal provider (simulato)" }] } : x,
+    x.id === ordineId ? { ...x, status, paymentRef: riuscito ? `PAY-DEMO-${ordineId.slice(2)}` : undefined, history: [...x.history, { at, status, note: scaduta ? "Riserva scaduta: nessun pagamento entro 30 minuti" : riuscito ? "Conferma dal provider (simulata)" : "Rifiuto dal provider (simulato)" }] } : x,
   );
   // Venduto: esce dal negozio; pagamento fallito: torna disponibile
   w.parts = w.parts.map((x) => (o.partIds.includes(x.id) ? { ...x, status: riuscito ? "venduto" : "disponibile" } : x));
-  registra(w, at, { entity: "ordine", entityId: ordineId, action: riuscito ? "Pagamento confermato" : "Pagamento fallito", detail: riuscito ? "Webhook provider (simulato)" : "Disponibilità ripristinata" }, attore);
+  registra(w, at, { entity: "ordine", entityId: ordineId, action: scaduta ? "Riserva scaduta" : riuscito ? "Pagamento confermato" : "Pagamento fallito", detail: riuscito ? "Webhook provider (simulato)" : "Disponibilità ripristinata" }, attore);
   for (const pid of o.partIds) {
     registra(w, at, { entity: "ricambio", entityId: pid, action: riuscito ? "Stato: riservato → venduto" : "Stato: riservato → disponibile", detail: ordineId }, attore);
   }
   assesta(w, at, o.partIds, predefinito ?? attore);
   return w;
+}
+
+const SISTEMA: Attore = { user: "Negozio online", role: "sistema", device: "Negozio online" };
+
+/** Rilascia le riserve degli ordini del negozio non pagati da più di 30 minuti: pezzi di nuovo disponibili, come un pagamento fallito, con la riga "Riserva scaduta". */
+export function rilasciaScaduti<S extends StatoCondiviso>(st: S, oraMs: number): S {
+  const at = new Date(oraMs).toISOString();
+  return ordiniScaduti(st.orders, oraMs).reduce((s, id) => pagaOrdine(s, id, false, SISTEMA, at, SISTEMA, true), st);
+}
+
+/** L'archivio dell'azienda con le sole chiavi che ordine e pagamento cambiano sostituite: le altre restano com'erano. */
+export function nelArchivio(s: Record<string, unknown>, st: StatoCondiviso): Record<string, unknown> {
+  return { ...s, parts: st.parts, orders: st.orders, counters: { ...(s.counters as object), ...st.counters }, audit: st.audit, annunci: st.annunci };
 }
