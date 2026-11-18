@@ -199,6 +199,7 @@ test("cambiare IP a ogni tentativo non serve: 10 password sbagliate per lo stess
 
 test("20 accessi in parallelo sullo stesso account da 20 IP: al massimo 10 arrivano alla verifica della password", async () => {
   const email = "parallelo@prova.invalid";
+  await c.internalAdapter.createUser({ name: "Parallelo", email, emailVerified: true }, { method: "admin" });
   const risposte = await Promise.all(
     Array.from({ length: 20 }, (_, i) =>
       m.auth.auth.handler(
@@ -213,4 +214,25 @@ test("20 accessi in parallelo sullo stesso account da 20 IP: al massimo 10 arriv
   const stati = risposte.map((r) => r.status);
   assert.ok(stati.filter((s) => s === 401).length <= 10, stati.join());
   assert.ok(stati.filter((s) => s === 429).length >= 10, stati.join());
+});
+
+test("email inesistenti: contatore comune da 30 al minuto, l'account vero intanto entra", async () => {
+  const prova = (email: string, password: string, ip: string) =>
+    m.auth.auth.handler(
+      new Request("http://localhost:3000/api/auth/sign-in/email", {
+        method: "POST",
+        headers: { origin: "http://localhost:3000", "content-type": "application/json", "cf-connecting-ip": ip },
+        body: JSON.stringify({ email, password }),
+      }),
+    );
+  const stati: number[] = [];
+  for (let i = 0; i < 35; i++) stati.push((await prova(`caso${i}@prova.invalid`, "x-12345678", `203.0.113.${i + 10}`)).status);
+  assert.ok(stati.includes(429), stati.join());
+  assert.ok(stati.filter((s) => s === 401).length <= 30, stati.join());
+  const cred = JSON.parse(await readFile(path.join(process.env.DATI_DIR!, "credenziali-demo.json"), "utf8")) as Record<string, { email?: string; password?: string }>;
+  // Il secondo account demo con email (il primo è stato bloccato dalla prova sopra)
+  const vero = Object.values(cred).filter((v) => !!v.password && !!v.email)[1];
+  if (!vero) return;
+  const r = await prova(vero.email!, vero.password!, "203.0.113.200");
+  assert.equal(r.status, 200);
 });

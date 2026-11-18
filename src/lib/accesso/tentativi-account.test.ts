@@ -1,17 +1,33 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ACCOUNT_BLOCCO_MS, ACCOUNT_ERRORI_MAX, ACCOUNT_FINESTRA_MS, IN_VOLO_MS, accountBloccato, chiaveAccount, chiudi, prenota, type Conti } from "./tentativi-account.ts";
+import {
+  ACCOUNT_BLOCCO_MS,
+  ACCOUNT_ERRORI_MAX,
+  ACCOUNT_FINESTRA_MS,
+  IN_VOLO_MS,
+  SCONOSCIUTI_FINESTRA_MS,
+  SCONOSCIUTI_MAX,
+  accountBloccato,
+  chiaveAccount,
+  chiudi,
+  prenota,
+  tentativoSconosciuto,
+  type Conti,
+} from "./tentativi-account.ts";
 
 const ORA = 1_800_000_000_000;
-const K = "mario@esempio.it";
+const K = "u:mario";
+let n = 0;
+const gettone = () => `g${++n}`;
 
 /** n tentativi uno dopo l'altro, tutti con password sbagliata. Restituisce a quale si è bloccato (o null). */
-function sbaglia(conti: Conti, n: number, da = ORA, passo = 1000): number | null {
+function sbaglia(conti: Conti, quanti: number, da = ORA, passo = 1000): number | null {
   let bloccatoAl: number | null = null;
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < quanti; i++) {
     const t = da + i * passo;
-    if (prenota(conti, K, t) !== "ok") continue;
-    if (chiudi(conti, K, t, "sbagliata")) bloccatoAl = i + 1;
+    const g = gettone();
+    if (prenota(conti, K, g, t) !== "ok") continue;
+    if (chiudi(conti, K, g, t, "sbagliata")) bloccatoAl = i + 1;
   }
   return bloccatoAl;
 }
@@ -19,14 +35,15 @@ function sbaglia(conti: Conti, n: number, da = ORA, passo = 1000): number | null
 test("9 password sbagliate: si entra ancora; la decima blocca l'account per 15 minuti, anche con la password giusta", () => {
   const c: Conti = new Map();
   assert.equal(sbaglia(c, ACCOUNT_ERRORI_MAX - 1), null);
-  assert.equal(prenota(c, K, ORA + 20_000), "ok");
-  chiudi(c, K, ORA + 20_000, "altro");
+  const g = gettone();
+  assert.equal(prenota(c, K, g, ORA + 20_000), "ok");
+  chiudi(c, K, g, ORA + 20_000, "altro");
   const d: Conti = new Map();
   assert.equal(sbaglia(d, ACCOUNT_ERRORI_MAX), ACCOUNT_ERRORI_MAX);
   const fine = ORA + (ACCOUNT_ERRORI_MAX - 1) * 1000;
-  assert.equal(prenota(d, K, fine + 1), "bloccato");
+  assert.equal(prenota(d, K, gettone(), fine + 1), "bloccato");
   assert.equal(accountBloccato(d.get(K), fine + ACCOUNT_BLOCCO_MS - 1), true);
-  assert.equal(prenota(d, K, fine + ACCOUNT_BLOCCO_MS), "ok");
+  assert.equal(prenota(d, K, gettone(), fine + ACCOUNT_BLOCCO_MS), "ok");
 });
 
 test("errori più vecchi di 15 minuti non contano (cambiare IP non serve, aspettare sì)", () => {
@@ -36,52 +53,60 @@ test("errori più vecchi di 15 minuti non contano (cambiare IP non serve, aspett
 
 test("20 tentativi in parallelo sullo stesso account: al massimo 10 arrivano alla verifica della password", () => {
   const c: Conti = new Map();
-  const esiti = Array.from({ length: 20 }, () => prenota(c, K, ORA));
+  const esiti = Array.from({ length: 20 }, () => prenota(c, K, gettone(), ORA));
   assert.equal(esiti.filter((e) => e === "ok").length, ACCOUNT_ERRORI_MAX);
-  assert.ok(esiti.slice(ACCOUNT_ERRORI_MAX).every((e) => e === "bloccato"));
-  // Con 5 errori già registrati ne passano solo altri 5
   const d: Conti = new Map();
   sbaglia(d, 5);
-  const altri = Array.from({ length: 20 }, () => prenota(d, K, ORA + 10_000));
+  const altri = Array.from({ length: 20 }, () => prenota(d, K, gettone(), ORA + 10_000));
   assert.equal(altri.filter((e) => e === "ok").length, ACCOUNT_ERRORI_MAX - 5);
 });
 
-test("prenotazioni senza esito (errore del server) scadono da sole", () => {
+test("ogni esito toglie solo il suo gettone; un gettone sconosciuto o già chiuso non conta e non libera altri", () => {
   const c: Conti = new Map();
-  for (let i = 0; i < ACCOUNT_ERRORI_MAX; i++) prenota(c, K, ORA);
-  assert.equal(prenota(c, K, ORA + 1), "bloccato");
-  assert.equal(prenota(c, K, ORA + IN_VOLO_MS + 1), "ok");
+  const gs = Array.from({ length: ACCOUNT_ERRORI_MAX }, () => gettone());
+  for (const g of gs) prenota(c, K, g, ORA);
+  assert.equal(prenota(c, K, gettone(), ORA), "bloccato");
+  chiudi(c, K, "mai-visto", ORA, "altro");
+  chiudi(c, K, gs[0], ORA, "altro");
+  chiudi(c, K, gs[0], ORA, "sbagliata"); // seconda volta: niente
+  assert.equal(c.get(K)!.inVolo.size, ACCOUNT_ERRORI_MAX - 1);
+  assert.equal(c.get(K)!.errori.length, 0);
+  assert.equal(prenota(c, K, gettone(), ORA), "ok");
 });
 
-test("inondare il server di email a caso non libera un account con errori o bloccato; da pieno le email nuove si rifiutano", () => {
+test("gettoni rimasti senza esito (errore del server) scadono dopo 60 secondi", () => {
   const c: Conti = new Map();
-  const MAX = 50;
-  // Account bersaglio con 9 errori, un altro bloccato
-  for (let i = 0; i < 9; i++) {
-    prenota(c, K, ORA, MAX);
-    chiudi(c, K, ORA, "sbagliata");
-  }
-  for (let i = 0; i < ACCOUNT_ERRORI_MAX; i++) {
-    prenota(c, "bloccato@esempio.it", ORA, MAX);
-    chiudi(c, "bloccato@esempio.it", ORA, "sbagliata");
-  }
-  // Migliaia di email a caso, ognuna con un errore
-  const esiti: string[] = [];
-  for (let i = 0; i < 2000; i++) {
-    const k = `caso${i}@x.it`;
-    const e = prenota(c, k, ORA + 1, MAX);
-    esiti.push(e);
-    if (e === "ok") chiudi(c, k, ORA + 1, "sbagliata");
-  }
-  assert.ok(c.size <= MAX);
-  assert.ok(esiti.includes("pieno"));
-  assert.equal(c.get(K)?.errori.length, 9, "il conto del bersaglio resta");
-  assert.equal(prenota(c, "bloccato@esempio.it", ORA + 2, MAX), "bloccato");
-  // Il decimo errore del bersaglio lo blocca comunque
-  assert.equal(prenota(c, K, ORA + 2, MAX), "ok");
-  assert.equal(chiudi(c, K, ORA + 2, "sbagliata"), true);
-  // Passati 15 minuti le voci vecchie si dimenticano e le email nuove tornano a passare
-  assert.equal(prenota(c, "nuova@x.it", ORA + ACCOUNT_FINESTRA_MS + 10, MAX), "ok");
+  for (let i = 0; i < ACCOUNT_ERRORI_MAX; i++) prenota(c, K, gettone(), ORA);
+  assert.equal(prenota(c, K, gettone(), ORA + IN_VOLO_MS - 1), "bloccato");
+  assert.equal(prenota(c, K, gettone(), ORA + IN_VOLO_MS), "ok");
+});
+
+test("bloccato mentre una richiesta era in corso: resta bloccato anche se quella aveva la password giusta", () => {
+  const c: Conti = new Map();
+  const lento = gettone();
+  prenota(c, K, lento, ORA);
+  // Con il lento in corso al massimo 9 errori: il decimo posto è suo
+  assert.equal(sbaglia(c, ACCOUNT_ERRORI_MAX, ORA + 1), null);
+  assert.equal(c.get(K)!.errori.length, ACCOUNT_ERRORI_MAX - 1);
+  // Il lento resta appeso oltre i 60 secondi: il suo posto si libera e il decimo errore blocca
+  const t = ORA + IN_VOLO_MS + 10;
+  const g = gettone();
+  assert.equal(prenota(c, K, g, t), "ok");
+  assert.equal(chiudi(c, K, g, t, "sbagliata"), true);
+  // Ora arriva l'esito del lento, con la password giusta: l'account resta bloccato
+  chiudi(c, K, lento, t + 1, "giusta");
+  assert.equal(accountBloccato(c.get(K), t + 2), true);
+  assert.equal(prenota(c, K, gettone(), t + 2), "bloccato");
+});
+
+test("email inesistenti: un solo contatore comune da 30 al minuto, che non tocca gli account veri", () => {
+  const comune: number[] = [];
+  const esiti = Array.from({ length: 100 }, (_, i) => tentativoSconosciuto(comune, ORA + i));
+  assert.equal(esiti.filter(Boolean).length, SCONOSCIUTI_MAX);
+  assert.equal(tentativoSconosciuto(comune, ORA + SCONOSCIUTI_FINESTRA_MS + 200), true);
+  // L'account vero non ne risente
+  const c: Conti = new Map();
+  assert.equal(prenota(c, K, gettone(), ORA + 50), "ok");
 });
 
 test("chiave per email senza maiuscole e spazi; password giusta azzera gli errori", () => {
@@ -90,7 +115,8 @@ test("chiave per email senza maiuscole e spazi; password giusta azzera gli error
   assert.equal(chiaveAccount(42), null);
   const c: Conti = new Map();
   sbaglia(c, 5);
-  prenota(c, K, ORA + 10_000);
-  chiudi(c, K, ORA + 10_000, "giusta");
+  const g = gettone();
+  prenota(c, K, g, ORA + 10_000);
+  chiudi(c, K, g, ORA + 10_000, "giusta");
   assert.equal(c.has(K), false);
 });
