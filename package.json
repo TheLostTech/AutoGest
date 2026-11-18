@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "postinstall": "node -e \"require('fs').mkdirSync('public/zxing',{recursive:true});require('fs').copyFileSync('node_modules/zxing-wasm/dist/reader/zxing_reader.wasm','public/zxing/zxing_reader.wasm')\"",
-    "test": "node --test src/lib/*.test.ts src/lib/ebay/*.test.ts src/lib/accesso/*.test.ts"
+    "test": "node --import ./scripts/alias-ts.mjs --test src/lib/*.test.ts src/lib/ebay/*.test.ts src/lib/accesso/*.test.ts src/lib/auth/*.test.ts src/lib/accesso/server.prova.ts",
+    "prova:accesso": "node --import ./scripts/alias-ts.mjs --test src/lib/accesso/server.prova.ts"
   },
   "dependencies": {
     "barcode-detector": "3.2.3",
