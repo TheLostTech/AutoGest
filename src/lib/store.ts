@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { buildSeed, pad } from "./seed";
+import { statoVuoto } from "./stato-iniziale";
 import { STORE_SCHEMA } from "./schema";
 import { locToString, originLabel, WAREHOUSES, type Warehouse } from "./warehouse";
 import { eerByCode, movesForBonifica, movesForIntake, stockByEer } from "./ambiente";
@@ -85,6 +86,8 @@ type Actor = { user: string; role: AuditEvent["role"]; device: string };
 interface Actions {
   setRole: (r: Role) => void;
   /** Dalla sessione: chi è, quali ruoli può usare. Il ruolo attivo resta uno di quelli permessi. */
+  /** Azienda vera: parte da un archivio vuoto, mai dai dati demo. */
+  avviaVuoto: () => void;
   setSessione: (operatore: Operatore | null, ruoliPermessi: Role[]) => void;
   setActiveVehicle: (id?: string) => void;
   addVehicle: (v: Omit<Vehicle, "id" | "createdBy" | "intakeAt">) => string;
@@ -192,8 +195,15 @@ const setStorageFull = (v: boolean) => {
   storageFull = v;
   storageListeners.forEach((f) => f());
 };
+// Il salvataggio nel browser è acceso solo nelle pagine della gestione (dopo l'accesso, con la chiave dell'azienda).
+// Nelle pagine pubbliche e prima dell'accesso resta spento: nessun dato di un'azienda finisce in una chiave condivisa.
+let salvaInLocale = false;
+export const abilitaSalvataggioLocale = (v: boolean) => {
+  salvaInLocale = v;
+};
 const deviceStorage = {
   getItem: (k: string) => {
+    if (!salvaInLocale) return null;
     try {
       return localStorage.getItem(k);
     } catch {
@@ -201,6 +211,7 @@ const deviceStorage = {
     }
   },
   setItem: (k: string, v: string) => {
+    if (!salvaInLocale) return;
     try {
       localStorage.setItem(k, v);
       setStorageFull(false);
@@ -362,6 +373,7 @@ export const useStore = create<State & Actions>()(
       return {
         ...initial(),
         setRole: (role) => set((s) => (s.ruoliPermessi.includes(role) ? { role } : s)),
+        avviaVuoto: () => set({ ...(statoVuoto({ listini: DEFAULT_LISTINI, warehouses: WAREHOUSES }) as unknown as Partial<State>), activeVehicleId: undefined }),
         setSessione: (operatore, ruoliPermessi) =>
           set((s) => ({ operatore, ruoliPermessi, role: ruoliPermessi.includes(s.role) || ruoliPermessi.length === 0 ? s.role : ruoliPermessi[0] })),
         setActiveVehicle: (id) => set({ activeVehicleId: id }),

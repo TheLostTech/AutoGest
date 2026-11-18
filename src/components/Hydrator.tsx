@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { STORE_SCHEMA, useStore } from "@/lib/store";
+import { abilitaSalvataggioLocale, STORE_SCHEMA, useStore } from "@/lib/store";
 import { startSync } from "@/lib/sync";
 import { caricaSessione } from "@/lib/accesso/client";
 import { percorsoPubblico } from "@/lib/accesso/percorsi";
@@ -14,27 +14,37 @@ const operatoreDa = (a: Accesso) => ({ nome: a.utente.nome, dispositivo: a.dispo
 export function Hydrator({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const path = usePathname();
-  // La pagina di accesso non ha bisogno dei dati; le altre pagine pubbliche (negozio, eBay simulato) restano come prima.
-  const soloAccesso = path === "/accesso" || path.startsWith("/accesso/");
+  // Le pagine pubbliche (accesso, negozio, eBay simulato, ...) non toccano i dati della gestione:
+  // niente salvataggio nel browser e niente sincronizzazione con l'archivio di un'azienda.
   const pubblica = percorsoPubblico(path);
 
   useEffect(() => {
-    if (soloAccesso) return;
+    if (pubblica) {
+      abilitaSalvataggioLocale(false);
+      return;
+    }
     let attivo = true;
     let unsub: () => void = () => {};
     (async () => {
-      if (!pubblica) {
-        const e = await caricaSessione();
-        if (!attivo) return;
-        if (!e.ok) {
-          // Senza sessione valida si torna all'accesso
-          window.location.assign(`/accesso?da=${encodeURIComponent(window.location.pathname + window.location.search)}`);
-          return;
-        }
-        // Prima chi è e quali ruoli ha, poi i dati salvati nel browser di QUESTA azienda
-        useStore.getState().setSessione(operatoreDa(e.accesso), e.accesso.ruoli);
-        useStore.persist.setOptions({ name: `${STORE_SCHEMA}:${e.accesso.azienda.id}` });
+      const e = await caricaSessione();
+      if (!attivo) return;
+      if (!e.ok) {
+        // Senza sessione valida si torna all'accesso
+        window.location.assign(`/accesso?da=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+        return;
       }
+      const chiave = `${STORE_SCHEMA}:${e.accesso.azienda.id}`;
+      // Prima la chiave dell'azienda, poi ogni altra scrittura: niente può finire nella chiave sbagliata
+      useStore.persist.setOptions({ name: chiave });
+      abilitaSalvataggioLocale(true);
+      let copiaLocale: string | null = null;
+      try {
+        localStorage.removeItem(STORE_SCHEMA); // vecchia chiave senza azienda
+        copiaLocale = localStorage.getItem(chiave);
+      } catch {}
+      useStore.getState().setSessione(operatoreDa(e.accesso), e.accesso.ruoli);
+      // Azienda vera senza copia locale: si parte da un archivio vuoto, mai dai dati demo
+      if (!e.accesso.azienda.demo && !copiaLocale) useStore.getState().avviaVuoto();
       // Prima i dati salvati nel browser, poi l'allineamento con gli altri dispositivi (al massimo 2 secondi)
       const done = () => void startSync().finally(() => attivo && setReady(true));
       unsub = useStore.persist.onFinishHydration(done);
@@ -49,10 +59,9 @@ export function Hydrator({ children }: { children: React.ReactNode }) {
       attivo = false;
       unsub();
     };
-  }, [soloAccesso, pubblica]);
+  }, [pubblica]);
 
-  if (soloAccesso) return <>{children}</>;
-  if (!ready) {
+  if (!pubblica && !ready) {
     return (
       <div className="grid min-h-dvh place-items-center bg-ground">
         <div className="code text-2xl font-semibold tracking-wide text-band">CARICAMENTO…</div>
