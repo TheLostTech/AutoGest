@@ -10,6 +10,7 @@ import { BRAND, DEMO_NOTICE } from "@/lib/config";
 import { GlobalSearch } from "./GlobalSearch";
 import { LostarCredit } from "./Lostar";
 import { resetShared } from "@/lib/sync";
+import { useEbaySync } from "@/lib/ebay-sync";
 
 // Navigazione per aree di lavoro: poche voci, le sottosezioni compaiono solo dentro l'area aperta.
 // Un'area senza sottosezioni visibili per il ruolo (o un modulo non attivo) non compare.
@@ -158,6 +159,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const role = useStore((s) => s.role);
   const setRole = useStore((s) => s.setRole);
   const storageFull = useDeviceStorageFull();
+  useEbaySync();
   const areas = visibleAreas(role);
   const cur = currentSub(path, areas);
   const tabs = MOBILE_TABS[role];

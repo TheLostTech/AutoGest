@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import { euro } from "@/lib/logic";
 import { gpsrBlocksEbay, isWithdrawn, negozioStato, nextToShip, quantityOf } from "@/lib/annunci";
 import { typeById } from "@/lib/catalog";
+import { controllaVendite, simulateEbaySale, statoPonte } from "@/lib/ebay-sync";
 import type { Annuncio } from "@/lib/types";
 import { GPSR_VUOTO, GpsrStep, gpsrDaScelta, type GpsrScelta } from "@/components/GpsrStep";
 import { Button, Empty, Notice, Panel } from "@/components/ui";
@@ -18,7 +19,7 @@ const TONO: Record<string, string> = {
 };
 const chip = (tono: string) => `code inline-flex h-7 items-center rounded px-2.5 text-[13px] font-semibold uppercase tracking-wide ${TONO[tono] ?? "bg-band-tint text-band-deep"}`;
 
-function AnnuncioRiga({ a }: { a: Annuncio }) {
+function AnnuncioRiga({ a, simulato }: { a: Annuncio; simulato: boolean }) {
   const s = useStore();
   const [edit, setEdit] = useState(false);
   const [titolo, setTitolo] = useState(a.titolo);
@@ -26,6 +27,8 @@ function AnnuncioRiga({ a }: { a: Annuncio }) {
   const [err, setErr] = useState("");
   const [gpsrAperto, setGpsrAperto] = useState(false);
   const [scelta, setScelta] = useState<GpsrScelta>(GPSR_VUOTO);
+  const [simula, setSimula] = useState(false);
+  const [pezzi, setPezzi] = useState(1);
   // Errore del negozio (es. GPSR da confermare, già ritirato) in chiaro sotto l'annuncio
   const esito = (r: { ok: boolean } & { error?: string }) => setErr(r.ok ? "" : (r.error ?? "Operazione non riuscita"));
   const decisa = gpsrDaScelta(scelta);
@@ -38,6 +41,7 @@ function AnnuncioRiga({ a }: { a: Annuncio }) {
   const ebRipubblica = !eb || !["online", "esaurito", "in pubblicazione"].includes(eb.stato);
   const next = nextToShip(a, s.parts)[0];
   const lungo = titolo.trim().length;
+  const puoSimulare = simulato && !!eb && (eb.stato === "online" || eb.stato === "esaurito");
 
   return (
     <li className="space-y-2 px-4 py-3">
@@ -67,6 +71,33 @@ function AnnuncioRiga({ a }: { a: Annuncio }) {
       )}
 
       {err && <Notice tone="danger">{err}</Notice>}
+      {simula && (
+        <div className="flex flex-wrap items-end gap-2 rounded-md border border-hair-soft bg-carton p-3">
+          <label className="text-sm font-semibold">
+            Quanti pezzi compra l&apos;acquirente
+            <input
+              type="number"
+              min={1}
+              max={qty + 1}
+              className="field mt-1 w-28"
+              value={pezzi}
+              onChange={(e) => setPezzi(Math.max(1, Math.min(qty + 1, Math.floor(Number(e.target.value)) || 1)))}
+              aria-label={`Pezzi venduti su eBay ${a.id}`}
+            />
+          </label>
+          <Button
+            size="sm"
+            onClick={() => {
+              esito(simulateEbaySale(a.id, pezzi));
+              setSimula(false);
+            }}
+          >
+            Simula la vendita
+          </Button>
+          <Button size="sm" variant="quiet" onClick={() => setSimula(false)}>Annulla</Button>
+          {pezzi > qty && <p className="w-full text-sm text-warn">Più dei pezzi disponibili: l&apos;ordine nascerà &quot;da gestire&quot;</p>}
+        </div>
+      )}
       {gpsrAperto && (
         <div className="space-y-2">
           <GpsrStep value={scelta} onChange={setScelta} />
@@ -108,6 +139,7 @@ function AnnuncioRiga({ a }: { a: Annuncio }) {
         {negAttivo && <Button size="sm" variant="danger" onClick={() => esito(s.withdrawAnnuncio(a.id, "negozio"))}>Ritira dal negozio</Button>}
         {ebAttivo && <Button size="sm" variant="danger" onClick={() => esito(s.withdrawAnnuncio(a.id, "ebay"))}>Ritira da eBay</Button>}
         {negRipubblica && <Button size="sm" variant="secondary" onClick={() => esito(s.republishAnnuncio(a.id, { negozio: true, ebay: false }))}>Ripubblica sul negozio</Button>}
+        {puoSimulare && <Button size="sm" variant="secondary" onClick={() => { setPezzi(1); setSimula(true); }}>Simula vendita su eBay</Button>}
         {ebRipubblica && <Button size="sm" variant="secondary" onClick={() => (gpsrBlocksEbay(a.gpsr) ? (setErr(""), setGpsrAperto(true)) : esito(s.republishAnnuncio(a.id, { negozio: false, ebay: true })))}>{eb ? "Ripubblica su eBay" : "Pubblica su eBay"}</Button>}
       </div>
     </li>
@@ -116,13 +148,49 @@ function AnnuncioRiga({ a }: { a: Annuncio }) {
 
 export function AnnunciList() {
   const annunci = useStore((s) => s.annunci);
+  const [simulato, setSimulato] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [controllo, setControllo] = useState(false);
+  useEffect(() => {
+    let vivo = true;
+    void statoPonte().then((p) => vivo && setSimulato(p?.modo === "Simulato"));
+    return () => {
+      vivo = false;
+    };
+  }, []);
+  const daRiallineare = annunci.filter((a) => a.ebay?.daRiallineare && a.ebay.stato !== "non pubblicato").length;
+  const conEbay = annunci.some((a) => a.ebay);
   return (
-    <Panel title={`Annunci · ${annunci.length}`} className="mt-6">
+    <Panel
+      title={`Annunci · ${annunci.length}`}
+      className="mt-6"
+      action={
+        conEbay && (
+          <div className="flex flex-wrap items-center gap-3">
+            {daRiallineare > 0 && <span className="rounded bg-warn-bg px-2 py-0.5 text-[13px] font-semibold text-warn">{daRiallineare} da riallineare su eBay</span>}
+            {msg && <span className="text-sm text-ink-2">{msg}</span>}
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={controllo}
+              onClick={async () => {
+                setControllo(true);
+                const r = await controllaVendite();
+                setControllo(false);
+                setMsg(!r.ok ? (r.errore ?? "Controllo non riuscito") : r.nuove ? `${r.nuove} ${r.nuove === 1 ? "vendita nuova" : "vendite nuove"} da eBay` : "Nessuna vendita nuova su eBay");
+              }}
+            >
+              Controlla vendite eBay
+            </Button>
+          </div>
+        )
+      }
+    >
       {annunci.length === 0 ? (
         <Empty title="Nessun annuncio">Pubblica un pezzo dalla coda per crearne uno.</Empty>
       ) : (
         <ul className="divide-y divide-hair-soft">
-          {annunci.map((a) => <AnnuncioRiga key={a.id} a={a} />)}
+          {annunci.map((a) => <AnnuncioRiga key={a.id} a={a} simulato={simulato} />)}
         </ul>
       )}
     </Panel>

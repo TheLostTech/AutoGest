@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
+import { statoPonte } from "@/lib/ebay-sync";
 import { publishChecks, euro } from "@/lib/logic";
 import { groupKey, listingOf, placementFor, type Placement } from "@/lib/annunci";
 import { bozzaFor } from "@/lib/annuncio-build";
@@ -17,6 +18,14 @@ export default function Pubblicazione() {
   const s = useStore();
   const [msg, setMsg] = useState<{ tone: "ok" | "danger"; text: string } | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [ebayCollegato, setEbayCollegato] = useState(false);
+  useEffect(() => {
+    let vivo = true;
+    void statoPonte().then((p) => vivo && setEbayCollegato(!!p?.collegato));
+    return () => {
+      vivo = false;
+    };
+  }, []);
   const vById = new Map(s.vehicles.map((v) => [v.id, v]));
   const keyOf = (p: Part) => groupKey(p, isShippable(p, typeById(p.typeId).shippable));
   const queue = s.parts
@@ -62,8 +71,9 @@ export default function Pubblicazione() {
       {preview && (
         <div className="mb-6">
           <AnnuncioPreview
-            key={preview.id}
+            key={`${preview.id}-${ebayCollegato}`}
             part={preview}
+            ebayDefault={ebayCollegato}
             onCancel={() => setPreviewId(null)}
             onDone={(text, ok) => {
               setMsg({ tone: ok ? "ok" : "danger", text });

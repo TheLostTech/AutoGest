@@ -12,7 +12,8 @@ import { typeById } from "./catalog";
 import { GPSR_ERRORE, gpsrBlocksEbay, alignedPrice, groupKey, listingFieldsChanged, listingOf, membershipAfter, missingNote, partsOf, pickForSale, placementFor, quantityOf, refreshAnnuncio, shopPicks } from "./annunci";
 import { buildAnnuncio, fieldsFromPart, gpsrOf, textFor, type BozzaAnnuncio } from "./annuncio-build";
 import { isShippable } from "./spedizione";
-import type { VenditaEbay } from "./ebay/contratto";
+import type { EsitoAllinea, VenditaEbay } from "./ebay/contratto";
+import { applyEsito, type Inviato } from "./ebay/sync-puro";
 import type {
   Annuncio,
   AuditEvent,
@@ -108,6 +109,8 @@ interface Actions {
   regenerateText: (annuncioId: string) => void;
   orderFromAnnunci: (channel: "negozio", annuncioIds: string[], customer: string, actor?: Actor, delivery?: "corriere" | "ritiro") => Result<string>;
   importEbaySale: (v: VenditaEbay) => Result<string>;
+  setEbayResult: (annuncioId: string, esito: EsitoAllinea, inviato: Inviato) => void;
+  markOrderHandled: (orderId: string) => void;
   createOrder: (
     channel: Channel,
     partIds: string[],
@@ -145,6 +148,7 @@ interface Actions {
 }
 
 const now = () => new Date().toISOString();
+const EBAY_ACTOR: Actor = { user: "Connettore eBay", role: "sistema", device: "Ponte eBay" };
 
 // Chiave dei dati salvati: cambia quando cambia la struttura dei dati demo
 export const STORE_SCHEMA = "gestionale-demolizione-demo-v12";
@@ -758,6 +762,38 @@ export const useStore = create<State & Actions>()(
           );
           touchAnnuncio(v.sku);
           return { ok: true, value: id };
+        },
+
+        // Esito del ponte eBay per un annuncio. Se nel frattempo l'annuncio è cambiato (quantità, prezzo, titolo,
+        // ritiro) rispetto a ciò che è stato inviato, resta da riallineare e riparte al giro dopo.
+        setEbayResult: (annuncioId, esito, inviato) => {
+          const st0 = get();
+          const a = st0.annunci.find((x) => x.id === annuncioId);
+          if (!a?.ebay) return;
+          const prevStato = a.ebay.stato;
+          const prevErrore = a.ebay.errore;
+          const cambiato =
+            quantityOf(a, st0.parts) !== inviato.quantita ||
+            onlinePrice(a.price) !== inviato.prezzo ||
+            (inviato.attivo !== undefined && inviato.attivo !== (a.ebay.stato !== "ritirato")) ||
+            (inviato.titolo !== undefined && inviato.titolo !== a.titolo);
+          const next = applyEsito(a, esito, inviato, now());
+          const ebay = cambiato && esito.stato !== "errore" ? { ...next, daRiallineare: true } : next;
+          set((st) => ({ annunci: st.annunci.map((x) => (x.id === annuncioId ? { ...x, ebay } : x)) }));
+          if (esito.stato === "errore") {
+            if (prevErrore !== ebay.errore) push(annuncioEvent(annuncioId, "Errore eBay", ebay.errore, EBAY_ACTOR));
+          } else if (prevStato !== ebay.stato) {
+            if (ebay.stato === "ritirato") push(annuncioEvent(annuncioId, "Ritirato da eBay", undefined, EBAY_ACTOR));
+            else if (prevStato === "in pubblicazione" || prevStato === "errore") push(annuncioEvent(annuncioId, "Pubblicato su eBay", ebay.listingId, EBAY_ACTOR));
+          }
+        },
+
+        // Un ordine eBay con "da gestire" è stato sistemato a mano
+        markOrderHandled: (orderId) => {
+          const o = get().orders.find((x) => x.id === orderId);
+          if (!o?.daGestire) return;
+          set((st) => ({ orders: st.orders.map((x) => (x.id === orderId ? { ...x, daGestire: undefined } : x)) }));
+          push(event({ entity: "ordine", entityId: orderId, action: "Ordine eBay segnato come gestito", detail: o.daGestire }));
         },
 
         // Riserva atomica: controllo e cambio di stato nello stesso aggiornamento.
