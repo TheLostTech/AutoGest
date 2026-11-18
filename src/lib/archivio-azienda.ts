@@ -33,12 +33,12 @@ async function scrivi(aziendaId: string, s: Stored, soloSeNuovo = false) {
   await rename(tmp, file);
 }
 
-export function aggiornaStato<T>(aziendaId: string, fn: (s: Stored) => { stored: Stored; risultato: T }): Promise<T> {
+export function aggiornaStato<T>(aziendaId: string, fn: (s: Stored) => { stored: Stored; risultato: T; nonScrivere?: boolean }): Promise<T> {
   cartellaAzienda(aziendaId); // id non valido: errore subito
   const prima = blocchi.get(aziendaId) ?? Promise.resolve();
   const run = prima.then(async () => {
-    const { stored, risultato } = fn(await leggiStato(aziendaId));
-    await scrivi(aziendaId, stored);
+    const { stored, risultato, nonScrivere } = fn(await leggiStato(aziendaId));
+    if (!nonScrivere) await scrivi(aziendaId, stored);
     return risultato;
   });
   const coda = run.catch(() => undefined);

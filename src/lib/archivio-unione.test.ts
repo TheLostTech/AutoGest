@@ -1,7 +1,7 @@
 // Fusione dei salvataggi dei dispositivi. Si eseguono con: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { unisciPush, type Stored } from "./archivio-unione.ts";
+import { esitoPush, unisciPush, type Stored } from "./archivio-unione.ts";
 
 const S = "schema-x";
 const base = (state: Record<string, unknown>): Stored => ({ schema: S, version: 3, state });
@@ -49,4 +49,22 @@ test("due unisciPush in serie: entrambi presenti", () => {
   assert.deepEqual(s.state!.orders, [{ id: "O-1" }]);
   assert.deepEqual(s.state!.parts, [{ id: "P1", prezzo: 2 }]);
   assert.equal(s.version, 5);
+});
+
+const nonDemo = { demo: false, responsabile: true };
+test("esitoPush: non demo, mai sostituzione implicita (409)", () => {
+  assert.equal(esitoPush(base({}), { schema: "x", state: {} }, { demo: false, responsabile: false }), 409);
+  assert.equal(esitoPush(base({}), { schema: S, replace: true, state: {} }, nonDemo), 409);
+  assert.equal(esitoPush({ schema: "", version: 0, state: null }, { schema: S, state: {} }, nonDemo), 409);
+});
+test("esitoPush: demo senza responsabile (403)", () => {
+  assert.equal(esitoPush(base({}), { schema: "x", state: {} }, { demo: true, responsabile: false }), 403);
+  assert.equal(esitoPush(base({}), { schema: S, replace: true }, { demo: true, responsabile: false }), 403);
+});
+test("esitoPush: demo responsabile sostituisce", () => {
+  assert.equal(esitoPush(base({}), { schema: S, replace: true, state: {} }, { demo: true, responsabile: true }), "sostituisci");
+  assert.equal(esitoPush({ schema: "", version: 0, state: null }, { schema: S, state: {} }, { demo: true, responsabile: true }), "sostituisci");
+});
+test("esitoPush: modifiche normali si uniscono", () => {
+  for (const ctx of [nonDemo, { demo: true, responsabile: false }]) assert.equal(esitoPush(base({}), { schema: S, changes: {} }, ctx), "unisci");
 });

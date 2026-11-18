@@ -54,3 +54,14 @@ export function unisciPush(s: Stored, body: Push): Stored {
   if (body.counters) st.counters = maxCounters(st.counters, body.counters);
   return { schema: s.schema, version: s.version + 1, state: st };
 }
+
+/**
+ * Cosa fare con un salvataggio. Sostituire tutto l'archivio (replace, archivio vuoto o schema diverso) è permesso
+ * solo sull'azienda demo e solo al responsabile: sulle altre aziende non succede mai da solo (409).
+ */
+export function esitoPush(cur: Stored, body: Push, ctx: { demo: boolean; responsabile: boolean }): "unisci" | "sostituisci" | 403 | 409 {
+  const sostituirebbe = !!body.replace || !cur.state || cur.schema !== body.schema;
+  if (!sostituirebbe) return "unisci";
+  if (!ctx.demo) return 409;
+  return ctx.responsabile ? "sostituisci" : 403;
+}
