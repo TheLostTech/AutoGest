@@ -8,6 +8,7 @@
 | `DATI_DIR` | Cartella dei dati. Di serie `.demo-data` nel progetto; sul server dell'azienda una cartella a scelta (es. `D:\AutoGest\dati`). Per il backup basta copiarla. |
 | `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD`, `SUPERADMIN_NOME` | Primo super admin (vedi sotto). La password è di almeno 8 caratteri. |
 | `NEGOZIO_AZIENDA` | Id dell'azienda che vende dal negozio pubblico. Se manca, è l'azienda demo. |
+| `DEMO_UTENTI` | Con `NODE_ENV=production` gli utenti demo si creano solo se vale `1`. |
 | `INDIRIZZO_GESTIONALE` | Indirizzo pubblico del gestionale (es. quello del tunnel): è l'unico altro sito da cui Better Auth accetta le richieste. |
 
 ## Primo avvio
@@ -15,11 +16,11 @@
 All'avvio il server (file `src/instrumentation.ts`, funzione `avviaPiattaforma`) fa da solo:
 
 1. crea le tabelle di `piattaforma.sqlite` (utenti, aziende, sessioni, dispositivi, PIN);
-2. se non esiste nessuna azienda, crea **Autodemolizione demo** con i suoi utenti di prova (nomi, ruoli, PIN e password sono in `src/lib/accesso/demo-utenti.ts`: non si ripetono qui né nell'interfaccia);
-3. **copia** nell'azienda demo i dati di prima (`state.json`, `foto/`, `collegamenti.json`, `ebay.json` della cartella dati). Gli originali restano dove sono, come copia di sicurezza. Se non ci sono dati di prima, l'archivio demo lo scrive il server stesso;
+2. se non esiste nessuna azienda, crea **Autodemolizione demo** con i suoi utenti di prova (nomi e ruoli in `src/lib/accesso/demo-utenti.ts`; password e PIN sono generati a caso e scritti solo in `DATI_DIR/credenziali-demo.json`, leggibile dal solo proprietario: non si ripetono né nell'interfaccia né nei log). In produzione gli utenti demo si creano solo con `DEMO_UTENTI=1`;
+3. nella stessa prima preparazione **copia** nell'azienda demo i dati di prima (`state.json`, `foto/`, `collegamenti.json`, `ebay.json` della cartella dati). Gli originali restano dove sono, come copia di sicurezza. Se non ci sono dati di prima, l'archivio demo lo scrive il server stesso;
 4. se `SUPERADMIN_EMAIL` è impostata e non c'è ancora un super admin, lo crea.
 
-Si può ripetere senza rischi: al secondo avvio non viene duplicato nulla.
+La preparazione dell'azienda demo avviene una sola volta (un marcatore nell'azienda e il file `.passaggio-fatto` nella sua cartella): agli avvii dopo nulla viene ricreato né ricopiato, quindi un utente o una foto tolti non tornano.
 Se l'avvio non riesce, il server resta acceso, scrive il motivo nel suo registro e le API rispondono 503 ("il gestionale non è pronto") finché non si risolve e si riavvia.
 
 ## Super admin
