@@ -19,6 +19,7 @@ const data = (iso: string) => new Date(iso).toLocaleString("it-IT", { day: "nume
 // Richiesta scritta dell'azienda: file (PDF, JPEG, PNG) e/o gli estremi. Il file si carica quando si conferma.
 type DatiRichiesta = { file: File | null; estremi: string };
 const richiestaVuota: DatiRichiesta = { file: null, estremi: "" };
+const avv = (d: Record<string, unknown>) => (typeof d.avviso === "string" ? ` ${d.avviso}` : "");
 
 async function preparaRichiesta(aziendaId: string, r: DatiRichiesta): Promise<{ ok: true; richiesta: { fileId?: string; estremi?: string } } | { ok: false; messaggio: string }> {
   const richiesta: { fileId?: string; estremi?: string } = {};
@@ -102,7 +103,7 @@ export default function SchedaAzienda() {
     setErrore("");
     const r = await chiama(`/api/piattaforma/aziende/${id}/dispositivi`, { method: "POST", corpo: { dispositivoId: d.id, azione } });
     if (!r.ok) setErrore(r.messaggio);
-    else setFatto(azione === "revoca" ? `«${d.nome}» revocato.` : `«${d.nome}» sbloccato.`);
+    else setFatto((azione === "revoca" ? `«${d.nome}» revocato.` : `«${d.nome}» sbloccato.`) + avv(r.dati));
     await carica();
   }
 
@@ -129,7 +130,7 @@ export default function SchedaAzienda() {
         )}
         {fatto && (
           <div role="status">
-            <Notice tone="ok">{fatto}</Notice>
+            <Notice tone={fatto.includes("registro") ? "warn" : "ok"}>{fatto}</Notice>
           </div>
         )}
       </div>
@@ -273,7 +274,7 @@ function NuovoUtente({ aziendaId, onChiudi, onFatto }: { aziendaId: string; onCh
     });
     setAttesa(false);
     if (!r.ok) return setErrore(r.messaggio);
-    await onFatto(`Utente «${nome.trim()}» creato.`);
+    await onFatto(`Utente «${nome.trim()}» creato.${avv(r.dati)}`);
   }
 
   return (
@@ -352,7 +353,7 @@ function ModificaUtente({ aziendaId, utente, onFatto }: { aziendaId: string; ute
     const r = await chiama(`/api/piattaforma/utenti/${utente.id}`, { method: "PATCH", corpo: { aziendaId, ...cambi, richiesta: p.richiesta } });
     setAttesa(false);
     if (!r.ok) return setErrore(r.messaggio);
-    await onFatto(cambi.attivo === true ? messaggio : `${messaggio} Le sessioni aperte di ${utente.nome} sono state chiuse.`);
+    await onFatto((cambi.attivo === true ? messaggio : `${messaggio} Le sessioni aperte di ${utente.nome} sono state chiuse.`) + avv(r.dati));
   }
 
   return (

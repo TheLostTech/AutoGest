@@ -8,7 +8,7 @@ import { richiestaObbligatoria } from "@/lib/accesso/richieste";
 import { impostaPin } from "@/lib/auth/pin-dispositivo";
 import { aggiungiRichiesta, elencoRichieste } from "@/lib/piattaforma/richieste-file";
 import { descrizioneRichiesta, EMAIL, richiestaDaCorpo, ruoliDaCorpo } from "@/lib/piattaforma/utenti";
-import { aziendaEsiste, contesto, daAltroSito, errore, leggiJson, ok, registra, testo } from "@/lib/piattaforma/server";
+import { AVVISO_REGISTRO, aziendaEsiste, contesto, daAltroSito, errore, leggiJson, ok, registra, testo } from "@/lib/piattaforma/server";
 
 
 
@@ -67,7 +67,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const passwordIn = typeof corpo.password === "string" ? corpo.password : "";
   const pinIn = typeof corpo.pin === "string" ? corpo.pin : "";
   const conEmail = !!emailIn || !!passwordIn;
-  if (conEmail && (!EMAIL.test(emailIn) || passwordIn.length < 8 || passwordIn.length > 128)) {
+  if (conEmail && (!EMAIL.test(emailIn) || emailIn.endsWith("@pin.invalid") || passwordIn.length < 8 || passwordIn.length > 128)) {
     return errore(400, "Per l'accesso con email servono un'email valida e una password di almeno 8 caratteri.");
   }
   if (pinIn && !pinValido(pinIn)) return errore(400, "Il PIN è di 4 cifre.");
@@ -89,6 +89,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
     await c.adapter.create({ model: "member", data: { organizationId: id, userId: utente.id, role: ruoliAStringa(ruoli), createdAt: new Date() } });
     if (pinIn) await impostaPin(c, utente.id, id, pinIn);
+    if (r.richiesta) {
+      await aggiungiRichiesta(id, { userId: utente.id, azione: "Utente creato", quando: new Date().toISOString(), autore: g.utente.nome, ...r.richiesta });
+    }
   } catch (e) {
     // Niente utenti a metà: si toglie tutto quello che è stato creato
     await c.adapter.delete({ model: "member", where: [{ field: "userId", value: utente.id }] }).catch(() => undefined);
@@ -99,15 +102,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return errore(500, "Non riesco a creare l'utente. Riprova.");
   }
 
-  if (r.richiesta) {
-    await aggiungiRichiesta(id, { userId: utente.id, azione: "Utente creato", quando: new Date().toISOString(), autore: g.utente.nome, ...r.richiesta });
-  }
   const modo = [conEmail ? "email e password" : "", pinIn ? "PIN" : ""].filter(Boolean).join(" + ");
-  await registra(id, g.utente.nome, {
+  const scritto = await registra(id, g.utente.nome, {
     entity: "utente",
     entityId: utente.id,
     action: "Utente creato",
     detail: `${nome} · ${ruoli.map((x) => RUOLO_LABEL[x]).join(", ")} · accesso: ${modo} · richiesta: ${descrizioneRichiesta(r.richiesta)}`,
   });
-  return ok({ id: utente.id }, 201);
+  return ok({ id: utente.id, ...(scritto ? {} : { avviso: AVVISO_REGISTRO }) }, 201);
 }

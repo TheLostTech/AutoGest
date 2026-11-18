@@ -6,7 +6,7 @@ import { creaStatoAzienda } from "@/lib/archivio-azienda";
 import { statoVuoto } from "@/lib/stato-iniziale";
 import { DEFAULT_LISTINI } from "@/lib/pricing";
 import { WAREHOUSES } from "@/lib/warehouse";
-import { contesto, daAltroSito, errore, leggiJson, ok, registra, testo } from "@/lib/piattaforma/server";
+import { AVVISO_REGISTRO, contesto, daAltroSito, errore, leggiJson, ok, registra, testo } from "@/lib/piattaforma/server";
 
 export async function GET(req: Request) {
   await connection();
@@ -59,6 +59,6 @@ export async function POST(req: Request) {
   });
   // Archivio vuoto: tutte le liste a zero, nessun dato demo
   await creaStatoAzienda(org.id, statoVuoto({ listini: DEFAULT_LISTINI, warehouses: WAREHOUSES }));
-  await registra(org.id, g.utente.nome, { entity: "sistema", entityId: org.id, action: "Azienda creata", detail: nome });
-  return ok({ id: org.id, nome: org.name }, 201);
+  const scritto = await registra(org.id, g.utente.nome, { entity: "sistema", entityId: org.id, action: "Azienda creata", detail: nome });
+  return ok({ id: org.id, nome: org.name, ...(scritto ? {} : { avviso: AVVISO_REGISTRO }) }, 201);
 }

@@ -84,13 +84,22 @@ export function firma(nome: string): Pick<NuovoEvento, "user" | "role" | "device
   return { user: `${nome} (assistenza)`, role: "sistema", device: "Piattaforma" };
 }
 
-/** Una riga nel registro attività dell'azienda. Un guasto del registro non annulla la modifica già fatta: si segnala sul server. */
-export async function registra(aziendaId: string, nome: string, e: Omit<NuovoEvento, "user" | "role" | "device">): Promise<void> {
+export const AVVISO_REGISTRO = "La modifica è stata fatta, ma non sono riuscito a scriverla nel registro attività dell'azienda.";
+
+/** Una riga nel registro attività. Best-effort: un guasto non annulla la modifica già fatta, ma restituisce false (le route mettono `avviso` nella risposta). */
+export async function registra(aziendaId: string, nome: string, e: Omit<NuovoEvento, "user" | "role" | "device">): Promise<boolean> {
   try {
     await aggiungiEventi(aziendaId, [{ ...firma(nome), ...e }]);
+    return true;
   } catch (err) {
     console.error("Registro attività non aggiornato", aziendaId, err);
+    return false;
   }
+}
+
+/** Come registra, ma il guasto si propaga: per le azioni che senza traccia non devono avvenire (ingresso per assistenza). */
+export async function registraObbligatorio(aziendaId: string, nome: string, e: Omit<NuovoEvento, "user" | "role" | "device">): Promise<void> {
+  await aggiungiEventi(aziendaId, [{ ...firma(nome), ...e }]);
 }
 
 /** Chiude tutte le sessioni di un utente (cambio ruoli, password o PIN, disattivazione). */

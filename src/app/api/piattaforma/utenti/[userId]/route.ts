@@ -5,7 +5,7 @@ import { pinValido } from "@/lib/accesso/pin";
 import { richiestaObbligatoria } from "@/lib/accesso/richieste";
 import { impostaPin } from "@/lib/auth/pin-dispositivo";
 import { aggiungiRichiesta } from "@/lib/piattaforma/richieste-file";
-import { chiudiSessioni, contesto, daAltroSito, errore, eSuperadmin, leggiJson, ok, registra, aziendaEsiste } from "@/lib/piattaforma/server";
+import { AVVISO_REGISTRO, chiudiSessioni, contesto, daAltroSito, errore, eSuperadmin, leggiJson, ok, registra, aziendaEsiste } from "@/lib/piattaforma/server";
 import { descrizioneRichiesta, EMAIL, richiestaDaCorpo, ruoliDaCorpo } from "@/lib/piattaforma/utenti";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ userId: string }> }) {
@@ -40,7 +40,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ userId
   }
   if (corpo.attivo !== undefined && typeof corpo.attivo !== "boolean") return errore(400, "Richiesta non valida.");
   const emailNuova = typeof corpo.email === "string" && corpo.email.trim() ? corpo.email.trim().toLowerCase() : "";
-  if (emailNuova && !EMAIL.test(emailNuova)) return errore(400, "Email non valida.");
+  if (emailNuova && (!EMAIL.test(emailNuova) || emailNuova.endsWith("@pin.invalid"))) return errore(400, "Email non valida.");
   if (nuoviRuoli === null && corpo.pin === undefined && corpo.password === undefined && corpo.attivo === undefined) return errore(400, "Niente da modificare.");
 
   // Richiesta scritta: obbligatoria per cambiare i ruoli, facoltativa per il resto
@@ -61,53 +61,50 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ userId
 
   const nome = g.utente.nome;
   const quando = new Date().toISOString();
-  const traccia = async (azione: string) => {
+  let avviso = false;
+  // Ogni passo scrive prima la richiesta e poi il registro; un guasto del registro è solo un avviso
+  const traccia = async (azione: string, detail: string) => {
     if (r.richiesta) await aggiungiRichiesta(azienda.id, { userId, azione, quando, autore: nome, ...r.richiesta });
+    if (!(await registra(azienda.id, nome, { entity: "utente", entityId: userId, action: azione, detail }))) avviso = true;
   };
+  const rich = descrizioneRichiesta(r.richiesta);
+  // Si segna PRIMA di ogni modifica: se un passo fallisce a metà, le sessioni si chiudono comunque (finally)
   let chiudi = false;
 
-  if (nuoviRuoli) {
-    const prima = ruoliDaStringa(membro.role);
-    await c.adapter.update({ model: "member", where: [{ field: "id", value: membro.id }], update: { role: ruoliAStringa(nuoviRuoli) } });
-    await traccia("Ruoli cambiati");
-    await registra(azienda.id, nome, {
-      entity: "utente",
-      entityId: userId,
-      action: "Ruoli cambiati",
-      detail: `${utente.name} · da ${prima.map((x) => RUOLO_LABEL[x]).join(", ") || "nessuno"} a ${nuoviRuoli.map((x) => RUOLO_LABEL[x]).join(", ")} · richiesta: ${descrizioneRichiesta(r.richiesta)}`,
-    });
-    chiudi = true;
-  }
-  if (typeof corpo.pin === "string") {
-    await impostaPin(c, userId, azienda.id, corpo.pin);
-    await traccia("PIN reimpostato");
-    await registra(azienda.id, nome, { entity: "utente", entityId: userId, action: "PIN reimpostato", detail: `${utente.name} · richiesta: ${descrizioneRichiesta(r.richiesta)}` });
-    chiudi = true;
-  }
-  if (typeof corpo.password === "string") {
-    const hash = await c.password.hash(corpo.password);
-    if (conto) await c.internalAdapter.updatePassword(userId, hash);
-    else {
-      await c.internalAdapter.updateUser(userId, { email: emailNuova, emailVerified: false });
-      await c.internalAdapter.linkAccount({ userId, providerId: "credential", accountId: userId, password: hash });
+  try {
+    if (nuoviRuoli) {
+      const prima = ruoliDaStringa(membro.role);
+      chiudi = true;
+      await c.adapter.update({ model: "member", where: [{ field: "id", value: membro.id }], update: { role: ruoliAStringa(nuoviRuoli) } });
+      await traccia("Ruoli cambiati", `${utente.name} · da ${prima.map((x) => RUOLO_LABEL[x]).join(", ") || "nessuno"} a ${nuoviRuoli.map((x) => RUOLO_LABEL[x]).join(", ")} · richiesta: ${rich}`);
     }
-    await traccia(conto ? "Password reimpostata" : "Accesso con email attivato");
-    await registra(azienda.id, nome, {
-      entity: "utente",
-      entityId: userId,
-      action: conto ? "Password reimpostata" : "Accesso con email attivato",
-      detail: `${utente.name} · richiesta: ${descrizioneRichiesta(r.richiesta)}`,
-    });
-    chiudi = true;
+    if (typeof corpo.pin === "string") {
+      chiudi = true;
+      await impostaPin(c, userId, azienda.id, corpo.pin);
+      await traccia("PIN reimpostato", `${utente.name} · richiesta: ${rich}`);
+    }
+    if (typeof corpo.password === "string") {
+      chiudi = true;
+      const hash = await c.password.hash(corpo.password);
+      if (conto) await c.internalAdapter.updatePassword(userId, hash);
+      else {
+        await c.internalAdapter.updateUser(userId, { email: emailNuova, emailVerified: false });
+        await c.internalAdapter.linkAccount({ userId, providerId: "credential", accountId: userId, password: hash });
+      }
+      await traccia(conto ? "Password reimpostata" : "Accesso con email attivato", `${utente.name} · richiesta: ${rich}`);
+    }
+    if (typeof corpo.attivo === "boolean") {
+      const attivo = corpo.attivo;
+      if (!attivo) chiudi = true;
+      await c.internalAdapter.updateUser(userId, attivo ? { banned: false, banReason: null, banExpires: null } : { banned: true, banReason: "Disattivato dalla piattaforma", banExpires: null });
+      await traccia(attivo ? "Utente riattivato" : "Utente disattivato", `${utente.name} · richiesta: ${rich}`);
+    }
+  } catch (e) {
+    console.error("Modifica utente non completata", userId, e);
+    return errore(500, "La modifica non è stata completata del tutto: controlla la scheda. Le sessioni aperte della persona sono state chiuse.");
+  } finally {
+    // Ruoli, PIN, password o disattivazione toccati (anche a metà): le sessioni aperte non valgono più
+    if (chiudi) await chiudiSessioni(c, userId);
   }
-  if (typeof corpo.attivo === "boolean") {
-    const attivo = corpo.attivo;
-    await c.internalAdapter.updateUser(userId, attivo ? { banned: false, banReason: null, banExpires: null } : { banned: true, banReason: "Disattivato dalla piattaforma", banExpires: null });
-    await traccia(attivo ? "Utente riattivato" : "Utente disattivato");
-    await registra(azienda.id, nome, { entity: "utente", entityId: userId, action: attivo ? "Utente riattivato" : "Utente disattivato", detail: `${utente.name} · richiesta: ${descrizioneRichiesta(r.richiesta)}` });
-    if (!attivo) chiudi = true;
-  }
-  // Ruoli, PIN, password o disattivazione cambiati: le sessioni aperte non valgono più
-  if (chiudi) await chiudiSessioni(c, userId);
-  return ok();
+  return ok(avviso ? { ok: true, avviso: AVVISO_REGISTRO } : { ok: true });
 }
