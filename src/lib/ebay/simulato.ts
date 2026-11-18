@@ -15,7 +15,7 @@ export function creaPonteSimulato(): Ponte {
       return {
         stato,
         listingId: `SIM-${r.sku}`,
-        url: `/ebay-simulato/${r.sku}`,
+        url: `/ebay-simulato/${encodeURIComponent(r.sku)}`,
         categoria: r.categoriaId ? { id: r.categoriaId, nome: "Categoria scelta" } : { id: "33710", nome: "Ricambi auto (simulata)" },
         avvisi: [],
       };
