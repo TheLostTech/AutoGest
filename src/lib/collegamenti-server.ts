@@ -55,3 +55,12 @@ export function altroSito(req: Request) {
     return true;
   }
 }
+
+/**
+ * Più severo di altroSito, per le richieste che cambiano dati condivisi: Origin deve esserci ed essere questo sito,
+ * e il corpo deve essere JSON. Un'altra pagina non può mandare JSON senza il permesso CORS, che qui non si dà.
+ */
+export function richiestaDellApp(req: Request) {
+  if (!req.headers.get("origin") || altroSito(req)) return false;
+  return (req.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json");
+}

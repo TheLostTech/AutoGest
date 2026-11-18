@@ -126,7 +126,12 @@ export async function controllaVendite(): Promise<{ ok: boolean; nuove: number; 
   if (!syncAllineato()) return { ok: false, nuove: 0, errore: "Dati non ancora allineati con gli altri dispositivi: riprova tra poco" };
   const prima = new Date().toISOString();
   try {
-    const res = await fetch(`/api/ebay/vendite?da=${encodeURIComponent(leggiDa())}`, { cache: "no-store" });
+    const res = await fetch("/api/ebay/vendite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ da: leggiDa() }),
+      cache: "no-store",
+    });
     if (!res.ok) return { ok: false, nuove: 0, errore: "eBay non risponde" };
     const { vendite } = (await res.json()) as { vendite: VenditaEbay[] };
     const st = useStore.getState();
