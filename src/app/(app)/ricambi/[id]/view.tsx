@@ -348,7 +348,22 @@ export default function SchedaRicambio() {
                   {blocking.length ? `Pubblica (${blocking.length} da sistemare)` : "Vai a Pubblicazione"}
                 </Button>
               ) : (
-                <Button variant="secondary" onClick={() => { if (!p.annuncioId) return; const r = s.withdrawAnnuncio(p.annuncioId, "tutti"); if (r.ok) flash("ok", `Annuncio ${p.annuncioId} ritirato`); else flash("danger", r.error); }}>Ritira l&apos;annuncio</Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    if (!p.annuncioId) return;
+                    // Il ritiro vale per tutto l'annuncio: con altri pezzi dentro si chiede conferma
+                    if (sharing > 1) {
+                      const canali = [annuncio?.negozio && annuncio.negozio.stato !== "ritirato" && "negozio", annuncio?.ebay && annuncio.ebay.stato !== "ritirato" && "eBay"].filter(Boolean).join(" ed ");
+                      if (!confirm(`Ritira l'annuncio ${p.annuncioId} con tutti e ${sharing} i pezzi${canali ? ` da ${canali}` : ""}?`)) return;
+                    }
+                    const r = s.withdrawAnnuncio(p.annuncioId, "tutti");
+                    if (r.ok) flash("ok", `Annuncio ${p.annuncioId} ritirato`);
+                    else flash("danger", r.error);
+                  }}
+                >
+                  Ritira l&apos;annuncio
+                </Button>
               )}
             </div>
           </Panel>

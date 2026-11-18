@@ -15,7 +15,8 @@ import { cifra, decifra } from "@/lib/cifratura";
 import { PHOTO_DIR } from "@/lib/server-data";
 import type { EsitoAllinea, Ponte, RichiestaAllinea, SpedizioneEbay, StatoPonte, VenditaEbay } from "./contratto";
 import {
-  ALBERO_CATEGORIE, aspettiPerEbay, controllaAspetti, daCreare, ErroreEbay, fileFoto, inventoryItemBody, LINGUA, magazzinoBody, MARKETPLACE,
+  ALBERO_CATEGORIE, aspettiPerEbay, CATEGORIA_DA_SCRIVERE, categoriaFresca, categoriaRifiutata, controllaAspetti, daCreare, ErroreEbay, fileFoto,
+  filtraConsegnate, inizioVendite, inventoryItemBody, LINGUA, magazzinoBody, MARKETPLACE,
   NOMI_POLITICHE, nomiCompat, nonAderente, offerBody, offerUpdateBody, politicaPagamentoBody, politicaResoBody, politicaSpedizioneBody,
   rinominaCompat, statoDaOfferta, traduciErrore, urlConsenso, veicoliEbay, venditeDaOrdini,
   type MetaAspetti, type NomiCompat, type OffertaEbay, type Opzione, type OpzioniEbay, type OrdineEbay, type VeicoloEbay,
@@ -412,17 +413,25 @@ async function offertaPer(c: CredSandbox, sku: string): Promise<OffertaEbay & { 
 async function categoriaPer(c: CredSandbox, r: RichiestaAllinea, a: ArchivioEbay): Promise<{ id: string; nome?: string }> {
   if (r.categoriaId) return { id: r.categoriaId, nome: Object.values(a.categorie).find((x) => x.id === r.categoriaId)?.nome };
   const q = r.categoriaQuery.trim();
-  if (!q) throw new ErroreEbay("Manca la parola per cercare la categoria eBay. Cosa fare: scegli la categoria nell'annuncio.");
+  if (!q) throw new ErroreEbay(`Manca la parola per cercare la categoria eBay. Cosa fare: ${CATEGORIA_DA_SCRIVERE}`);
   const chiave = q.toLowerCase();
-  if (a.categorie[chiave]) return a.categorie[chiave];
+  const gia = a.categorie[chiave];
+  if (gia && categoriaFresca(gia, Date.now())) return { id: gia.id, nome: gia.nome };
   const corpo = (await tassonomia(c, `/get_category_suggestions?q=${enc(q)}`, "ricerca della categoria")) as { categorySuggestions?: { category?: { categoryId?: string; categoryName?: string } }[] };
   const cat = corpo?.categorySuggestions?.find((s) => s.category?.categoryId)?.category;
-  if (!cat?.categoryId) throw new ErroreEbay(`eBay non trova una categoria per «${q.slice(0, 60)}». Cosa fare: scegli la categoria nell'annuncio.`);
+  if (!cat?.categoryId) throw new ErroreEbay(`eBay non trova una categoria per «${q.slice(0, 60)}». Cosa fare: ${CATEGORIA_DA_SCRIVERE}`);
   const trovata = { id: cat.categoryId, nome: cat.categoryName ?? cat.categoryId };
   await aggiornaArchivio((x) => {
-    x.categorie[chiave] = trovata;
+    x.categorie[chiave] = { ...trovata, at: new Date().toISOString() };
   });
   return trovata;
+}
+
+/** eBay ha rifiutato la categoria: si toglie dalla cache, così alla prossima ricerca si chiede di nuovo a eBay. */
+async function dimenticaCategoria(id: string): Promise<void> {
+  await aggiornaArchivio((x) => {
+    for (const [k, v] of Object.entries(x.categorie)) if (v.id === id) delete x.categorie[k];
+  });
 }
 
 const GIORNO = 24 * 3600_000;
@@ -551,7 +560,8 @@ async function mandaCompatibilita(c: CredSandbox, r: RichiestaAllinea, categoria
 
 const link = (listingId?: string) => (listingId ? `${VISTA}${enc(listingId)}` : undefined);
 
-async function allineaSandbox(c: CredSandbox, r: RichiestaAllinea): Promise<EsitoAllinea> {
+/** `usata` riceve la categoria scelta, così chi chiama sa quale dimenticare se eBay la rifiuta. */
+async function allineaSandbox(c: CredSandbox, r: RichiestaAllinea, usata: { categoria?: string }): Promise<EsitoAllinea> {
   const avvisi: string[] = [];
   const offerta = await offertaPer(c, r.sku);
   let a = await leggiArchivio();
@@ -587,6 +597,7 @@ async function allineaSandbox(c: CredSandbox, r: RichiestaAllinea): Promise<Esit
   }
 
   const categoria = await categoriaPer(c, r, a);
+  usata.categoria = categoria.id;
   let aspetti = aspettiPerEbay(r.caratteristiche);
   try {
     const controllo = controllaAspetti(aspetti, await aspettiCategoria(c, categoria.id));
@@ -648,9 +659,16 @@ async function allineaSandbox(c: CredSandbox, r: RichiestaAllinea): Promise<Esit
 }
 
 // ── Vendite ──
+// Più dispositivi controllano le vendite (ogni 5 minuti, più il pulsante). Per non perdere né doppiare un ordine:
+// - il dispositivo chiede dal suo ultimo controllo meno un'ora (ordini che eBay mostra in ritardo, orologi sfasati);
+// - il server non guarda prima dell'ultimo controllo di chiunque meno un'ora (ultimoControllo: inizio del controllo,
+//   ora del server), così un dispositivo rimasto spento non richiede settimane di ordini già importati;
+// - un ordine passato a un dispositivo non si ripassa ad altri per 15 minuti (consegnati, ultimi 500): nel frattempo
+//   l'ordine arriva a tutti con i dati condivisi, e dopo chi lo riceve di nuovo lo scarta per numero d'ordine.
 async function venditeSandbox(c: CredSandbox, da: string): Promise<VenditaEbay[]> {
-  // getOrders restituisce al più due anni di ordini
-  const inizio = new Date(Math.max(Date.parse(da), Date.now() - 2 * 365 * GIORNO + GIORNO)).toISOString();
+  const avvio = Date.now();
+  // getOrders restituisce al più due anni di ordini (inizioVendite non va oltre)
+  const inizio = inizioVendite(da, (await leggiArchivio()).ultimoControllo, avvio);
   const ordini: OrdineEbay[] = [];
   const LIMITE = 200;
   for (let offset = 0, pagine = 0; pagine < 20; pagine++, offset += LIMITE) {
@@ -659,18 +677,28 @@ async function venditeSandbox(c: CredSandbox, da: string): Promise<VenditaEbay[]
     ordini.push(...(corpo?.orders ?? []));
     if (!corpo?.orders?.length || offset + LIMITE >= (corpo.total ?? 0)) break;
   }
-  await aggiornaArchivio((x) => {
-    x.ultimoControllo = new Date().toISOString();
+  const tutte = venditeDaOrdini(ordini);
+  // Lettura e scrittura nello stesso aggiornamento: due controlli insieme non si passano lo stesso ordine
+  return aggiornaArchivio((x) => {
+    const quando = new Date(avvio).toISOString();
+    if (!x.ultimoControllo || x.ultimoControllo < quando) x.ultimoControllo = quando;
+    const f = filtraConsegnate(tutte, x.consegnati ?? {}, Date.now());
+    x.consegnati = f.consegnati;
+    return f.vendite;
   });
-  return venditeDaOrdini(ordini);
 }
 
 export function creaPonteSandbox(cred: CredSandbox): Ponte {
   return {
     async allinea(r: RichiestaAllinea): Promise<EsitoAllinea> {
+      const usata: { categoria?: string } = {};
       try {
-        return await allineaSandbox(cred, r);
+        return await allineaSandbox(cred, r, usata);
       } catch (e) {
+        if (e instanceof ErroreEbay && usata.categoria && categoriaRifiutata(e.codici)) {
+          await dimenticaCategoria(usata.categoria).catch(() => undefined);
+          return { stato: "errore", avvisi: [], errore: e.message, categoriaRifiutata: true };
+        }
         if (e instanceof ErroreEbay) return { stato: "errore", avvisi: [], errore: e.message };
         console.error("[ebay] allinea", e);
         return { stato: "errore", avvisi: [], errore: IMPREVISTO };

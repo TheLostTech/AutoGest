@@ -3,7 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  aspettiPerEbay, compatibilityBody, conditionFor, controllaAspetti, daCreare, ErroreEbay, fileFoto, inventoryItemBody, nomiCompat, nonAderente,
+  aspettiPerEbay, CATEGORIA_DA_SCRIVERE, categoriaFresca, categoriaRifiutata, compatibilityBody, conditionFor, controllaAspetti, daCreare, ErroreEbay,
+  fileFoto, filtraConsegnate, fotoPerEbay, inizioVendite, inventoryItemBody, nomiCompat, nonAderente,
   offerBody, politicaPagamentoBody, politicaResoBody, politicaSpedizioneBody, posizionamento, rinominaCompat, statoDaOfferta,
   traduciErrore, urlConsenso, venditeDaOrdini,
 } from "./payload.ts";
@@ -249,4 +250,68 @@ test("politiche da creare: solo quelle che mancano", () => {
   // Un voluminoso scelto a mano (con un altro nome) vale: non se ne crea un altro
   const scelto = { ...conCorriere, spedizione: [...conCorriere.spedizione, { id: "X", nome: "Pallet" }, { id: "T", nome: "Ritiro", ritiro: true }] };
   assert.deepEqual(daCreare(scelto, { voluminoso: { id: "X", nome: "Pallet" } }).spedizione, []);
+});
+
+test("foto per eBay: solo quelle sul server; quelle rimaste nel telefono diventano un avviso", () => {
+  const telefono = `data:image/jpeg;base64,${"A".repeat(200_000)}`;
+  assert.deepEqual(fotoPerEbay(["/api/foto/abc123.jpg", "/renders/faro-1.png"]), { foto: ["/api/foto/abc123.jpg", "/renders/faro-1.png"] });
+  const uno = fotoPerEbay(["/api/foto/abc123.jpg", telefono]);
+  assert.deepEqual(uno.foto, ["/api/foto/abc123.jpg"]);
+  assert.equal(uno.avviso, "1 foto non ancora caricata sul server: non va su eBay.");
+  const due = fotoPerEbay([telefono, telefono, "https://altro.sito/x.jpg"]);
+  assert.deepEqual(due.foto, []);
+  assert.equal(due.avviso, "3 foto non ancora caricate sul server: non vanno su eBay.");
+});
+
+test("categoria trovata: vale 30 giorni; senza data si cerca di nuovo", () => {
+  const ora = Date.parse("2026-11-18T00:00:00Z");
+  assert.equal(categoriaFresca({ at: "2026-11-01T00:00:00Z" }, ora), true);
+  assert.equal(categoriaFresca({ at: "2026-10-01T00:00:00Z" }, ora), false);
+  assert.equal(categoriaFresca({}, ora), false);
+  assert.equal(categoriaFresca(undefined, ora), false);
+});
+
+test("categoria rifiutata (25005): messaggio con il campo da usare nell'annuncio", () => {
+  const corpo = { errors: [{ errorId: 25005, message: "Invalid category ID" }] };
+  assert.equal(categoriaRifiutata(new ErroreEbay("x", "", 400, corpo).codici), true);
+  assert.equal(categoriaRifiutata([25003]), false);
+  const t = traduciErrore(400, corpo);
+  assert.equal(t.messaggio, `eBay non accetta la categoria. Cosa fare: ${CATEGORIA_DA_SCRIVERE}`);
+  assert.match(CATEGORIA_DA_SCRIVERE, /Modifica testo/);
+});
+
+test("vendite: non prima dell'ultimo controllo di chiunque meno un'ora, né oltre due anni", () => {
+  const ora = Date.parse("2026-11-18T12:00:00.000Z");
+  // Dispositivo tornato dopo una settimana: il server parte dall'ultimo controllo (di un altro) meno un'ora
+  assert.equal(inizioVendite("2026-11-11T00:00:00.000Z", "2026-11-18T11:55:00.000Z", ora), "2026-11-18T10:55:00.000Z");
+  // Richiesta più recente del pavimento: vale la richiesta
+  assert.equal(inizioVendite("2026-11-18T11:30:00.000Z", "2026-11-18T11:00:00.000Z", ora), "2026-11-18T11:30:00.000Z");
+  // Primo controllo in assoluto
+  assert.equal(inizioVendite("2026-11-11T00:00:00.000Z", undefined, ora), "2026-11-11T00:00:00.000Z");
+  // Mai oltre i due anni di getOrders
+  assert.ok(Date.parse(inizioVendite("2020-01-01T00:00:00.000Z", undefined, ora)) > Date.parse("2024-11-18T00:00:00.000Z"));
+});
+
+test("vendite già passate a un dispositivo: nascoste agli altri per 15 minuti, poi di nuovo (si scartano per numero)", () => {
+  const v = (orderId: string) => ({ orderId, sku: "A-1", quantita: 1, prezzoUnitario: 10, acquirente: "x", at: "T" });
+  const t0 = Date.parse("2026-11-18T12:00:00.000Z");
+  const primo = filtraConsegnate([v("O1"), v("O2")], {}, t0);
+  assert.deepEqual(primo.vendite.map((x) => x.orderId), ["O1", "O2"]);
+  assert.equal(primo.consegnati.O1, "2026-11-18T12:00:00.000Z");
+  // Un altro dispositivo subito dopo: niente doppioni
+  const secondo = filtraConsegnate([v("O1"), v("O2"), v("O3")], primo.consegnati, t0 + 60_000);
+  assert.deepEqual(secondo.vendite.map((x) => x.orderId), ["O3"]);
+  // Dopo 15 minuti si ripassano (chi le ha già le scarta), la data della prima consegna resta
+  const dopo = filtraConsegnate([v("O1")], secondo.consegnati, t0 + 16 * 60_000);
+  assert.deepEqual(dopo.vendite.map((x) => x.orderId), ["O1"]);
+  assert.equal(dopo.consegnati.O1, "2026-11-18T12:00:00.000Z");
+});
+
+test("vendite consegnate: si ricordano al più le ultime 500", () => {
+  const vecchi = Object.fromEntries(Array.from({ length: 600 }, (_, i) => [`V${i}`, new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString()]));
+  const r = filtraConsegnate([{ orderId: "NUOVO", sku: "A-1", quantita: 1, prezzoUnitario: 1, acquirente: "x", at: "T" }], vecchi, Date.parse("2026-11-18T00:00:00Z"));
+  assert.equal(Object.keys(r.consegnati).length, 500);
+  assert.ok(r.consegnati.NUOVO);
+  assert.ok(r.consegnati.V599);
+  assert.equal(r.consegnati.V0, undefined);
 });

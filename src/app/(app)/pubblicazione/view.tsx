@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import { statoPonte } from "@/lib/ebay-sync";
 import { publishChecks, euro } from "@/lib/logic";
-import { groupKey, listingOf, placementFor, type Placement } from "@/lib/annunci";
+import { gpsrBlocksEbay, groupKey, listingOf, placementFor, type Placement } from "@/lib/annunci";
 import { bozzaFor } from "@/lib/annuncio-build";
 import { typeById } from "@/lib/catalog";
 import { isShippable } from "@/lib/spedizione";
@@ -16,7 +16,7 @@ import { Button, Empty, Notice, PageTitle, Panel, PartImage, StatusChip } from "
 
 export default function Pubblicazione() {
   const s = useStore();
-  const [msg, setMsg] = useState<{ tone: "ok" | "danger"; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ tone: "ok" | "warn" | "danger"; text: string } | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [ebayCollegato, setEbayCollegato] = useState(false);
   useEffect(() => {
@@ -48,17 +48,26 @@ export default function Pubblicazione() {
           ready.length > 0 && (
             <Button
               onClick={() => {
-                // Un pezzo alla volta dallo stato aggiornato: i pezzi uguali entrano nell'annuncio appena creato
+                // Un pezzo alla volta dallo stato aggiornato: i pezzi uguali entrano nell'annuncio appena creato.
+                // Con eBay collegato anche su eBay, come nell'anteprima; con il GPSR da confermare solo sul negozio.
+                const soloNegozio: string[] = [];
                 const errors = ready.flatMap((x) => {
                   const p = useStore.getState().parts.find((y) => y.id === x.p.id);
                   if (!p || p.annuncioId) return [];
-                  const r = useStore.getState().publishAnnuncio(p.id, bozzaFor(p, useStore.getState().vehicles));
+                  const bozza = bozzaFor(p, useStore.getState().vehicles);
+                  const conEbay = ebayCollegato && !gpsrBlocksEbay(bozza.gpsr);
+                  const r = useStore.getState().publishAnnuncio(p.id, { ...bozza, canali: { negozio: true, ebay: conEbay } });
+                  if (r.ok && ebayCollegato && !conEbay && x.placement.kind === "nuovo") soloNegozio.push(r.value);
                   return r.ok ? [] : [`${p.id}: ${r.error}`];
                 });
+                const dove = ebayCollegato ? "sul negozio ed eBay" : "sul negozio";
+                const nota = soloNegozio.length
+                  ? ` Solo sul negozio, perché il GPSR è da confermare: ${[...new Set(soloNegozio)].join(", ")} (confermalo nell'elenco annunci con «Pubblica su eBay»).`
+                  : "";
                 setMsg(
                   errors.length
-                    ? { tone: "danger", text: `Pubblicati ${ready.length - errors.length} ricambi. Non pubblicati: ${errors.join(" · ")}` }
-                    : { tone: "ok", text: `${ready.length} ricambi pubblicati sul negozio` },
+                    ? { tone: "danger", text: `Pubblicati ${ready.length - errors.length} ricambi ${dove}. Non pubblicati: ${errors.join(" · ")}.${nota}` }
+                    : { tone: soloNegozio.length ? "warn" : "ok", text: `${ready.length} ricambi pubblicati ${dove}.${nota}` },
                 );
               }}
             >

@@ -4,7 +4,9 @@
 // e importa le vendite. Le funzioni pure stanno in ebay/sync-puro.ts.
 import { useEffect } from "react";
 import { useStore } from "./store";
-import { nextToSync } from "./ebay/sync-puro";
+import { syncAllineato, syncPronto } from "./sync";
+import { daPerVendite, esitoDaStato, nextToSync, type Attuale } from "./ebay/sync-puro";
+import { fotoPerEbay } from "./ebay/payload";
 import { richiestaPer } from "./ebay/richiesta";
 import type { EsitoAllinea, RichiestaAllinea, StatoPonte, VenditaEbay } from "./ebay/contratto";
 import { nextToShip, partsOf, quantityOf } from "./annunci";
@@ -25,35 +27,49 @@ let ripeti = false;
 // Ultima richiesta andata in errore per annuncio: non si rimanda uguale finché non cambia o scatta il giro dei 60 secondi
 const ultimoErrore = new Map<string, string>();
 
-function richiestaDi(a: Annuncio, st: Store): RichiestaAllinea {
+const prezzoOnline = (base: number) => onlinePrice(base) ?? base;
+/** Quantità e prezzo online di adesso: gli stessi calcoli della richiesta, per accorgersi di una differenza con eBay. */
+const attualeDi = (st: Store) => (a: Annuncio): Attuale => ({ quantita: quantityOf(a, st.parts), prezzo: prezzoOnline(a.price) });
+
+/** Richiesta per eBay e avvisi dell'app (es. foto rimaste nel telefono, che non vanno su eBay). */
+function richiestaDi(a: Annuncio, st: Store): { r: RichiestaAllinea; avvisi: string[] } {
   const mine = partsOf(a, st.parts);
   const prossimo = nextToShip(a, st.parts)[0];
   const recente = [...mine].sort((x, y) => (y.createdAt ?? "").localeCompare(x.createdAt ?? ""))[0];
-  return richiestaPer(
+  // Solo foto già sul server: quelle rimaste nel telefono (data: URL) gonfierebbero la richiesta oltre il limite
+  const foto = fotoPerEbay((prossimo ?? recente)?.photos ?? []);
+  const r = richiestaPer(
     a,
     {
       quantita: quantityOf(a, st.parts),
-      foto: (prossimo ?? recente)?.photos ?? [],
+      foto: foto.foto,
       compatibilita: compatVehicles(mine, st.vehicles, PLATFORMS),
       categoriaQuery: EBAY_CATEGORY_QUERY[a.typeId] ?? typeById(a.typeId).name,
       typeShippable: typeById(a.typeId).shippable,
     },
-    (base) => onlinePrice(base) ?? base,
+    prezzoOnline,
   );
+  return { r, avvisi: foto.avviso ? [foto.avviso] : [] };
 }
 
-async function manda(r: RichiestaAllinea): Promise<EsitoAllinea | undefined> {
+async function manda(r: RichiestaAllinea): Promise<EsitoAllinea | "salta" | "fermati"> {
+  let res: Response;
   try {
-    const res = await fetch("/api/ebay/allinea", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(r) });
-    if (res.ok) return (await res.json()) as EsitoAllinea;
-    if (res.status === 400) return { stato: "errore", avvisi: [], errore: "La richiesta per eBay non è valida: controlla titolo, prezzo e foto" };
-    return undefined; // server in difficoltà: si riprova al giro dopo
+    res = await fetch("/api/ebay/allinea", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(r) });
   } catch {
-    return undefined; // niente rete: si riprova al giro dopo
+    return "fermati"; // niente rete: si riprova al giro dopo
+  }
+  if (!res.ok) return esitoDaStato(res.status);
+  try {
+    return (await res.json()) as EsitoAllinea;
+  } catch {
+    return "salta"; // risposta rovinata: questo annuncio riparte al giro dopo
   }
 }
 
 export async function riallinea(force = false): Promise<void> {
+  // Prima dell'allineamento con gli altri dispositivi i dati di questo potrebbero essere vecchi
+  if (!syncAllineato()) return;
   if (inCorso) {
     ripeti = true;
     return;
@@ -63,17 +79,19 @@ export async function riallinea(force = false): Promise<void> {
     const tentati = new Set<string>();
     for (;;) {
       const st = useStore.getState();
-      const a = nextToSync(st.annunci.filter((x) => !tentati.has(x.id)));
+      const a = nextToSync(st.annunci.filter((x) => !tentati.has(x.id)), attualeDi(st));
       if (!a) break;
       tentati.add(a.id);
-      const r = richiestaDi(a, st);
+      const { r, avvisi } = richiestaDi(a, st);
       const chiave = JSON.stringify(r);
       if (!force && a.ebay?.errore && ultimoErrore.get(a.id) === chiave) continue;
       const esito = await manda(r);
-      if (!esito) break;
+      if (esito === "fermati") break;
+      // Server in difficoltà su questo annuncio: si passa agli altri, questo riparte al giro dei 60 secondi
+      if (esito === "salta") continue;
       if (esito.stato === "errore") ultimoErrore.set(a.id, chiave);
       else ultimoErrore.delete(a.id);
-      st.setEbayResult(a.id, esito, { quantita: r.quantita, prezzo: r.prezzo, attivo: r.attivo, titolo: r.titolo });
+      st.setEbayResult(a.id, { ...esito, avvisi: [...avvisi, ...(esito.avvisi ?? [])] }, { quantita: r.quantita, prezzo: r.prezzo, attivo: r.attivo, titolo: r.titolo });
     }
   } finally {
     inCorso = false;
@@ -93,19 +111,22 @@ export async function statoPonte(): Promise<StatoPonte | undefined> {
   }
 }
 
-function leggiUltimo(): string {
+/** Da quando chiedere: ultimo controllo di questo dispositivo meno un'ora (il server non guarda comunque prima dell'ultimo controllo di chiunque). */
+function leggiDa(): string {
+  let v: string | null = null;
   try {
-    const v = localStorage.getItem(ULTIMO_CONTROLLO);
-    if (v) return v;
+    v = localStorage.getItem(ULTIMO_CONTROLLO);
   } catch {}
-  return new Date(Date.now() - 7 * 24 * 3600_000).toISOString();
+  return daPerVendite(v, Date.now());
 }
 
 /** Chiede a eBay le vendite dall'ultimo controllo e le importa. Restituisce quante vendite nuove ha creato. */
 export async function controllaVendite(): Promise<{ ok: boolean; nuove: number; errore?: string }> {
+  // Con dati vecchi la vendita finirebbe su pezzi già venduti altrove, e la lettura dopo la cancellerebbe
+  if (!syncAllineato()) return { ok: false, nuove: 0, errore: "Dati non ancora allineati con gli altri dispositivi: riprova tra poco" };
   const prima = new Date().toISOString();
   try {
-    const res = await fetch(`/api/ebay/vendite?da=${encodeURIComponent(leggiUltimo())}`, { cache: "no-store" });
+    const res = await fetch(`/api/ebay/vendite?da=${encodeURIComponent(leggiDa())}`, { cache: "no-store" });
     if (!res.ok) return { ok: false, nuove: 0, errore: "eBay non risponde" };
     const { vendite } = (await res.json()) as { vendite: VenditaEbay[] };
     const st = useStore.getState();
@@ -145,30 +166,40 @@ export function simulateEbaySale(annuncioId: string, quantita: number): { ok: tr
   });
 }
 
-/** Da montare una volta sola nella gestione: riallinea subito quando serve, all'avvio e ogni 60 secondi; controlla le vendite ogni 5 minuti. */
+/**
+ * Da montare una volta sola nella gestione: riallinea subito quando serve, all'avvio e ogni 60 secondi; controlla le vendite ogni 5 minuti.
+ * Tutto parte solo dopo il primo allineamento vero con gli altri dispositivi (non basta il timeout di avvio):
+ * un dispositivo tornato dopo giorni manderebbe a eBay quantità vecchie.
+ */
 export function useEbaySync(): void {
   useEffect(() => {
     let attivo = true;
     let t: ReturnType<typeof setTimeout> | undefined;
+    let unsub: (() => void) | undefined;
+    let giro: ReturnType<typeof setInterval> | undefined;
+    let vendite: ReturnType<typeof setInterval> | undefined;
     const presto = () => {
       clearTimeout(t);
       t = setTimeout(() => attivo && void riallinea(false), 400);
     };
-    void riallinea(true);
-    const unsub = useStore.subscribe((s, prev) => {
-      if (s.annunci !== prev.annunci) presto();
-    });
-    const giro = setInterval(() => void riallinea(true), OGNI_MS);
     const controlloAutomatico = async () => {
       const p = await statoPonte();
       if (attivo && p?.modo === "Sandbox" && p.collegato) void controllaVendite();
     };
-    void controlloAutomatico();
-    const vendite = setInterval(() => void controlloAutomatico(), VENDITE_OGNI_MS);
+    void syncPronto().then(() => {
+      if (!attivo) return;
+      void riallinea(true);
+      unsub = useStore.subscribe((s, prev) => {
+        if (s.annunci !== prev.annunci || s.parts !== prev.parts) presto();
+      });
+      giro = setInterval(() => void riallinea(true), OGNI_MS);
+      void controlloAutomatico();
+      vendite = setInterval(() => void controlloAutomatico(), VENDITE_OGNI_MS);
+    });
     return () => {
       attivo = false;
       clearTimeout(t);
-      unsub();
+      unsub?.();
       clearInterval(giro);
       clearInterval(vendite);
     };

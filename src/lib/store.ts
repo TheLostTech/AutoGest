@@ -9,7 +9,7 @@ import { eerByCode, movesForBonifica, movesForIntake, stockByEer } from "./ambie
 import { differenzaPesata } from "./stime";
 import { DEFAULT_LISTINI, onlinePrice, type Listino } from "./pricing";
 import { typeById } from "./catalog";
-import { GPSR_ERRORE, gpsrBlocksEbay, alignedPrice, groupKey, listingFieldsChanged, listingOf, membershipAfter, missingNote, partsOf, pickForSale, placementFor, quantityOf, refreshAnnuncio, shopPicks } from "./annunci";
+import { GPSR_ERRORE, categoriaEbayDa, gpsrAfterVehicleChange, gpsrBlocksEbay, alignedPrice, groupKey, listingFieldsChanged, listingOf, membershipAfter, missingNote, partsOf, pickForSale, placementFor, quantityOf, refreshAnnuncio, shopPicks } from "./annunci";
 import { buildAnnuncio, fieldsFromPart, gpsrOf, textFor, type BozzaAnnuncio } from "./annuncio-build";
 import { isShippable } from "./spedizione";
 import type { EsitoAllinea, VenditaEbay } from "./ebay/contratto";
@@ -105,6 +105,8 @@ interface Actions {
   withdrawAnnuncio: (annuncioId: string, canale: "negozio" | "ebay" | "tutti") => Result<string>;
   republishAnnuncio: (annuncioId: string, canali: { negozio: boolean; ebay: boolean }) => Result<string>;
   setAnnuncioGpsr: (annuncioId: string, gpsr: Gpsr) => void;
+  /** Numero della categoria eBay scritto dall'operatore; "" la toglie (la sceglie di nuovo eBay) */
+  setAnnuncioCategoria: (annuncioId: string, categoriaId: string) => Result<string>;
   editAnnuncioText: (annuncioId: string, titolo: string, descrizione: string) => void;
   regenerateText: (annuncioId: string) => void;
   orderFromAnnunci: (channel: "negozio", annuncioIds: string[], customer: string, actor?: Actor, delivery?: "corriere" | "ritiro") => Result<string>;
@@ -374,10 +376,14 @@ export const useStore = create<State & Actions>()(
           const prev = get().vehicles.find((v) => v.id === id);
           set((s) => ({ vehicles: s.vehicles.map((v) => (v.id === id ? { ...v, ...patch } : v)) }));
           push(event({ entity: "veicolo", entityId: id, action, detail }));
-          // Marca, modello, versione, anno o km cambiati: gli annunci dei suoi pezzi riscrivono il testo
-          // (se non modificato) e si riallineano su eBay; con marca o anno cambiati si ricalcola anche il GPSR
           const next = get().vehicles.find((v) => v.id === id);
           if (!prev || !next) return;
+          // Provenienza cambiata (es. tornata «da verificare»): i controlli bloccanti tolgono i suoi pezzi dagli annunci,
+          // e con la provenienza di nuovo verificata vi rientrano
+          if (prev.verification !== next.verification) settle(get().parts.filter((p) => p.vehicleId === id).map((p) => p.id));
+          // Marca, modello, versione, anno o km cambiati: gli annunci dei suoi pezzi riscrivono il testo
+          // (se non modificato) e si riallineano su eBay; con marca o anno cambiati si ricalcola anche il GPSR,
+          // salvo quello confermato a mano dall'operatore
           const changed = listingFieldsChanged(prev, next);
           if (!changed.text) return;
           const aids = [...new Set(get().parts.filter((p) => p.vehicleId === id && p.annuncioId).map((p) => p.annuncioId!))];
@@ -385,7 +391,7 @@ export const useStore = create<State & Actions>()(
             set((st) => ({
               annunci: st.annunci.map((a) => {
                 if (!aids.includes(a.id)) return a;
-                const gpsr = gpsrOf(a, st.parts, st.vehicles, id);
+                const gpsr = gpsrAfterVehicleChange(a, gpsrOf(a, st.parts, st.vehicles, id));
                 return gpsr ? { ...a, gpsr } : a;
               }),
             }));
@@ -526,6 +532,8 @@ export const useStore = create<State & Actions>()(
           const titolo = bozza.titolo.trim();
           if (!titolo) return { ok: false, error: "Scrivi il titolo dell'annuncio" };
           if (titolo.length > 80) return { ok: false, error: "Il titolo supera gli 80 caratteri ammessi da eBay" };
+          const categoria = categoriaEbayDa(bozza.categoriaEbay ?? "");
+          if (categoria === undefined) return { ok: false, error: "Il numero della categoria eBay ha solo cifre" };
           // Con un annuncio uguale non se ne crea un secondo
           const place = placementFor(p, keyOf(p), s.annunci);
           if (place.kind === "unisci") {
@@ -545,8 +553,11 @@ export const useStore = create<State & Actions>()(
             testoModificato: bozza.testoModificato,
             caratteristiche: bozza.caratteristiche,
             gpsr: bozza.gpsr,
+            ...(bozza.gpsrManuale ? { gpsrManuale: true } : {}),
             negozio: bozza.canali.negozio ? base.negozio : undefined,
-            ebay: bozza.canali.ebay ? { stato: "in pubblicazione", daRiallineare: true } : undefined,
+            ebay: bozza.canali.ebay
+              ? { stato: "in pubblicazione", daRiallineare: true, ...(categoria ? { categoria: { id: categoria, manuale: true } } : {}) }
+              : undefined,
           };
           set((st) => ({
             annunci: [a, ...st.annunci],
@@ -637,10 +648,35 @@ export const useStore = create<State & Actions>()(
         },
 
         // GPSR confermato dall'operatore: serve prima di attivare eBay
+        // Confermato a mano: resta anche se poi cambiano marca o anno del veicolo; "da confermare" lo riapre
         setAnnuncioGpsr: (annuncioId, gpsr) => {
           if (!get().annunci.some((x) => x.id === annuncioId)) return;
-          set((st) => ({ annunci: st.annunci.map((x) => (x.id === annuncioId ? { ...x, gpsr } : x)) }));
+          const gpsrManuale = gpsr.tipo !== "da confermare";
+          set((st) => ({ annunci: st.annunci.map((x) => (x.id === annuncioId ? { ...x, gpsr, gpsrManuale } : x)) }));
           push(annuncioEvent(annuncioId, "GPSR dell'annuncio confermato", gpsr.tipo === "esente" ? "Messo in commercio prima del 13/12/2024" : gpsr.tipo === "produttore" ? gpsr.produttore.ragioneSociale : "da confermare"));
+          touchAnnuncio(annuncioId);
+        },
+
+        setAnnuncioCategoria: (annuncioId, categoriaId) => {
+          const a = get().annunci.find((x) => x.id === annuncioId);
+          if (!a?.ebay) return { ok: false, error: "L'annuncio non è su eBay" };
+          const id = categoriaEbayDa(categoriaId);
+          if (id === undefined) return { ok: false, error: "Il numero della categoria eBay ha solo cifre" };
+          const prima = a.ebay.categoria;
+          if ((id || undefined) === (prima?.manuale ? prima.id : undefined)) return { ok: true, value: annuncioId };
+          set((st) => ({
+            annunci: st.annunci.map((x) =>
+              x.id === annuncioId && x.ebay
+                ? {
+                    ...x,
+                    // Senza numero la categoria la sceglie di nuovo eBay; un annuncio ritirato non si rimanda
+                    ebay: { ...x.ebay, categoria: id ? { id, manuale: true } : undefined, daRiallineare: x.ebay.stato === "ritirato" ? x.ebay.daRiallineare : true },
+                  }
+                : x,
+            ),
+          }));
+          push(annuncioEvent(annuncioId, "Categoria eBay cambiata", id ? `${prima?.id ?? "scelta da eBay"} → ${id}` : "la sceglie eBay"));
+          return { ok: true, value: annuncioId };
         },
 
         editAnnuncioText: (annuncioId, titolo, descrizione) => {
@@ -739,7 +775,8 @@ export const useStore = create<State & Actions>()(
               amount: Math.round(v.prezzoUnitario * v.quantita * 100) / 100,
               prices: Object.fromEntries(pick.partIds.map((pid) => [pid, v.prezzoUnitario])),
               status: "pagato",
-              customer: (v.acquirente ?? "").trim().slice(0, 120) || "Acquirente eBay",
+              // Un acquirente non testo (dati strani da eBay) non deve bloccare questa e le vendite dopo
+              customer: String(v.acquirente ?? "").trim().slice(0, 120) || "Acquirente eBay",
               paymentRef: `EBAY-${v.orderId}`,
               ebayOrderId: v.orderId,
               daGestire,

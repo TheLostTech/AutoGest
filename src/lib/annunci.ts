@@ -107,6 +107,21 @@ export function listingFieldsChanged(
 }
 
 /**
+ * GPSR dopo un cambio di marca o anno del veicolo: quello ricalcolato, salvo che l'operatore l'abbia confermato a mano
+ * (resta il suo finché non lo cambia lui). undefined = resta quello di prima.
+ */
+export function gpsrAfterVehicleChange(a: Pick<Annuncio, "gpsrManuale">, ricalcolato: Gpsr | undefined): Gpsr | undefined {
+  return a.gpsrManuale ? undefined : ricalcolato;
+}
+
+/** Numero della categoria eBay scritto dall'operatore: solo cifre. "" = nessuna (la sceglie eBay); undefined = non valido. */
+export function categoriaEbayDa(testo: string): string | "" | undefined {
+  const t = testo.trim();
+  if (!t) return "";
+  return /^\d{1,12}$/.test(t) ? t : undefined;
+}
+
+/**
  * Pezzi da riservare per un ordine del negozio: uno per ogni volta che l'annuncio compare.
  * Si compra solo un annuncio online sul negozio, con abbastanza pezzi disponibili e un prezzo.
  */

@@ -102,6 +102,10 @@ export interface BozzaAnnuncio {
   testoModificato: boolean;
   caratteristiche: Record<string, string>;
   gpsr: Gpsr;
+  /** GPSR confermato dall'operatore nell'anteprima */
+  gpsrManuale?: boolean;
+  /** Numero della categoria eBay scritto dall'operatore; vuoto = la sceglie eBay */
+  categoriaEbay?: string;
   canali: { negozio: boolean; ebay: boolean };
 }
 

@@ -1,7 +1,7 @@
 // Riallineamento eBay: scelta e applicazione dell'esito. Si eseguono con: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyEsito, nextToSync } from "./sync-puro.ts";
+import { applyEsito, daPerVendite, esitoDaStato, nextToSync } from "./sync-puro.ts";
 import type { Annuncio, AnnuncioEbay } from "../types.ts";
 
 const ann = (id: string, ebay?: Partial<AnnuncioEbay>): Annuncio =>
@@ -74,6 +74,62 @@ test("un errore su un annuncio già online ne tiene lo stato e salva l'errore", 
   assert.equal(e.stato, "online");
   assert.equal(e.errore, "eBay non risponde");
   assert.equal(e.daRiallineare, true);
+});
+
+test("quantità o prezzo diversi da quelli mandati: da riallineare anche senza il segno", () => {
+  const attuale = () => ({ quantita: 2, prezzo: 108 });
+  const allineato = ann("A-1", { quantitaInviata: 2, prezzoInviato: 108 });
+  const qDiversa = ann("A-2", { quantitaInviata: 3, prezzoInviato: 108 });
+  const pDiverso = ann("A-3", { quantitaInviata: 2, prezzoInviato: 100 });
+  assert.equal(nextToSync([allineato], attuale), undefined);
+  assert.equal(nextToSync([allineato, qDiversa], attuale)?.id, "A-2");
+  assert.equal(nextToSync([allineato, pDiverso], attuale)?.id, "A-3");
+  // Senza il confronto vale solo il segno, come prima
+  assert.equal(nextToSync([qDiversa]), undefined);
+});
+
+test("la differenza non conta per annunci ritirati o mai pensati per eBay; mai mandato = da mandare", () => {
+  const attuale = () => ({ quantita: 1, prezzo: 108 });
+  assert.equal(nextToSync([ann("A-1", { stato: "ritirato", quantitaInviata: 5, prezzoInviato: 1 })], attuale), undefined);
+  assert.equal(nextToSync([ann("A-2", { stato: "non pubblicato" })], attuale), undefined);
+  assert.equal(nextToSync([ann("A-3", { stato: "in pubblicazione" })], attuale)?.id, "A-3");
+});
+
+test("risposta del ponte: 4xx errore salvato, 5xx salta l'annuncio, niente rete ferma il giro", () => {
+  const e413 = esitoDaStato(413);
+  assert.ok(typeof e413 === "object" && e413.stato === "errore" && /troppo grande/.test(e413.errore ?? ""));
+  const e400 = esitoDaStato(400);
+  assert.ok(typeof e400 === "object" && e400.stato === "errore");
+  const e403 = esitoDaStato(403);
+  assert.ok(typeof e403 === "object" && e403.stato === "errore" && /403/.test(e403.errore ?? ""));
+  assert.equal(esitoDaStato(500), "salta");
+  assert.equal(esitoDaStato(502), "salta");
+  assert.equal(esitoDaStato(0), "fermati");
+});
+
+test("controllo vendite: dall'ultimo controllo meno un'ora; al primo, 7 giorni", () => {
+  const ora = Date.parse("2026-11-18T12:00:00.000Z");
+  assert.equal(daPerVendite("2026-11-18T11:55:00.000Z", ora), "2026-11-18T10:55:00.000Z");
+  assert.equal(daPerVendite(null, ora), "2026-11-11T12:00:00.000Z");
+  assert.equal(daPerVendite("rovinato", ora), "2026-11-11T12:00:00.000Z");
+});
+
+test("categoria rifiutata: si dimentica quella di eBay, resta quella dell'operatore", () => {
+  const rifiuto = { stato: "errore" as const, avvisi: [], errore: "eBay non accetta la categoria.", categoriaRifiutata: true };
+  const daEbay = applyEsito(ann("A-1", { daRiallineare: true, categoria: { id: "1", nome: "Fari" } }), rifiuto, { quantita: 1, prezzo: 1 }, "T");
+  assert.equal(daEbay.categoria, undefined);
+  const manuale = applyEsito(ann("A-1", { daRiallineare: true, categoria: { id: "2", manuale: true } }), rifiuto, { quantita: 1, prezzo: 1 }, "T");
+  assert.deepEqual(manuale.categoria, { id: "2", manuale: true });
+  // Un altro errore non tocca la categoria
+  const altro = applyEsito(ann("A-1", { daRiallineare: true, categoria: { id: "1", nome: "Fari" } }), { stato: "errore", avvisi: [], errore: "x" }, { quantita: 1, prezzo: 1 }, "T");
+  assert.equal(altro.categoria?.id, "1");
+});
+
+test("esito buono: la categoria dell'operatore resta sua e prende il nome da eBay", () => {
+  const e = applyEsito(ann("A-1", { daRiallineare: true, categoria: { id: "2", manuale: true } }), { ...esitoOnline, categoria: { id: "2", nome: "Fanali" } }, { quantita: 1, prezzo: 1 }, "T");
+  assert.deepEqual(e.categoria, { id: "2", nome: "Fanali", manuale: true });
+  const senza = applyEsito(ann("A-1", { daRiallineare: true }), { ...esitoOnline, categoria: { id: "3", nome: "Fari" } }, { quantita: 1, prezzo: 1 }, "T");
+  assert.deepEqual(senza.categoria, { id: "3", nome: "Fari" });
 });
 
 test("se l'annuncio è cambiato durante la richiesta resta da riallineare", () => {

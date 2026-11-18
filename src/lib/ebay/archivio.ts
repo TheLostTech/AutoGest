@@ -17,11 +17,14 @@ export interface ArchivioEbay {
   token?: { access: string; scade: string; refresh: string; refreshScade: string };
   /** Valore casuale del consenso in corso (anti-CSRF), valido pochi minuti */
   state?: { valore: string; scade: string };
+  /** Inizio dell'ultimo controllo delle vendite (da qualunque dispositivo): i controlli dopo non guardano prima di questa data meno un'ora */
   ultimoControllo?: string;
+  /** Numeri d'ordine eBay già passati a un dispositivo → quando (gli ultimi 500), per non importarli due volte */
+  consegnati: Record<string, string>;
   /** Foto già caricate su eBay: indirizzo nel gestionale → indirizzo eBay (EPS) */
   foto: Record<string, { url: string; scade?: string }>;
-  /** Categoria trovata per ogni parola di ricerca (in minuscolo) */
-  categorie: Record<string, { id: string; nome: string }>;
+  /** Categoria trovata per ogni parola di ricerca (in minuscolo), con la data: dopo 30 giorni si cerca di nuovo */
+  categorie: Record<string, { id: string; nome: string; at?: string }>;
   politiche: Partial<Record<RuoloPolitica, { id: string; nome: string }>>;
   magazzino?: { id: string; nome: string };
   esauritoAttivo?: boolean;
@@ -33,7 +36,7 @@ export interface ArchivioEbay {
   errore?: string;
 }
 
-const vuoto = (): ArchivioEbay => ({ foto: {}, categorie: {}, politiche: {}, pubblicati: {}, ritirati: {} });
+const vuoto = (): ArchivioEbay => ({ consegnati: {}, foto: {}, categorie: {}, politiche: {}, pubblicati: {}, ritirati: {} });
 
 export async function leggiArchivio(): Promise<ArchivioEbay> {
   try {

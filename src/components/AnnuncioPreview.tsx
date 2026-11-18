@@ -5,6 +5,7 @@ import { useStore } from "@/lib/store";
 import { PLATFORMS, typeById } from "@/lib/catalog";
 import { euro } from "@/lib/logic";
 import { bozzaFor } from "@/lib/annuncio-build";
+import { categoriaEbayDa } from "@/lib/annunci";
 import { EBAY_CATEGORY_QUERY, aspectsFor, compatVehicles } from "@/lib/annuncio-testo";
 import { ONLINE_FEE_PCT, onlinePrice } from "@/lib/pricing";
 import type { Part } from "@/lib/types";
@@ -25,6 +26,7 @@ export function AnnuncioPreview({ part, ebayDefault = false, onDone, onCancel }:
   const [negozio, setNegozio] = useState(true);
   const [ebay, setEbay] = useState(ebayDefault);
   const [scelta, setScelta] = useState<GpsrScelta>(GPSR_VUOTO);
+  const [categoria, setCategoria] = useState("");
   const radice = useRef<HTMLDivElement>(null);
   const titoloRef = useRef<HTMLInputElement>(null);
   // Si apre sopra la coda: portarlo in vista e mettere il cursore sul titolo
@@ -49,6 +51,7 @@ export function AnnuncioPreview({ part, ebayDefault = false, onDone, onCancel }:
     : !lunghezza ? "Scrivi il titolo"
     : lunghezza > MAX_TITOLO ? `Il titolo supera di ${lunghezza - MAX_TITOLO} caratteri il massimo`
     : ebay && !gpsrOk ? "Per eBay serve confermare i dati GPSR"
+    : categoriaEbayDa(categoria) === undefined ? "Il numero della categoria eBay ha solo cifre"
     : "";
 
   return (
@@ -74,7 +77,11 @@ export function AnnuncioPreview({ part, ebayDefault = false, onDone, onCancel }:
             <div>
               <h3 className="mb-1.5 text-sm font-semibold text-ink">Categoria eBay</h3>
               <p className="text-[15px]">{EBAY_CATEGORY_QUERY[part.typeId] ?? t.name}</p>
-              <p className="text-sm text-ink-3">La categoria esatta la sceglie eBay alla pubblicazione.</p>
+              <p className="text-sm text-ink-3">Se lasci vuoto il numero, la categoria esatta la sceglie eBay alla pubblicazione.</p>
+              <label className="mt-2 block text-sm font-semibold">
+                Categoria eBay (numero)
+                <input className="field mt-1" inputMode="numeric" value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="facoltativo, es. 33710" aria-label="Numero della categoria eBay" />
+              </label>
             </div>
             <div>
               <h3 className="mb-1.5 text-sm font-semibold text-ink">Caratteristiche</h3>
@@ -132,7 +139,17 @@ export function AnnuncioPreview({ part, ebayDefault = false, onDone, onCancel }:
             <Button
               disabled={!!motivo}
               onClick={() => {
-                const r = s.publishAnnuncio(part.id, { titolo: titolo.trim(), descrizione: descrizione.trim(), testoModificato: modificato, caratteristiche: auto.caratteristiche, gpsr, canali: { negozio, ebay } });
+                const r = s.publishAnnuncio(part.id, {
+                  titolo: titolo.trim(),
+                  descrizione: descrizione.trim(),
+                  testoModificato: modificato,
+                  caratteristiche: auto.caratteristiche,
+                  gpsr,
+                  // GPSR scelto qui dall'operatore: non si ricalcola più dal veicolo
+                  gpsrManuale: daConfermare && !!decisa,
+                  categoriaEbay: categoria,
+                  canali: { negozio, ebay },
+                });
                 onDone(r.ok ? `${part.id} pubblicato nell'annuncio ${r.value}` : `${part.id}: ${r.error}`, r.ok);
               }}
             >

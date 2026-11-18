@@ -275,6 +275,70 @@ export function fileFoto(url: string): { cartella: "foto" | "public"; nome: stri
   return undefined;
 }
 
+/**
+ * Foto da mandare a eBay: solo quelle già sul server (/api/foto/… o /renders/…). Le foto rimaste solo nel telefono
+ * (caricamento non riuscito: restano come data: URL, pesanti) non vanno su eBay e diventano un avviso.
+ */
+export function fotoPerEbay(foto: string[]): { foto: string[]; avviso?: string } {
+  const tutte = foto.filter((u) => typeof u === "string" && !!fileFoto(u));
+  const n = foto.length - tutte.length;
+  const ok = tutte.slice(0, MAX_FOTO); // eBay ne accetta al più 24
+  if (!n) return { foto: ok };
+  return { foto: ok, avviso: `${n} ${n === 1 ? "foto non ancora caricata" : "foto non ancora caricate"} sul server: non ${n === 1 ? "va" : "vanno"} su eBay.` };
+}
+
+// ── Categoria trovata da eBay (cache nell'archivio) ──
+/** Cosa fare quando la categoria non va: il campo esiste nell'anteprima e in «Modifica testo» dell'elenco annunci. */
+export const CATEGORIA_DA_SCRIVERE = "in Pubblicazione → Annunci tocca «Modifica testo» e scrivi il numero della categoria eBay.";
+export const DURATA_CATEGORIA = 30 * 24 * 3600_000;
+
+/** Una categoria trovata con la ricerca vale 30 giorni; senza data (archivi vecchi) si cerca di nuovo. */
+export function categoriaFresca(x: { at?: string } | undefined, ora: number): boolean {
+  const t = x?.at ? Date.parse(x.at) : NaN;
+  return !Number.isNaN(t) && ora - t < DURATA_CATEGORIA;
+}
+
+/** eBay rifiuta la categoria (errore 25005). */
+export const categoriaRifiutata = (codici: number[]) => codici.includes(25005);
+
+// ── Vendite: finestra e ordini già consegnati ──
+const ORA = 3600_000;
+/** Ordini già passati a un dispositivo: per 15 minuti non si ripassano ad altri (il tempo che l'ordine arrivi a tutti con i dati condivisi). */
+export const ATTESA_CONSEGNATI = 15 * 60_000;
+export const MAX_CONSEGNATI = 500;
+
+/**
+ * Inizio della ricerca degli ordini: la data chiesta dal dispositivo, ma non prima dell'ultimo controllo fatto
+ * da qualunque dispositivo meno un'ora (gli ordini più vecchi sono già stati passati e importati), e non oltre i due anni di eBay.
+ */
+export function inizioVendite(da: string, ultimoControllo: string | undefined, ora: number): string {
+  const chiesto = Date.parse(da);
+  const pavimento = ultimoControllo ? Date.parse(ultimoControllo) - ORA : NaN;
+  const dueAnni = ora - 2 * 365 * 24 * ORA + 24 * ORA;
+  return new Date(Math.max(Number.isNaN(chiesto) ? dueAnni : chiesto, Number.isNaN(pavimento) ? dueAnni : pavimento, dueAnni)).toISOString();
+}
+
+/**
+ * Toglie le vendite già passate a un dispositivo da meno di 15 minuti, così due dispositivi che controllano insieme
+ * non importano lo stesso ordine due volte. Dopo i 15 minuti l'ordine si ripassa: chi l'ha già importato lo scarta
+ * per numero d'ordine, chi non c'era riuscito lo importa. Si ricordano al più gli ultimi 500 numeri.
+ */
+export function filtraConsegnate(vendite: VenditaEbay[], consegnati: Record<string, string>, ora: number): { vendite: VenditaEbay[]; consegnati: Record<string, string> } {
+  const adesso = new Date(ora).toISOString();
+  const nuovi: Record<string, string> = { ...consegnati };
+  const out = vendite.filter((v) => {
+    const t = Date.parse(consegnati[v.orderId] ?? "");
+    if (!Number.isNaN(t) && ora - t < ATTESA_CONSEGNATI) return false;
+    // Si tiene la data della prima consegna: rinnovarla terrebbe l'ordine nascosto per sempre
+    if (Number.isNaN(t)) nuovi[v.orderId] = adesso;
+    return true;
+  });
+  const tenuti = Object.entries(nuovi)
+    .sort((x, y) => y[1].localeCompare(x[1]))
+    .slice(0, MAX_CONSEGNATI);
+  return { vendite: out, consegnati: Object.fromEntries(tenuti) };
+}
+
 // ── Offerte esistenti ──
 export interface OffertaEbay { offerId?: string; status?: string; listing?: { listingId?: string; listingStatus?: string } }
 
@@ -388,6 +452,7 @@ interface ErroreRest { errorId?: number; message?: string; longMessage?: string;
 const COSA: Record<string, string> = {
   riprova: "niente, il gestionale riprova da solo tra poco.",
   annuncio: "controlla l'annuncio nel gestionale e salvalo di nuovo.",
+  categoria: CATEGORIA_DA_SCRIVERE,
   politiche: "in Impostazioni → Collegamenti controlla le politiche eBay scelte.",
   ricollega: "in Impostazioni → Collegamenti tocca «Collega account eBay».",
 };
@@ -397,7 +462,7 @@ const ERRORI: Record<number, [string, keyof typeof COSA]> = {
   25025: ["eBay stava già aggiornando questo annuncio.", "riprova"],
   25003: ["eBay non accetta il prezzo.", "annuncio"],
   25004: ["eBay non accetta la quantità.", "annuncio"],
-  25005: ["eBay non accetta la categoria.", "annuncio"],
+  25005: ["eBay non accetta la categoria.", "categoria"],
   25007: ["eBay non accetta la politica di spedizione.", "politiche"],
   25008: ["eBay non accetta la politica di pagamento.", "politiche"],
   25009: ["eBay non accetta la politica di reso.", "politiche"],

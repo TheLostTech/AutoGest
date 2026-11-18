@@ -2,7 +2,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  categoriaEbayDa,
   groupKey,
+  gpsrAfterVehicleChange,
   gpsrBlocksEbay,
   isWithdrawn,
   alignedPrice,
@@ -289,6 +291,22 @@ test("veicolo cambiato: testo e GPSR degli annunci solo se cambiano i dati che l
   assert.deepEqual(listingFieldsChanged(v, { ...v, km: 120000 }), { text: true, gpsr: false });
   assert.deepEqual(listingFieldsChanged(v, { ...v, year: 2025 }), { text: true, gpsr: true });
   assert.deepEqual(listingFieldsChanged(v, { ...v, make: "Fiat" }), { text: true, gpsr: true });
+});
+
+test("GPSR confermato a mano: non si ricalcola con il veicolo", () => {
+  const nuovo = { tipo: "da confermare" } as const;
+  assert.equal(gpsrAfterVehicleChange({ gpsrManuale: true }, nuovo), undefined);
+  assert.deepEqual(gpsrAfterVehicleChange({}, nuovo), nuovo);
+  assert.deepEqual(gpsrAfterVehicleChange({ gpsrManuale: false }, { tipo: "esente" }), { tipo: "esente" });
+});
+
+test("numero della categoria eBay: solo cifre, vuoto = la sceglie eBay", () => {
+  assert.equal(categoriaEbayDa(" 33710 "), "33710");
+  assert.equal(categoriaEbayDa(""), "");
+  assert.equal(categoriaEbayDa("   "), "");
+  assert.equal(categoriaEbayDa("Fari"), undefined);
+  assert.equal(categoriaEbayDa("33-710"), undefined);
+  assert.equal(categoriaEbayDa("1".repeat(13)), undefined);
 });
 
 test("eBay non si attiva con il GPSR da confermare", () => {

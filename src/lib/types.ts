@@ -190,7 +190,8 @@ export interface AnnuncioEbay {
   daRiallineare: boolean;
   listingId?: string;
   url?: string;
-  categoria?: { id: string; nome: string };
+  /** Categoria eBay: scelta da eBay alla prima pubblicazione, oppure scritta dall'operatore (manuale) */
+  categoria?: { id: string; nome?: string; manuale?: boolean };
   quantitaInviata?: number;
   prezzoInviato?: number;
   errore?: string;
@@ -211,6 +212,8 @@ export interface Annuncio {
   testoModificato: boolean;
   caratteristiche: Record<string, string>;
   gpsr: Gpsr;
+  /** GPSR confermato a mano dall'operatore: non si ricalcola quando cambiano marca o anno del veicolo */
+  gpsrManuale?: boolean;
   negozio?: { stato: StatoNegozio };
   ebay?: AnnuncioEbay;
   createdAt: string;

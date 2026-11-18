@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import { euro } from "@/lib/logic";
-import { gpsrBlocksEbay, isWithdrawn, negozioStato, nextToShip, quantityOf } from "@/lib/annunci";
+import { categoriaEbayDa, gpsrBlocksEbay, isWithdrawn, negozioStato, nextToShip, quantityOf } from "@/lib/annunci";
 import { typeById } from "@/lib/catalog";
 import { controllaVendite, simulateEbaySale, statoPonte } from "@/lib/ebay-sync";
 import type { Annuncio } from "@/lib/types";
@@ -24,6 +24,7 @@ function AnnuncioRiga({ a, simulato }: { a: Annuncio; simulato: boolean }) {
   const [edit, setEdit] = useState(false);
   const [titolo, setTitolo] = useState(a.titolo);
   const [descrizione, setDescrizione] = useState(a.descrizione);
+  const [categoria, setCategoria] = useState("");
   const [err, setErr] = useState("");
   const [gpsrAperto, setGpsrAperto] = useState(false);
   const [scelta, setScelta] = useState<GpsrScelta>(GPSR_VUOTO);
@@ -125,8 +126,31 @@ function AnnuncioRiga({ a, simulato }: { a: Annuncio; simulato: boolean }) {
           <input className="field" value={titolo} onChange={(e) => setTitolo(e.target.value)} aria-label={`Titolo ${a.id}`} />
           <span className={`code block text-sm font-semibold ${lungo > 80 ? "text-danger" : "text-ink-3"}`}>{lungo} / 80 caratteri</span>
           <textarea className="field min-h-28" value={descrizione} onChange={(e) => setDescrizione(e.target.value)} aria-label={`Descrizione ${a.id}`} />
+          {eb && (
+            <label className="block text-sm font-semibold">
+              Categoria eBay (numero)
+              <input className="field mt-1 max-w-56" inputMode="numeric" value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="vuoto: la sceglie eBay" aria-label={`Categoria eBay ${a.id}`} />
+              {eb.categoria && !eb.categoria.manuale && <span className="mt-1 block font-normal text-ink-3">Scelta da eBay: {eb.categoria.nome ?? eb.categoria.id} ({eb.categoria.id})</span>}
+              {categoriaEbayDa(categoria) === undefined && <span className="mt-1 block text-danger">Il numero della categoria eBay ha solo cifre</span>}
+            </label>
+          )}
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" disabled={!lungo || lungo > 80} onClick={() => { s.editAnnuncioText(a.id, titolo, descrizione); setEdit(false); }}>Salva testo</Button>
+            <Button
+              size="sm"
+              disabled={!lungo || lungo > 80 || (!!eb && categoriaEbayDa(categoria) === undefined)}
+              onClick={() => {
+                // Solo la categoria cambiata: il testo resta automatico
+                if (titolo.trim() !== a.titolo || descrizione.trim() !== a.descrizione) s.editAnnuncioText(a.id, titolo, descrizione);
+                if (eb) {
+                  const r = s.setAnnuncioCategoria(a.id, categoria);
+                  esito(r);
+                  if (!r.ok) return;
+                }
+                setEdit(false);
+              }}
+            >
+              Salva
+            </Button>
             <Button size="sm" variant="secondary" onClick={() => { s.regenerateText(a.id); setEdit(false); }}>Riscrivi in automatico</Button>
             <Button size="sm" variant="quiet" onClick={() => setEdit(false)}>Annulla</Button>
           </div>
@@ -134,7 +158,7 @@ function AnnuncioRiga({ a, simulato }: { a: Annuncio; simulato: boolean }) {
       )}
 
       <div className="flex flex-wrap gap-2">
-        {!edit && <Button size="sm" variant="secondary" onClick={() => { setTitolo(a.titolo); setDescrizione(a.descrizione); setEdit(true); }}>Modifica testo</Button>}
+        {!edit && <Button size="sm" variant="secondary" onClick={() => { setTitolo(a.titolo); setDescrizione(a.descrizione); setCategoria(eb?.categoria?.manuale ? eb.categoria.id : ""); setEdit(true); }}>Modifica testo</Button>}
         {negAttivo && ebAttivo && <Button size="sm" variant="danger" onClick={() => esito(s.withdrawAnnuncio(a.id, "tutti"))}>Ritira da tutti</Button>}
         {negAttivo && <Button size="sm" variant="danger" onClick={() => esito(s.withdrawAnnuncio(a.id, "negozio"))}>Ritira dal negozio</Button>}
         {ebAttivo && <Button size="sm" variant="danger" onClick={() => esito(s.withdrawAnnuncio(a.id, "ebay"))}>Ritira da eBay</Button>}
