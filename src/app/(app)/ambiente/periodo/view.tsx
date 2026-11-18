@@ -107,7 +107,7 @@ function Periodo() {
         <ul className="divide-y divide-hair-soft">
           {list.map((m) => (
             <Riga
-              key={m.id}
+              key={`${m.id}|${m.at}`}
               m={m}
               fir={m.fir ? firById.get(m.fir) : undefined}
               cancelled={cancelledBy.get(m.id)}
@@ -203,6 +203,7 @@ function Riga({
   const [crdNum, setCrdNum] = useState(m.certificato?.numero ?? vehicle?.dossier.number ?? "");
   const [crdData, setCrdData] = useState((m.certificato?.data ?? vehicle?.presaInCarico?.at)?.slice(0, 10) ?? "");
   const [pesa, setPesa] = useState(m.pesoPesa ? kgText(m.kg) : "");
+  const [note, setNote] = useState<{ tone: "ok" | "danger"; text: string } | null>(null);
   const issues = moveIssues(m, fir, corrected, all);
   const draft = isDraft(m);
   const missing = draft ? missingFields(m, all) : [];
@@ -278,29 +279,37 @@ function Riga({
               <input className="field code font-bold" inputMode="decimal" value={pesa} onChange={(ev) => setPesa(ev.target.value.replace(/[^0-9.,]/g, ""))} />
             </Field>
           )}
-          <div className="flex items-end sm:col-span-3">
+          <div className="flex flex-wrap items-center gap-3 sm:col-span-3">
             <Button
               size="sm"
               onClick={() => {
+                // Prima si controlla cosa manca, e lo si dice qui accanto (non in cima alla pagina, dove non si vede)
                 const w = missing.includes("peso") ? parseKg(pesa) : null;
-                if (missing.includes("peso") && !w) return onMsg({ tone: "danger", text: "Scrivi il peso della pesa in kg" });
+                const lacks = [
+                  missing.includes("produttore") && !nome.trim() ? "il nome di chi conferisce" : "",
+                  missing.includes("cf-produttore") && !cf.trim() ? "il codice fiscale" : "",
+                  missing.includes("certificato") && (!crdNum.trim() || !crdData) ? "numero e data del certificato" : "",
+                  missing.includes("peso") && !w ? "il peso della pesa in kg" : "",
+                ].filter(Boolean);
+                if (lacks.length) return setNote({ tone: "danger", text: `Scrivi ${lacks.join(", ")}.` });
                 const r = completeDraft(m.id, {
                   ...(missing.includes("produttore") ? { produttoreNome: nome } : {}),
                   ...(missing.includes("cf-produttore") ? { produttoreCf: cf } : {}),
                   ...(missing.includes("certificato") && crdNum.trim() && crdData ? { certificato: { numero: crdNum.trim(), data: new Date(crdData).toISOString() } } : {}),
                   ...(w ? { kg: w, pesoPesa: true } : {}),
                 });
-                onMsg(
-                  !r.ok
-                    ? { tone: "danger", text: r.error }
-                    : r.value
-                      ? { tone: "ok", text: "Registrata oggi con il suo numero: entra nel periodo del mese in corso." }
-                      : { tone: "danger", text: "Bozza aggiornata, ma manca ancora qualche dato: non ha ancora un numero." },
-                );
+                const out = !r.ok
+                  ? { tone: "danger" as const, text: r.error }
+                  : r.value
+                    ? { tone: "ok" as const, text: "Registrata oggi con il suo numero: entra nel periodo del mese in corso." }
+                    : { tone: "danger" as const, text: "Bozza aggiornata, ma manca ancora qualche dato: non ha ancora un numero." };
+                setNote(out);
+                onMsg(out);
               }}
             >
               Completa la registrazione
             </Button>
+            {note && <span role="status" className={`text-[15px] font-semibold ${note.tone === "ok" ? "text-ok" : "text-danger"}`}>{note.text}</span>}
           </div>
         </div>
       )}

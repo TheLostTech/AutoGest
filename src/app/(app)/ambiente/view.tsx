@@ -79,7 +79,7 @@ export default function RegistroRifiuti() {
             const e = eerByCode(m.eer);
             const isVeh = m.origin.startsWith("V-");
             return (
-              <li key={m.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3 md:grid-cols-[96px_118px_minmax(0,1fr)_110px_120px]">
+              <li key={`${m.id}|${m.at}`} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3 md:grid-cols-[96px_118px_minmax(0,1fr)_110px_120px]">
                 <span className="code text-[15px] font-semibold text-ink-2 md:order-none">{isDraft(m) ? <span className="text-warn">bozza</span> : `n. ${m.numero}`}</span>
                 <span className="text-sm text-ink-3 md:text-[15px]">{dateIt(m.at, true)}</span>
                 <span className="col-span-2 min-w-0 md:col-span-1">
