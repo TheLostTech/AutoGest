@@ -1,18 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { PLATFORMS, typeById } from "@/lib/catalog";
 import { euro } from "@/lib/logic";
 import { bozzaFor } from "@/lib/annuncio-build";
-import { EBAY_CATEGORY_QUERY, compatVehicles } from "@/lib/annuncio-testo";
+import { EBAY_CATEGORY_QUERY, aspectsFor, compatVehicles } from "@/lib/annuncio-testo";
 import { ONLINE_FEE_PCT, onlinePrice } from "@/lib/pricing";
-import type { Part, Produttore } from "@/lib/types";
+import type { Part } from "@/lib/types";
+import { GPSR_VUOTO, GpsrStep, gpsrDaScelta, type GpsrScelta } from "@/components/GpsrStep";
 import { Button, Field, Notice, Panel, PartImage } from "@/components/ui";
 
 const MAX_TITOLO = 80;
-const ASPETTI = ["Tipo", "Marca", "Numero ricambio produttore", "Posizionamento sul veicolo"];
-const VUOTO: Produttore = { ragioneSociale: "", indirizzo: "", citta: "", cap: "", paese: "" };
+// Le caratteristiche che l'annuncio può avere: quelle che aspectsFor non riempie sono "mancanti"
+const ASPETTI = Object.keys(aspectsFor({ tipo: "x", marca: "x", oem: "x", lato: "x" }));
 
 /** Anteprima di un annuncio nuovo: testo, categoria, caratteristiche, GPSR e canali; "Pubblica" lo crea. */
 export function AnnuncioPreview({ part, ebayDefault = false, onDone, onCancel }: { part: Part; ebayDefault?: boolean; onDone: (text: string, ok: boolean) => void; onCancel: () => void }) {
@@ -23,9 +24,14 @@ export function AnnuncioPreview({ part, ebayDefault = false, onDone, onCancel }:
   const [modificato, setModificato] = useState(false);
   const [negozio, setNegozio] = useState(true);
   const [ebay, setEbay] = useState(ebayDefault);
-  const [esente, setEsente] = useState(false);
-  const [produttore, setProduttore] = useState(false);
-  const [prod, setProd] = useState<Produttore>(VUOTO);
+  const [scelta, setScelta] = useState<GpsrScelta>(GPSR_VUOTO);
+  const radice = useRef<HTMLDivElement>(null);
+  const titoloRef = useRef<HTMLInputElement>(null);
+  // Si apre sopra la coda: portarlo in vista e mettere il cursore sul titolo
+  useEffect(() => {
+    radice.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+    titoloRef.current?.focus({ preventScroll: true });
+  }, []);
 
   const t = typeById(part.typeId);
   const veicoli = compatVehicles([part], s.vehicles, PLATFORMS);
@@ -33,9 +39,9 @@ export function AnnuncioPreview({ part, ebayDefault = false, onDone, onCancel }:
   const online = onlinePrice(base);
 
   const daConfermare = auto.gpsr.tipo === "da confermare";
-  const prodOk = !!(prod.ragioneSociale.trim() && prod.indirizzo.trim() && prod.citta.trim() && prod.cap.trim() && prod.paese.trim());
-  const gpsrOk = !daConfermare || esente || (produttore && prodOk);
-  const gpsr = !daConfermare ? auto.gpsr : esente ? ({ tipo: "esente" } as const) : produttore && prodOk ? ({ tipo: "produttore", produttore: prod } as const) : auto.gpsr;
+  const decisa = gpsrDaScelta(scelta);
+  const gpsrOk = !daConfermare || !!decisa;
+  const gpsr = !daConfermare ? auto.gpsr : (decisa ?? auto.gpsr);
 
   const lunghezza = titolo.trim().length;
   const motivo =
@@ -45,9 +51,8 @@ export function AnnuncioPreview({ part, ebayDefault = false, onDone, onCancel }:
     : ebay && !gpsrOk ? "Per eBay serve confermare i dati GPSR"
     : "";
 
-  const setP = (k: keyof Produttore, v: string) => setProd((x) => ({ ...x, [k]: v }));
-
   return (
+    <div ref={radice} className="scroll-mt-4">
     <Panel title={`Anteprima annuncio · ${part.id}`} action={<Button size="sm" variant="quiet" onClick={onCancel}>Chiudi</Button>}>
       <div className="grid gap-5 p-4 lg:grid-cols-[200px_1fr]">
         <div className="space-y-2">
@@ -57,7 +62,7 @@ export function AnnuncioPreview({ part, ebayDefault = false, onDone, onCancel }:
 
         <div className="min-w-0 space-y-4">
           <Field label="Titolo">
-            <input className="field" value={titolo} onChange={(e) => { setTitolo(e.target.value); setModificato(true); }} aria-label="Titolo dell'annuncio" />
+            <input ref={titoloRef} className="field" value={titolo} onChange={(e) => { setTitolo(e.target.value); setModificato(true); }} aria-label="Titolo dell'annuncio" />
             <span className={`code mt-1 block text-sm font-semibold ${lunghezza > MAX_TITOLO ? "text-danger" : "text-ink-3"}`}>{lunghezza} / {MAX_TITOLO} caratteri</span>
           </Field>
           <Field label="Descrizione">
@@ -108,29 +113,7 @@ export function AnnuncioPreview({ part, ebayDefault = false, onDone, onCancel }:
             Prezzo <b className="code">{euro(base)}</b> · online <b className="code">{euro(online)}</b> (+{ONLINE_FEE_PCT}%)
           </p>
 
-          {daConfermare && (
-            <div className="space-y-3 rounded-md border border-warn/50 bg-warn-bg p-3">
-              <h3 className="font-semibold text-ink">GPSR da confermare</h3>
-              <label className="flex min-h-11 items-center gap-3 text-[15px]">
-                <input type="checkbox" className="size-5" checked={esente} onChange={(e) => { setEsente(e.target.checked); if (e.target.checked) setProduttore(false); }} />
-                Pezzo messo in commercio prima del 13/12/2024
-              </label>
-              <label className="flex min-h-11 items-center gap-3 text-[15px]">
-                <input type="checkbox" className="size-5" checked={produttore} onChange={(e) => { setProduttore(e.target.checked); if (e.target.checked) setEsente(false); }} />
-                Indico io il produttore
-              </label>
-              {produttore && (
-                <div className="grid gap-3 md:grid-cols-2">
-                  <Field label="Ragione sociale"><input className="field" value={prod.ragioneSociale} onChange={(e) => setP("ragioneSociale", e.target.value)} /></Field>
-                  <Field label="Indirizzo"><input className="field" value={prod.indirizzo} onChange={(e) => setP("indirizzo", e.target.value)} /></Field>
-                  <Field label="Città"><input className="field" value={prod.citta} onChange={(e) => setP("citta", e.target.value)} /></Field>
-                  <Field label="CAP"><input className="field" value={prod.cap} onChange={(e) => setP("cap", e.target.value)} /></Field>
-                  <Field label="Paese"><input className="field" value={prod.paese} onChange={(e) => setP("paese", e.target.value)} /></Field>
-                  <Field label="Email (facoltativa)"><input className="field" value={prod.email ?? ""} onChange={(e) => setP("email", e.target.value)} /></Field>
-                </div>
-              )}
-            </div>
-          )}
+          {daConfermare && <GpsrStep value={scelta} onChange={setScelta} />}
 
           <div className="space-y-1">
             <label className="flex min-h-11 items-center gap-3 text-[16px] font-semibold">
@@ -160,5 +143,6 @@ export function AnnuncioPreview({ part, ebayDefault = false, onDone, onCancel }:
         </div>
       </div>
     </Panel>
+    </div>
   );
 }

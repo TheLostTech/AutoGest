@@ -1,5 +1,5 @@
 // Annunci con più pezzi: raggruppamento, quantità, stato. Modulo puro.
-import type { Annuncio, ListingStatus, Part, StatoNegozio, Vehicle } from "./types";
+import type { Annuncio, Gpsr, ListingStatus, Part, StatoNegozio, Vehicle } from "./types";
 
 /** Codice originale in forma confrontabile: maiuscolo, senza spazi, punti e trattini. */
 export function normalizeOem(oem: string): string {
@@ -162,4 +162,11 @@ export function listingOf(p: Part, annunci: Annuncio[]): ListingStatus {
   const live = !!a && !isWithdrawn(a);
   if (live && (p.status === "disponibile" || p.status === "riservato")) return "pubblicato";
   return "ritirato";
+}
+
+export const GPSR_ERRORE = "Conferma i dati GPSR prima di pubblicare su eBay";
+
+/** eBay non si attiva finché il GPSR è "da confermare". */
+export function gpsrBlocksEbay(gpsr: Gpsr): boolean {
+  return gpsr.tipo === "da confermare";
 }

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   groupKey,
+  gpsrBlocksEbay,
   isWithdrawn,
   alignedPrice,
   listingOf,
@@ -288,4 +289,10 @@ test("veicolo cambiato: testo e GPSR degli annunci solo se cambiano i dati che l
   assert.deepEqual(listingFieldsChanged(v, { ...v, km: 120000 }), { text: true, gpsr: false });
   assert.deepEqual(listingFieldsChanged(v, { ...v, year: 2025 }), { text: true, gpsr: true });
   assert.deepEqual(listingFieldsChanged(v, { ...v, make: "Fiat" }), { text: true, gpsr: true });
+});
+
+test("eBay non si attiva con il GPSR da confermare", () => {
+  assert.equal(gpsrBlocksEbay({ tipo: "da confermare" }), true);
+  assert.equal(gpsrBlocksEbay({ tipo: "esente" }), false);
+  assert.equal(gpsrBlocksEbay({ tipo: "produttore", produttore: { ragioneSociale: "X", indirizzo: "Via 1", citta: "Roma", cap: "00100", paese: "IT" } }), false);
 });

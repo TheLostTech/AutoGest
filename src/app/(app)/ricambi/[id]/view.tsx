@@ -249,10 +249,11 @@ export default function SchedaRicambio() {
                     size="sm"
                     disabled={priceMissing}
                     onClick={() => {
-                      if (annuncio && sharing > 1) {
-                        if (!confirm(`Cambia il prezzo di tutti e ${sharing} i pezzi dell'annuncio ${annuncio.id}: da ${euro(annuncio.price)} a ${euro(Number(price))}. Continuare?`)) return;
+                      // Un pezzo non venduto di un annuncio cambia prezzo sempre dall'annuncio; un pezzo venduto resta fuori
+                      if (annuncio && p.status !== "venduto") {
+                        if (sharing > 1 && !confirm(`Cambia il prezzo di tutti e ${sharing} i pezzi dell'annuncio ${annuncio.id}: da ${euro(annuncio.price)} a ${euro(Number(price))}. Continuare?`)) return;
                         s.setAnnuncioPrice(annuncio.id, Number(price));
-                        flash("ok", `Prezzo aggiornato su tutti e ${sharing} i pezzi dell'annuncio ${annuncio.id}`);
+                        flash("ok", sharing > 1 ? `Prezzo aggiornato su tutti e ${sharing} i pezzi dell'annuncio ${annuncio.id}` : "Prezzo aggiornato");
                         return;
                       }
                       s.updatePart(p.id, { price: price ? Number(price) : undefined }, "Prezzo modificato", `${euro(p.price)} → ${euro(Number(price))}`);
@@ -347,7 +348,7 @@ export default function SchedaRicambio() {
                   {blocking.length ? `Pubblica (${blocking.length} da sistemare)` : "Vai a Pubblicazione"}
                 </Button>
               ) : (
-                <Button variant="secondary" onClick={() => { if (p.annuncioId) s.withdrawAnnuncio(p.annuncioId, "tutti"); flash("ok", `Annuncio ${p.annuncioId} ritirato`); }}>Ritira l&apos;annuncio</Button>
+                <Button variant="secondary" onClick={() => { if (!p.annuncioId) return; const r = s.withdrawAnnuncio(p.annuncioId, "tutti"); if (r.ok) flash("ok", `Annuncio ${p.annuncioId} ritirato`); else flash("danger", r.error); }}>Ritira l&apos;annuncio</Button>
               )}
             </div>
           </Panel>

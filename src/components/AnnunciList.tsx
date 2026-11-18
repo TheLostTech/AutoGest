@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { euro } from "@/lib/logic";
-import { isWithdrawn, negozioStato, nextToShip, quantityOf } from "@/lib/annunci";
+import { gpsrBlocksEbay, isWithdrawn, negozioStato, nextToShip, quantityOf } from "@/lib/annunci";
 import { typeById } from "@/lib/catalog";
 import type { Annuncio } from "@/lib/types";
-import { Button, Empty, Panel } from "@/components/ui";
+import { GPSR_VUOTO, GpsrStep, gpsrDaScelta, type GpsrScelta } from "@/components/GpsrStep";
+import { Button, Empty, Notice, Panel } from "@/components/ui";
 
 const TONO: Record<string, string> = {
   online: "bg-ok-bg text-ok",
@@ -22,6 +23,12 @@ function AnnuncioRiga({ a }: { a: Annuncio }) {
   const [edit, setEdit] = useState(false);
   const [titolo, setTitolo] = useState(a.titolo);
   const [descrizione, setDescrizione] = useState(a.descrizione);
+  const [err, setErr] = useState("");
+  const [gpsrAperto, setGpsrAperto] = useState(false);
+  const [scelta, setScelta] = useState<GpsrScelta>(GPSR_VUOTO);
+  // Errore del negozio (es. GPSR da confermare, già ritirato) in chiaro sotto l'annuncio
+  const esito = (r: { ok: boolean } & { error?: string }) => setErr(r.ok ? "" : (r.error ?? "Operazione non riuscita"));
+  const decisa = gpsrDaScelta(scelta);
   const qty = quantityOf(a, s.parts);
   const neg = negozioStato(a, qty);
   const eb = a.ebay;
@@ -59,6 +66,29 @@ function AnnuncioRiga({ a }: { a: Annuncio }) {
         </ul>
       )}
 
+      {err && <Notice tone="danger">{err}</Notice>}
+      {gpsrAperto && (
+        <div className="space-y-2">
+          <GpsrStep value={scelta} onChange={setScelta} />
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              disabled={!decisa}
+              onClick={() => {
+                if (!decisa) return;
+                s.setAnnuncioGpsr(a.id, decisa);
+                const r = s.republishAnnuncio(a.id, { negozio: false, ebay: true });
+                esito(r);
+                if (r.ok) setGpsrAperto(false);
+              }}
+            >
+              Conferma e pubblica su eBay
+            </Button>
+            <Button size="sm" variant="quiet" onClick={() => setGpsrAperto(false)}>Annulla</Button>
+          </div>
+        </div>
+      )}
+
       {edit && (
         <div className="space-y-2 rounded-md border border-hair-soft bg-carton p-3">
           <input className="field" value={titolo} onChange={(e) => setTitolo(e.target.value)} aria-label={`Titolo ${a.id}`} />
@@ -74,11 +104,11 @@ function AnnuncioRiga({ a }: { a: Annuncio }) {
 
       <div className="flex flex-wrap gap-2">
         {!edit && <Button size="sm" variant="secondary" onClick={() => { setTitolo(a.titolo); setDescrizione(a.descrizione); setEdit(true); }}>Modifica testo</Button>}
-        {negAttivo && ebAttivo && <Button size="sm" variant="danger" onClick={() => s.withdrawAnnuncio(a.id, "tutti")}>Ritira da tutti</Button>}
-        {negAttivo && <Button size="sm" variant="danger" onClick={() => s.withdrawAnnuncio(a.id, "negozio")}>Ritira dal negozio</Button>}
-        {ebAttivo && <Button size="sm" variant="danger" onClick={() => s.withdrawAnnuncio(a.id, "ebay")}>Ritira da eBay</Button>}
-        {negRipubblica && <Button size="sm" variant="secondary" onClick={() => s.republishAnnuncio(a.id, { negozio: true, ebay: false })}>Ripubblica sul negozio</Button>}
-        {ebRipubblica && <Button size="sm" variant="secondary" onClick={() => s.republishAnnuncio(a.id, { negozio: false, ebay: true })}>{eb ? "Ripubblica su eBay" : "Pubblica su eBay"}</Button>}
+        {negAttivo && ebAttivo && <Button size="sm" variant="danger" onClick={() => esito(s.withdrawAnnuncio(a.id, "tutti"))}>Ritira da tutti</Button>}
+        {negAttivo && <Button size="sm" variant="danger" onClick={() => esito(s.withdrawAnnuncio(a.id, "negozio"))}>Ritira dal negozio</Button>}
+        {ebAttivo && <Button size="sm" variant="danger" onClick={() => esito(s.withdrawAnnuncio(a.id, "ebay"))}>Ritira da eBay</Button>}
+        {negRipubblica && <Button size="sm" variant="secondary" onClick={() => esito(s.republishAnnuncio(a.id, { negozio: true, ebay: false }))}>Ripubblica sul negozio</Button>}
+        {ebRipubblica && <Button size="sm" variant="secondary" onClick={() => (gpsrBlocksEbay(a.gpsr) ? (setErr(""), setGpsrAperto(true)) : esito(s.republishAnnuncio(a.id, { negozio: false, ebay: true })))}>{eb ? "Ripubblica su eBay" : "Pubblica su eBay"}</Button>}
       </div>
     </li>
   );

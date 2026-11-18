@@ -118,7 +118,8 @@ export default function Pubblicazione() {
                     <Button
                       size="sm"
                       onClick={() => {
-                        s.republishAnnuncio(placement.annuncioId, { negozio: true, ebay: false });
+                        const r = s.republishAnnuncio(placement.annuncioId, { negozio: true, ebay: false });
+                        if (!r.ok) return setMsg({ tone: "danger", text: `${p.id}: ${r.error}` });
                         if (!p.annuncioId) s.placePart(p.id);
                         setMsg({ tone: "ok", text: `Annuncio ${placement.annuncioId} di nuovo sul negozio online` });
                       }}

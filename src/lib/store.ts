@@ -9,7 +9,7 @@ import { eerByCode, movesForBonifica, movesForIntake, stockByEer } from "./ambie
 import { differenzaPesata } from "./stime";
 import { DEFAULT_LISTINI, onlinePrice, type Listino } from "./pricing";
 import { typeById } from "./catalog";
-import { alignedPrice, groupKey, listingFieldsChanged, listingOf, membershipAfter, missingNote, partsOf, pickForSale, placementFor, quantityOf, refreshAnnuncio, shopPicks } from "./annunci";
+import { GPSR_ERRORE, gpsrBlocksEbay, alignedPrice, groupKey, listingFieldsChanged, listingOf, membershipAfter, missingNote, partsOf, pickForSale, placementFor, quantityOf, refreshAnnuncio, shopPicks } from "./annunci";
 import { buildAnnuncio, fieldsFromPart, gpsrOf, textFor, type BozzaAnnuncio } from "./annuncio-build";
 import { isShippable } from "./spedizione";
 import type { VenditaEbay } from "./ebay/contratto";
@@ -21,6 +21,7 @@ import type {
   DocType,
   SalesDoc,
   Fir,
+  Gpsr,
   InventoryCount,
   ListingStatus,
   Location,
@@ -100,8 +101,9 @@ interface Actions {
   placePart: (partId: string) => void;
   resolvePrice: (partId: string, scelta: "annuncio" | "pezzo") => void;
   setAnnuncioPrice: (annuncioId: string, price: number) => void;
-  withdrawAnnuncio: (annuncioId: string, canale: "negozio" | "ebay" | "tutti") => void;
-  republishAnnuncio: (annuncioId: string, canali: { negozio: boolean; ebay: boolean }) => void;
+  withdrawAnnuncio: (annuncioId: string, canale: "negozio" | "ebay" | "tutti") => Result<string>;
+  republishAnnuncio: (annuncioId: string, canali: { negozio: boolean; ebay: boolean }) => Result<string>;
+  setAnnuncioGpsr: (annuncioId: string, gpsr: Gpsr) => void;
   editAnnuncioText: (annuncioId: string, titolo: string, descrizione: string) => void;
   regenerateText: (annuncioId: string) => void;
   orderFromAnnunci: (channel: "negozio", annuncioIds: string[], customer: string, actor?: Actor, delivery?: "corriere" | "ritiro") => Result<string>;
@@ -516,6 +518,7 @@ export const useStore = create<State & Actions>()(
           if (missing.length) return { ok: false, error: "Scheda incompleta", conflicts: missing.map((m) => m.label) };
           if (p.annuncioId) return { ok: false, error: `Il pezzo è già nell'annuncio ${p.annuncioId}`, conflicts: [p.annuncioId] };
           if (!bozza.canali.negozio && !bozza.canali.ebay) return { ok: false, error: "Scegli almeno un canale" };
+          if (bozza.canali.ebay && gpsrBlocksEbay(bozza.gpsr)) return { ok: false, error: GPSR_ERRORE };
           const titolo = bozza.titolo.trim();
           if (!titolo) return { ok: false, error: "Scrivi il titolo dell'annuncio" };
           if (titolo.length > 80) return { ok: false, error: "Il titolo supera gli 80 caratteri ammessi da eBay" };
@@ -584,10 +587,10 @@ export const useStore = create<State & Actions>()(
 
         withdrawAnnuncio: (annuncioId, canale) => {
           const a = get().annunci.find((x) => x.id === annuncioId);
-          if (!a) return;
+          if (!a) return { ok: false, error: "Annuncio non trovato" };
           const neg = canale !== "ebay" && !!a.negozio && a.negozio.stato !== "ritirato";
           const eb = canale !== "negozio" && !!a.ebay && a.ebay.stato !== "ritirato";
-          if (!neg && !eb) return;
+          if (!neg && !eb) return { ok: false, error: `L'annuncio ${annuncioId} è già ritirato` };
           set((st) => ({
             annunci: st.annunci.map((x) =>
               x.id === annuncioId
@@ -601,14 +604,16 @@ export const useStore = create<State & Actions>()(
             ),
           }));
           push(annuncioEvent(annuncioId, `Annuncio ritirato da ${neg && eb ? "negozio ed eBay" : neg ? "negozio" : "eBay"}`));
+          return { ok: true, value: annuncioId };
         },
 
         republishAnnuncio: (annuncioId, canali) => {
           const a = get().annunci.find((x) => x.id === annuncioId);
-          if (!a) return;
+          if (!a) return { ok: false, error: "Annuncio non trovato" };
           const neg = canali.negozio && (!a.negozio || a.negozio.stato === "ritirato");
           const eb = canali.ebay && (!a.ebay || !["online", "esaurito", "in pubblicazione"].includes(a.ebay.stato));
-          if (!neg && !eb) return;
+          if (!neg && !eb) return { ok: false, error: `L'annuncio ${annuncioId} è già online su quel canale` };
+          if (eb && gpsrBlocksEbay(a.gpsr)) return { ok: false, error: GPSR_ERRORE };
           const qty = quantityOf(a, get().parts);
           set((st) => ({
             annunci: st.annunci.map((x) =>
@@ -624,6 +629,14 @@ export const useStore = create<State & Actions>()(
           push(annuncioEvent(annuncioId, `Annuncio ripubblicato su ${neg && eb ? "negozio ed eBay" : neg ? "negozio" : "eBay"}`));
           touchAnnuncio(annuncioId);
           joinQueued(annuncioId);
+          return { ok: true, value: annuncioId };
+        },
+
+        // GPSR confermato dall'operatore: serve prima di attivare eBay
+        setAnnuncioGpsr: (annuncioId, gpsr) => {
+          if (!get().annunci.some((x) => x.id === annuncioId)) return;
+          set((st) => ({ annunci: st.annunci.map((x) => (x.id === annuncioId ? { ...x, gpsr } : x)) }));
+          push(annuncioEvent(annuncioId, "GPSR dell'annuncio confermato", gpsr.tipo === "esente" ? "Messo in commercio prima del 13/12/2024" : gpsr.tipo === "produttore" ? gpsr.produttore.ragioneSociale : "da confermare"));
         },
 
         editAnnuncioText: (annuncioId, titolo, descrizione) => {
