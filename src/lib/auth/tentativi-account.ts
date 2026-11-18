@@ -1,26 +1,15 @@
 import type { AuthContext, BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { aggiungiEventi } from "@/lib/archivio-azienda";
-import { accountBloccato, chiaveAccount, daRicordare, dopoPasswordSbagliata, type StatoAccount } from "@/lib/accesso/tentativi-account";
+import { chiaveAccount, chiudi, prenota, type Conti, type Esito } from "@/lib/accesso/tentativi-account";
 
-// Blocco per account dell'accesso con email (regola in accesso/tentativi-account.ts). In memoria sulla globalThis,
-// un solo processo Node: un riavvio azzera i conti (come il limite per IP). Al massimo MAX_VOCI account ricordati.
-const MAX_VOCI = 10_000;
+// Blocco per account dell'accesso con email (regole in accesso/tentativi-account.ts). In memoria sulla globalThis,
+// un solo processo Node: un riavvio azzera i conti (come il limite per IP).
+// Il tentativo si conta all'arrivo (hook "before", sincrono fra controllo e conteggio) e si chiude con l'esito (hook
+// "after", che gira anche quando l'endpoint risponde con un errore); se l'esito non arriva, la prenotazione scade da sola.
 const CHIAVE = Symbol.for("gestionale.tentativi-account");
-const g = globalThis as typeof globalThis & { [CHIAVE]?: Map<string, StatoAccount> };
+const g = globalThis as typeof globalThis & { [CHIAVE]?: Conti };
 const conti = (g[CHIAVE] ??= new Map());
-
-function ricorda(k: string, s: StatoAccount, ora: number) {
-  conti.delete(k);
-  if (daRicordare(s, ora)) conti.set(k, s);
-  if (conti.size <= MAX_VOCI) return;
-  for (const [kk, ss] of conti) if (!daRicordare(ss, ora)) conti.delete(kk);
-  // Ancora troppi: si dimenticano i più vecchi (inseriti per primi), mai quelli bloccati
-  for (const [kk, ss] of conti) {
-    if (conti.size <= MAX_VOCI) break;
-    if (!accountBloccato(ss, ora)) conti.delete(kk);
-  }
-}
 
 // Nel registro di ogni azienda dell'account: il responsabile vede che qualcuno prova la password di un collega
 async function registraBlocco(c: AuthContext, email: string) {
@@ -35,6 +24,7 @@ async function registraBlocco(c: AuthContext, email: string) {
 }
 
 const stato = (r: unknown): number | undefined => (r && typeof r === "object" && "statusCode" in r ? Number((r as { statusCode: unknown }).statusCode) : undefined);
+const chiaveDi = (ctx: { body?: unknown }) => chiaveAccount((ctx.body as { email?: unknown } | undefined)?.email);
 
 export const tentativiAccount = {
   id: "tentativi-account",
@@ -43,10 +33,12 @@ export const tentativiAccount = {
       {
         matcher: (ctx) => ctx.path === "/sign-in/email",
         handler: createAuthMiddleware(async (ctx) => {
-          const k = chiaveAccount((ctx.body as { email?: unknown } | undefined)?.email);
-          if (k && accountBloccato(conti.get(k), Date.now())) {
-            throw new APIError("TOO_MANY_REQUESTS", { message: "Troppe password sbagliate per questo account: riprova tra 15 minuti.", code: "ACCOUNT_BLOCCATO" });
-          }
+          const k = chiaveDi(ctx);
+          if (!k) return;
+          // Nessun await fra controllo e conteggio: le richieste parallele si vedono a vicenda
+          const p = prenota(conti, k, Date.now());
+          if (p === "bloccato") throw new APIError("TOO_MANY_REQUESTS", { message: "Troppe password sbagliate per questo account: riprova tra 15 minuti.", code: "ACCOUNT_BLOCCATO" });
+          if (p === "pieno") throw new APIError("TOO_MANY_REQUESTS", { message: "Troppi tentativi di accesso in corso: riprova tra qualche minuto.", code: "TROPPI_TENTATIVI" });
         }),
       },
     ],
@@ -54,18 +46,13 @@ export const tentativiAccount = {
       {
         matcher: (ctx) => ctx.path === "/sign-in/email",
         handler: createAuthMiddleware(async (ctx) => {
-          const k = chiaveAccount((ctx.body as { email?: unknown } | undefined)?.email);
+          const k = chiaveDi(ctx);
           if (!k) return;
-          const ora = Date.now();
           const st = stato(ctx.context.returned);
-          if (st === 401) {
-            const r = dopoPasswordSbagliata(conti.get(k), ora);
-            ricorda(k, r.stato, ora);
-            if (r.appenaBloccato) await registraBlocco(ctx.context, k);
-          } else if (st === undefined || st < 400) {
-            // Password giusta: si riparte da zero (il secondo fattore ha il suo blocco per account)
-            conti.delete(k);
-          }
+          // 429 da questo stesso plugin: nessuna prenotazione da chiudere
+          if (st === 429) return;
+          const esito: Esito = st === 401 ? "sbagliata" : st === undefined || st < 400 ? "giusta" : "altro";
+          if (chiudi(conti, k, Date.now(), esito)) await registraBlocco(ctx.context, k);
         }),
       },
     ],

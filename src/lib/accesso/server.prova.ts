@@ -196,3 +196,21 @@ test("cambiare IP a ogni tentativo non serve: 10 password sbagliate per lo stess
   const stato = JSON.parse(await readFile(path.join(process.env.DATI_DIR!, "aziende", demoId, "state.json"), "utf8"));
   assert.ok((stato.state.audit as { action: string }[]).some((x) => x.action === "Accesso bloccato per 15 minuti"));
 });
+
+test("20 accessi in parallelo sullo stesso account da 20 IP: al massimo 10 arrivano alla verifica della password", async () => {
+  const email = "parallelo@prova.invalid";
+  const risposte = await Promise.all(
+    Array.from({ length: 20 }, (_, i) =>
+      m.auth.auth.handler(
+        new Request("http://localhost:3000/api/auth/sign-in/email", {
+          method: "POST",
+          headers: { origin: "http://localhost:3000", "content-type": "application/json", "cf-connecting-ip": `192.0.2.${i + 1}` },
+          body: JSON.stringify({ email, password: "sbagliata-123" }),
+        }),
+      ),
+    ),
+  );
+  const stati = risposte.map((r) => r.status);
+  assert.ok(stati.filter((s) => s === 401).length <= 10, stati.join());
+  assert.ok(stati.filter((s) => s === 429).length >= 10, stati.join());
+});
