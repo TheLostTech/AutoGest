@@ -1,4 +1,5 @@
 // Costruttori dei corpi delle chiamate eBay (puri). Si eseguono con: npm test
+/* eslint-disable @typescript-eslint/no-explicit-any -- nei test si leggono i corpi JSON per campo */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {

@@ -1,7 +1,7 @@
-// Stato del collegamento con eBay: modo (Simulato o Sandbox) e se è pronto.
+// Stato del collegamento con eBay: modo (Simulato o Sandbox) e se è pronto. Solo StatoPonte, nessun segreto.
 import { connection } from "next/server";
 import { altroSito } from "@/lib/collegamenti-server";
-import { scegliPonte } from "@/lib/ebay/server";
+import { messaggioPerUtente, scegliPonte } from "@/lib/ebay/server";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 
@@ -11,6 +11,6 @@ export async function GET(req: Request) {
   try {
     return json(await (await scegliPonte()).stato());
   } catch (e) {
-    return json({ modo: "Simulato", collegato: false, errore: e instanceof Error ? e.message : "eBay non risponde" });
+    return json({ modo: "Simulato", collegato: false, errore: messaggioPerUtente(e) });
   }
 }
