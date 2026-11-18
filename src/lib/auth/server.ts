@@ -7,6 +7,7 @@ import { DATA_DIR, DB_FILE } from "@/lib/server-data";
 import { assistenzaPlugin } from "./assistenza";
 import { segretoAccesso } from "./segreto";
 import { pinDispositivo } from "./pin-dispositivo";
+import { tentativiAccount } from "./tentativi-account";
 import { acAzienda, acPiattaforma, ruoliAzienda, ruoliPiattaforma } from "./permessi";
 
 // Il segreto viene da BETTER_AUTH_SECRET o, se manca, da un file generato nella cartella dati (segreto.ts):
@@ -17,8 +18,10 @@ import { acAzienda, acPiattaforma, ruoliAzienda, ruoliPiattaforma } from "./perm
 mkdirSync(DATA_DIR, { recursive: true });
 
 // Tentativi di accesso: Better Auth limita le richieste solo in produzione; qui sempre, anche con `next dev` sul tunnel.
-// Per indirizzo IP (x-forwarded-for con un solo valore); senza un IP affidabile tutte le richieste condividono un contatore
-// per percorso, che è più severo. In memoria: un solo processo Node.
+// Per indirizzo IP: quello di cf-connecting-ip, che Cloudflare Tunnel riscrive sempre (x-forwarded-for lo può scrivere
+// chiunque). Senza quell'intestazione (localhost, rete interna) tutte le richieste condividono un contatore per percorso,
+// che è più severo. Chi cambia IP a ogni tentativo trova comunque il blocco per account (tentativi-account.ts) e, sul
+// secondo fattore, quello di Better Auth (10 codici sbagliati → 15 minuti). In memoria: un solo processo Node.
 const AL_MINUTO = (max: number) => ({ window: 60, max });
 
 export const auth = betterAuth({
@@ -39,12 +42,14 @@ export const auth = betterAuth({
     },
   },
   emailAndPassword: { enabled: true, disableSignUp: true },
-  advanced: { useSecureCookies: false },
+  advanced: { useSecureCookies: false, ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } },
   trustedOrigins: process.env.INDIRIZZO_GESTIONALE ? [process.env.INDIRIZZO_GESTIONALE] : [],
   plugins: [
     organization({ ac: acAzienda, roles: ruoliAzienda, allowUserToCreateOrganization: false }),
     admin({ ac: acPiattaforma, roles: ruoliPiattaforma, adminRoles: ["superadmin"], defaultRole: "user" }),
-    twoFactor({ issuer: "Autodemolizione 4.0" }),
+    // Blocco per account sul codice dal telefono: 10 codici sbagliati di fila → 15 minuti (scritto qui, non solo di serie)
+    twoFactor({ issuer: "Autodemolizione 4.0", accountLockout: { enabled: true, maxFailedAttempts: 10, durationSeconds: 900 } }),
+    tentativiAccount,
     assistenzaPlugin,
     pinDispositivo(),
     nextCookies(),

@@ -35,7 +35,9 @@ Su un browser registrato come dispositivo **ogni** sessione ha le stesse regole,
 
 ## Tentativi di accesso
 
-Il server limita i tentativi anche con `next dev` (Better Auth di serie lo fa solo in produzione): al massimo 5 al minuto per l'accesso con email e per il codice dal telefono, 10 al minuto per il PIN (più tablet dello stesso piazzale escono dallo stesso indirizzo), 5 per la registrazione di un dispositivo; oltre, la risposta è 429 ("troppe richieste"). Il conto è per indirizzo IP quando la richiesta ne porta uno affidabile (`x-forwarded-for` con un solo valore); altrimenti tutte le richieste dello stesso percorso condividono un contatore, che è più severo. Il conto è in memoria: si azzera al riavvio.
+Il server limita i tentativi anche con `next dev` (Better Auth di serie lo fa solo in produzione): al massimo 5 al minuto per l'accesso con email e per il codice dal telefono, 10 al minuto per il PIN (più tablet dello stesso piazzale escono dallo stesso indirizzo), 5 per la registrazione di un dispositivo; oltre, la risposta è 429 ("troppe richieste"). Il conto è per indirizzo IP preso da `cf-connecting-ip`, che Cloudflare Tunnel riscrive sempre (`x-forwarded-for` invece lo può scrivere chiunque); senza quell'intestazione (localhost, rete interna) tutte le richieste dello stesso percorso condividono un contatore, che è più severo.
+
+Cambiare indirizzo a ogni tentativo non serve: dopo **10 password sbagliate in 15 minuti per lo stesso account** l'accesso a quell'account è rifiutato per 15 minuti, anche con la password giusta (vale anche per email inesistenti, così la risposta non dice quali account ci sono), e nel registro di ogni sua azienda resta "Accesso bloccato per 15 minuti". Il codice dal telefono ha lo stesso blocco per account (10 codici sbagliati di fila → 15 minuti, di Better Auth). Tutti questi conti sono in memoria: si azzerano al riavvio.
 
 Dal browser si raggiungono solo gli endpoint di Better Auth che l'app usa (elenco in `src/lib/auth/percorsi-auth.ts`): tutti gli altri rispondono 404 (niente cambio di nome o email dal profilo, niente "lascia l'azienda", niente azioni del pannello admin).
 

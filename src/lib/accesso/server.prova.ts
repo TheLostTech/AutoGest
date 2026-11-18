@@ -157,7 +157,7 @@ test("accesso con email: dal sesto tentativo sbagliato in un minuto 429", async 
     const r = await m.auth.auth.handler(
       new Request("http://localhost:3000/api/auth/sign-in/email", {
         method: "POST",
-        headers: { origin: "http://localhost:3000", "content-type": "application/json", "x-forwarded-for": "203.0.113.7" },
+        headers: { origin: "http://localhost:3000", "content-type": "application/json", "cf-connecting-ip": "203.0.113.7" },
         body: JSON.stringify({ email: "nessuno@prova.invalid", password: "sbagliata-123" }),
       }),
     );
@@ -173,4 +173,26 @@ test("segreto: generato nella cartella dati (0600), mai il valore di prova di Be
   assert.equal((await stat(f)).mode & 0o777, 0o600);
   assert.equal(c.secret, (await readFile(f, "utf8")).trim());
   assert.notEqual(c.secret, "better-auth-secret-12345678901234567890");
+});
+
+test("cambiare IP a ogni tentativo non serve: 10 password sbagliate per lo stesso account → bloccato anche con quella giusta", async () => {
+  const cred = JSON.parse(await readFile(path.join(process.env.DATI_DIR!, "credenziali-demo.json"), "utf8")) as Record<string, { email?: string; password?: string }>;
+  const valori = Object.values(cred).find((v) => !!v.password && !!v.email)!;
+  const email = valori.email!;
+  const prova = (password: string, ip: string) =>
+    m.auth.auth.handler(
+      new Request("http://localhost:3000/api/auth/sign-in/email", {
+        method: "POST",
+        headers: { origin: "http://localhost:3000", "content-type": "application/json", "cf-connecting-ip": ip },
+        body: JSON.stringify({ email, password }),
+      }),
+    );
+  const stati: number[] = [];
+  for (let i = 0; i < 10; i++) stati.push((await prova("sbagliata-" + i, `198.51.100.${i + 1}`)).status);
+  assert.ok(stati.every((s) => s === 401), stati.join());
+  const giusta = await prova(valori.password!, "198.51.100.200");
+  assert.equal(giusta.status, 429);
+  // Nel registro dell'azienda dell'account
+  const stato = JSON.parse(await readFile(path.join(process.env.DATI_DIR!, "aziende", demoId, "state.json"), "utf8"));
+  assert.ok((stato.state.audit as { action: string }[]).some((x) => x.action === "Accesso bloccato per 15 minuti"));
 });
