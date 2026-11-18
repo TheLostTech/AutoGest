@@ -27,6 +27,10 @@ Se l'avvio non riesce, il server resta acceso, scrive il motivo nel suo registro
 
 Si crea impostando le variabili `SUPERADMIN_*` al primo avvio (la password non va mai nel codice). Dopo l'accesso con email e password deve attivare il codice dal telefono (pagina Sicurezza): senza codice non entra in nessuna azienda. L'ingresso in un'azienda è "di assistenza", dura 2 ore e lascia una riga nel registro attività dell'azienda.
 
+## Dispositivi condivisi (nome e PIN)
+
+Il responsabile entra con email e password, apre Impostazioni, Dispositivi e usa "Usa come dispositivo dell'azienda": il suo account esce e il browser mostra l'elenco dei nomi. Chi lavora tocca il proprio nome e scrive il PIN (4 cifre). Dopo 5 minuti senza tocchi (in qualunque scheda dello stesso browser, anche le etichette) il dispositivo salva il lavoro, chiude la sessione e torna all'elenco. Le modifiche che non riesce a inviare restano nel browser e partono al prossimo accesso.
+
 ## Dove stanno i dati
 
 - Di tutta la piattaforma, in `DATI_DIR`: `piattaforma.sqlite` (utenti, aziende, ruoli, sessioni) e `.chiave-collegamenti` (chiave che cifra i segreti dei collegamenti: non spostarla).

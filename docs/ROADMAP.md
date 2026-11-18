@@ -53,9 +53,9 @@ Senza questo il prodotto non si può vendere: oggi il prototipo salva i dati sol
 | ID | Task | Dim. | Note |
 |---|---|---|---|
 | A1 | Database centrale e API documentate (sostituisce il salvataggio locale) | L | Base di tutto |
-| A2 | Più aziende sulla stessa piattaforma, dati separati per azienda | M | Indispensabile per vendere |
+| A2 | Più aziende sulla stessa piattaforma, dati separati per azienda | M | In parte fatto (18 nov 2026): ogni azienda ha archivio, foto, collegamenti e richieste in una cartella propria e l'azienda si ricava sempre dalla sessione. Resta: database vero al posto dei file, più sedi (A3) |
 | A3 | Più sedi e più magazzini per azienda | M | |
-| A4 | Accesso utenti, ruoli e permessi configurabili | M | 🔁 oggi i ruoli sono simulati |
+| A4 | Accesso utenti, ruoli e permessi configurabili | M | In parte fatto (18 nov 2026): login con Better Auth, ruoli combinabili, accesso nome+PIN sui dispositivi condivisi, blocco dopo 5 minuti. **Limite noto:** i ruoli sono fatti rispettare solo nelle schermate (e in poche route); finché non c'è il database dei dati, chi ha accesso all'azienda può leggere e scrivere tutto l'archivio dalle API. Il pagamento del negozio è simulato solo nell'azienda demo |
 | A5 | Registro attività immutabile (chi, cosa, quando, da quale dispositivo) | M | 🔁 |
 | A6 | App per il campo che funziona anche senza rete e sincronizza al ritorno | L | Piazzali con copertura scarsa |
 | A7 | Stampa etichette su stampanti reali (Bluetooth, Wi-Fi, USB) | M | Esterno: modelli di stampante; 🔁 |
@@ -64,7 +64,7 @@ Senza questo il prodotto non si può vendere: oggi il prototipo salva i dati sol
 | A10 | Backup, ripristino, monitoraggio, gestione errori delle integrazioni con nuovi tentativi | M | |
 | A11 | Privacy (GDPR): informative, tempi di conservazione, esportazione e cancellazione dati | S | Con consulente |
 | A12 | Abbonamenti dei nostri clienti: piani, moduli attivabili, fatturazione del servizio | M | Modello di vendita |
-| A13 | Pannello interno per noi: attivazione clienti, supporto, stato delle integrazioni | M | |
+| A13 | Pannello interno per noi: attivazione clienti, supporto, stato delle integrazioni | M | In parte fatto (18 nov 2026): area Piattaforma per il super admin (codice dal telefono obbligatorio) con creazione aziende, utenti con richiesta scritta, dispositivi e ingresso di assistenza (2 ore, con motivo e riga nel registro dell'azienda). Mancano: attivazione e piani (A12), stato delle integrazioni |
 
 ### B. Avvio di un nuovo cliente e migrazione
 
