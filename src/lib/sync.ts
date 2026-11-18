@@ -42,6 +42,7 @@ export const syncAllineato = (): boolean => allineato;
 // Dopo l'avviso non si riprova da soli: niente cicli di richieste.
 let avviso: string | null = null;
 let fermata = false;
+let inUscita = false; // uscita in corso (blocco per inattività, "Esci"): chi esce porta già all'accesso
 const ascoltatoriAvviso = new Set<() => void>();
 function fermaConAvviso(testo: string) {
   fermata = true;
@@ -70,7 +71,7 @@ function gestisciRifiuto(e: unknown): boolean {
   if (!(e instanceof ErroreApi)) return false;
   if (e.stato === 401) {
     fermata = true;
-    if (typeof window !== "undefined" && !percorsoPubblico(window.location.pathname)) {
+    if (typeof window !== "undefined" && !inUscita && !percorsoPubblico(window.location.pathname)) {
       window.location.assign(`/accesso?da=${encodeURIComponent(window.location.pathname + window.location.search)}`);
     }
     return true;
@@ -142,20 +143,26 @@ async function pushAll() {
   }
 }
 
+// Cosa è cambiato in questo dispositivo rispetto all'ultimo stato condiviso noto (null: niente).
+function differenze(s: S) {
+  const changes: Record<string, Rec[]> = {};
+  for (const k of LISTS) {
+    const before = new Map(((synced[k] as Rec[] | undefined) ?? []).map((r) => [keyOf(r), r]));
+    const changed = (s[k] as Rec[]).filter((r) => before.get(keyOf(r)) !== r);
+    if (changed.length) changes[k] = changed;
+  }
+  const whole = Object.fromEntries(WHOLE.filter((k) => s[k] !== synced[k]).map((k) => [k, s[k]]));
+  const vuote = Object.keys(changes).length === 0 && Object.keys(whole).length === 0 && s.counters === synced.counters;
+  return vuote ? null : { schema: STORE_SCHEMA, changes, whole, counters: s.counters };
+}
+
 async function pushChanges() {
   if (pushing || fermata) return;
   pushing++;
   dirty = false;
   try {
     const s = useStore.getState();
-    const changes: Record<string, Rec[]> = {};
-    for (const k of LISTS) {
-      const before = new Map(((synced[k] as Rec[] | undefined) ?? []).map((r) => [keyOf(r), r]));
-      const changed = (s[k] as Rec[]).filter((r) => before.get(keyOf(r)) !== r);
-      if (changed.length) changes[k] = changed;
-    }
-    const whole = Object.fromEntries(WHOLE.filter((k) => s[k] !== synced[k]).map((k) => [k, s[k]]));
-    const res = await api("PUT", { schema: STORE_SCHEMA, changes, whole, counters: s.counters });
+    const res = await api("PUT", differenze(s) ?? { schema: STORE_SCHEMA, changes: {}, whole: {}, counters: s.counters });
     synced = pick(s);
     // Se nel frattempo altri hanno scritto, al prossimo giro si scarica la versione fusa
     if (res.version === version + 1) version = res.version;
@@ -194,6 +201,86 @@ async function pull() {
   }
 }
 
+// Modifiche rimaste da inviare all'uscita: si salvano accanto alla copia locale della stessa azienda
+// (la chiave dello store contiene l'id dell'azienda) e partono al prossimo accesso su questo dispositivo.
+const chiaveInSospeso = () => `${useStore.persist.getOptions().name}:in-sospeso`;
+
+function salvaInSospeso(diff: NonNullable<ReturnType<typeof differenze>>) {
+  try {
+    const prima = JSON.parse(localStorage.getItem(chiaveInSospeso()) ?? "null") as typeof diff | null;
+    // Già qualcosa in attesa: si uniscono le liste per id (vince la copia più recente) e si tengono gli interi nuovi
+    if (prima && prima.schema === diff.schema) {
+      const changes: Record<string, Rec[]> = { ...prima.changes };
+      for (const [k, righe] of Object.entries(diff.changes)) {
+        const m = new Map((changes[k] ?? []).map((r) => [keyOf(r), r]));
+        for (const r of righe) m.set(keyOf(r), r);
+        changes[k] = [...m.values()];
+      }
+      diff = { ...diff, changes, whole: { ...prima.whole, ...diff.whole } };
+    }
+    localStorage.setItem(chiaveInSospeso(), JSON.stringify(diff));
+  } catch {
+    // memoria piena o non disponibile: resta solo la copia locale
+  }
+}
+
+async function inviaSalvateInSospeso() {
+  let corpo: unknown = null;
+  try {
+    corpo = JSON.parse(localStorage.getItem(chiaveInSospeso()) ?? "null");
+  } catch {
+    corpo = null;
+  }
+  if (!corpo) return;
+  try {
+    await api("PUT", corpo);
+    localStorage.removeItem(chiaveInSospeso());
+  } catch (e) {
+    // Rifiutate dal server (versione o accesso): riprovarle non serve. Rete assente: restano per la prossima volta
+    if (e instanceof ErroreApi && e.stato !== 401) {
+      try {
+        localStorage.removeItem(chiaveInSospeso());
+      } catch {}
+    }
+    gestisciRifiuto(e);
+  }
+}
+
+/**
+ * Prova a inviare subito le modifiche in sospeso di questo dispositivo, una volta.
+ * true: niente da inviare o inviate. false: non inviate; restano nella copia locale dell'azienda e partono al
+ * prossimo accesso su questo dispositivo. Chi la chiama sta uscendo: un 401 non riporta all'accesso da qui.
+ */
+export async function inviaInSospeso(): Promise<boolean> {
+  inUscita = true;
+  clearTimeout(timer);
+  // Una scrittura già in corso: la si aspetta (al massimo 5 secondi)
+  for (let i = 0; pushing > 0 && i < 50; i++) await new Promise((r) => setTimeout(r, 100));
+  if (!started) return true;
+  const s = useStore.getState();
+  const diff = differenze(s);
+  if (!diff) {
+    dirty = false;
+    return true;
+  }
+  if (!fermata) {
+    pushing++;
+    try {
+      const res = await api("PUT", diff);
+      synced = pick(s);
+      dirty = false;
+      if (res.version === version + 1) version = res.version;
+      return true;
+    } catch {
+      // si salva sotto
+    } finally {
+      pushing--;
+    }
+  }
+  salvaInSospeso(diff);
+  return false;
+}
+
 let started = false;
 
 // Avvia la sincronizzazione; la promessa si risolve dopo il primo allineamento (o dopo un timeout)
@@ -211,7 +298,17 @@ export function startSync(): Promise<void> {
   const onFocus = () => !dirty && pull();
   window.addEventListener("focus", onFocus);
   document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && onFocus());
-  return Promise.race([pull(), new Promise<void>((r) => setTimeout(r, 2000))]);
+  // Prima le modifiche rimaste dall'ultima uscita, poi la lettura: così il server le ha già unite
+  const primo = (async () => {
+    pushing++;
+    try {
+      await inviaSalvateInSospeso();
+    } finally {
+      pushing--;
+    }
+    await pull();
+  })();
+  return Promise.race([primo, new Promise<void>((r) => setTimeout(r, 2000))]);
 }
 
 // Ripristino dei dati demo: vale per tutti i dispositivi

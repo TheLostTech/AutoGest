@@ -5,6 +5,7 @@ import { RUOLI } from "./ruoli.ts";
 import type { SessioneVista, AziendaVista, AssistenzaVista } from "./regole.ts";
 
 const ORA = 1_800_000_000_000;
+const DISP = { id: "d1", nome: "Tablet piazzale 1" };
 
 type Input = {
   sessione: SessioneVista | null;
@@ -68,31 +69,31 @@ test("nessuna sessione", () => {
 
 test("PIN fermo da 5 minuti + 1 ms: scaduta", () => {
   const i = base();
-  i.sessione = { ...i.sessione!, tipo: "pin", ultimaAttivita: ORA - PIN_INATTIVITA_MS - 1 };
+  i.sessione = { ...i.sessione!, tipo: "pin", dispositivo: DISP, ultimaAttivita: ORA - PIN_INATTIVITA_MS - 1 };
   assert.deepEqual(decidiAccesso(i), { negato: 401, motivo: "sessione-scaduta" });
 });
 
 test("PIN fermo da 4 min 59 s: accesso", () => {
   const i = base();
-  i.sessione = { ...i.sessione!, tipo: "pin", ultimaAttivita: ORA - 299_000 };
+  i.sessione = { ...i.sessione!, tipo: "pin", dispositivo: DISP, ultimaAttivita: ORA - 299_000 };
   assert.ok(!("negato" in decidiAccesso(i)));
 });
 
 test("PIN fermo da esattamente 5 minuti: accesso (limite escluso)", () => {
   const i = base();
-  i.sessione = { ...i.sessione!, tipo: "pin", ultimaAttivita: ORA - PIN_INATTIVITA_MS };
+  i.sessione = { ...i.sessione!, tipo: "pin", dispositivo: DISP, ultimaAttivita: ORA - PIN_INATTIVITA_MS };
   assert.ok(!("negato" in decidiAccesso(i)));
 });
 
 test("PIN creato 10 ore + 1 ms fa ma attivo ora: scaduta", () => {
   const i = base();
-  i.sessione = { ...i.sessione!, tipo: "pin", creata: ORA - PIN_TURNO_MS - 1, ultimaAttivita: ORA };
+  i.sessione = { ...i.sessione!, tipo: "pin", dispositivo: DISP, creata: ORA - PIN_TURNO_MS - 1, ultimaAttivita: ORA };
   assert.deepEqual(decidiAccesso(i), { negato: 401, motivo: "sessione-scaduta" });
 });
 
 test("PIN creato da esattamente 10 ore e attivo: accesso", () => {
   const i = base();
-  i.sessione = { ...i.sessione!, tipo: "pin", creata: ORA - PIN_TURNO_MS, ultimaAttivita: ORA };
+  i.sessione = { ...i.sessione!, tipo: "pin", dispositivo: DISP, creata: ORA - PIN_TURNO_MS, ultimaAttivita: ORA };
   assert.ok(!("negato" in decidiAccesso(i)));
 });
 
@@ -104,7 +105,7 @@ test("sessione password ferma da 3 ore: accesso", () => {
 
 test("la scadenza del PIN viene prima di tutto il resto", () => {
   const i = base();
-  i.sessione = { ...i.sessione!, tipo: "pin", aziendaAttiva: null, ultimaAttivita: ORA - PIN_INATTIVITA_MS - 1 };
+  i.sessione = { ...i.sessione!, tipo: "pin", dispositivo: DISP, aziendaAttiva: null, ultimaAttivita: ORA - PIN_INATTIVITA_MS - 1 };
   i.azienda = null;
   assert.deepEqual(decidiAccesso(i), { negato: 401, motivo: "sessione-scaduta" });
 });
@@ -223,4 +224,30 @@ test("sessione impersonata: negata anche con super admin, due fattori e assisten
   const i = superadmin();
   i.sessione = { ...i.sessione!, impersonata: true };
   assert.deepEqual(decidiAccesso(i), { negato: 403, motivo: "impersonazione" });
+});
+
+test("PIN senza dispositivo valido (revocato, sparito o di un'altra azienda): 401 dispositivo-revocato", () => {
+  const i = base();
+  i.sessione = { ...i.sessione!, tipo: "pin", ultimaAttivita: ORA };
+  assert.deepEqual(decidiAccesso(i), { negato: 401, motivo: "dispositivo-revocato" });
+});
+
+test("PIN con dispositivo valido: accesso con il nome del dispositivo", () => {
+  const i = base();
+  i.sessione = { ...i.sessione!, tipo: "pin", dispositivo: DISP, ultimaAttivita: ORA };
+  const r = decidiAccesso(i);
+  assert.ok(!("negato" in r));
+  if ("negato" in r) return;
+  assert.equal(r.tipo, "pin");
+  assert.deepEqual(r.dispositivo, DISP);
+});
+
+test("PIN scaduto e senza dispositivo: prima la scadenza", () => {
+  const i = base();
+  i.sessione = { ...i.sessione!, tipo: "pin", ultimaAttivita: ORA - PIN_INATTIVITA_MS - 1 };
+  assert.deepEqual(decidiAccesso(i), { negato: 401, motivo: "sessione-scaduta" });
+});
+
+test("sessione password senza dispositivo: accesso (il dispositivo serve solo al PIN)", () => {
+  assert.ok(!("negato" in decidiAccesso(base())));
 });

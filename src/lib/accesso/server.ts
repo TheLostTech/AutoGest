@@ -19,6 +19,7 @@ const MESSAGGI: Record<Negato["motivo"], string> = {
   "assistenza-scaduta": "L'ingresso di assistenza non è attivo.",
   "due-fattori": "Serve il codice dal telefono per entrare in un'azienda.",
   impersonazione: "Questo tipo di accesso non è consentito.",
+  "dispositivo-revocato": "Questo dispositivo non è più registrato: accedi con email e password.",
 };
 
 function negata(stato: 401 | 403, motivo: Negato["motivo"]): Response {
@@ -59,7 +60,13 @@ export async function accessoDaRichiesta(req: Request): Promise<Accesso | Respon
   if (!dati) return negata(401, "nessuna-sessione");
 
   const { session, user } = dati;
-  const extra = session as typeof session & { activeOrganizationId?: string | null; tipoAccesso?: string | null; impersonatedBy?: string | null; dueFattoriVerificato?: boolean | null };
+  const extra = session as typeof session & {
+    activeOrganizationId?: string | null;
+    tipoAccesso?: string | null;
+    dispositivoId?: string | null;
+    impersonatedBy?: string | null;
+    dueFattoriVerificato?: boolean | null;
+  };
   const u = user as typeof user & { role?: string | null; twoFactorEnabled?: boolean | null };
 
   const vista: SessioneVista = {
@@ -76,6 +83,17 @@ export async function accessoDaRichiesta(req: Request): Promise<Accesso | Respon
   };
 
   const ctx = await auth.$context;
+
+  // Sessione da PIN: il dispositivo deve esistere, non essere revocato ed essere dell'azienda attiva.
+  // Altrimenti `dispositivo` resta vuoto e la regola nega con "dispositivo-revocato".
+  if (vista.tipo === "pin" && extra.dispositivoId) {
+    const d = await ctx.adapter.findOne<{ id: string; nome: string; organizationId: string; revocato?: unknown }>({
+      model: "dispositivo",
+      where: [{ field: "id", value: extra.dispositivoId }],
+    });
+    if (d && !d.revocato && d.organizationId === vista.aziendaAttiva) vista.dispositivo = { id: d.id, nome: d.nome };
+  }
+
   let azienda: AziendaVista | null = null;
   let ruoliMembro: string | null = null;
   let assistenza: AssistenzaVista | null = null;
@@ -121,8 +139,8 @@ export async function accessoDaRichiesta(req: Request): Promise<Accesso | Respon
 
   const esito = decidiAccesso({ sessione: vista, azienda, ruoliMembro, assistenza, ora });
   if ("negato" in esito) {
-    // Sessione PIN scaduta: la revoca, così il cookie non vale più nemmeno se riprovato.
-    if (esito.motivo === "sessione-scaduta") await ctx.internalAdapter.deleteSession(session.token);
+    // Sessione PIN scaduta o senza dispositivo valido: la revoca, così il cookie non vale più nemmeno se riprovato.
+    if (esito.motivo === "sessione-scaduta" || esito.motivo === "dispositivo-revocato") await ctx.internalAdapter.deleteSession(session.token);
     return negata(esito.negato, esito.motivo);
   }
 

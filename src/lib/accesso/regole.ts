@@ -17,6 +17,7 @@ export type SessioneVista = {
   tipo: "password" | "pin";
   creata: number;
   ultimaAttivita: number;
+  // Solo sessioni da PIN: il dispositivo esiste, non è revocato ed è dell'azienda attiva. Altrimenti assente.
   dispositivo?: { id: string; nome: string };
 };
 
@@ -35,7 +36,7 @@ export type Accesso = {
 
 export type Negato = {
   negato: 401 | 403;
-  motivo: "nessuna-sessione" | "sessione-scaduta" | "nessuna-azienda" | "non-membro" | "assistenza-scaduta" | "due-fattori" | "impersonazione";
+  motivo: "nessuna-sessione" | "sessione-scaduta" | "nessuna-azienda" | "non-membro" | "assistenza-scaduta" | "due-fattori" | "impersonazione" | "dispositivo-revocato";
 };
 
 type Input = {
@@ -57,6 +58,10 @@ export function decidiAccesso(i: Input): Accesso | Negato {
   if (sessione.tipo === "pin" && (ora - sessione.ultimaAttivita > PIN_INATTIVITA_MS || ora - sessione.creata > PIN_TURNO_MS)) {
     return { negato: 401, motivo: "sessione-scaduta" };
   }
+
+  // Una sessione da PIN vale solo con il suo dispositivo ancora registrato (non revocato) e della stessa azienda:
+  // chi la carica lascia `dispositivo` vuoto in tutti gli altri casi.
+  if (sessione.tipo === "pin" && !sessione.dispositivo) return { negato: 401, motivo: "dispositivo-revocato" };
 
   // L'azienda deve essere quella attiva della sessione: mai una diversa.
   if (!sessione.aziendaAttiva || !azienda || azienda.id !== sessione.aziendaAttiva) {

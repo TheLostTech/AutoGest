@@ -1,11 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { authClient } from "@/lib/auth/client";
+import type { NomiDispositivo } from "@/lib/auth/pin-dispositivo-client";
+import { NomiPin } from "./nomi-pin";
 import { BRAND } from "@/lib/config";
 import { Button, Field, Notice } from "@/components/ui";
 
 type Passo = "password" | "codice";
+
+// null: questo browser non è un dispositivo dell'azienda (o il server non risponde): accesso con email.
+const leggiNomiDispositivo = () =>
+  authClient.pinDispositivo
+    .nomi()
+    .then((r) => r.data ?? null)
+    .catch(() => null);
 
 // Dopo l'accesso: super admin alla piattaforma; chi appartiene a un'azienda la attiva (la prima, per ora) e va al lavoro.
 async function dopoAccesso(da: string) {
@@ -21,6 +30,28 @@ async function dopoAccesso(da: string) {
 }
 
 export function AccessoView({ da }: { da: string }) {
+  // Dispositivo dell'azienda (cookie valido): elenco dei nomi + PIN. Altrimenti, o su richiesta, email e password.
+  const [dispositivo, setDispositivo] = useState<NomiDispositivo | null | undefined>(undefined);
+  const [conEmail, setConEmail] = useState(false);
+  const leggiNomi = useCallback(() => leggiNomiDispositivo().then((d) => setDispositivo(d)), []);
+  useEffect(() => {
+    void leggiNomiDispositivo().then((d) => setDispositivo(d));
+  }, []);
+
+  if (dispositivo === undefined) {
+    return <main className="grid min-h-dvh place-items-center bg-ground" aria-busy="true" />;
+  }
+  if (dispositivo && !conEmail) {
+    return (
+      <main className="grid min-h-dvh place-items-center bg-ground px-4 py-10">
+        <NomiPin dati={dispositivo} da={da} onEmail={() => setConEmail(true)} onAggiorna={() => void leggiNomi()} />
+      </main>
+    );
+  }
+  return <AccessoEmail da={da} onNomi={dispositivo ? () => setConEmail(false) : undefined} />;
+}
+
+function AccessoEmail({ da, onNomi }: { da: string; onNomi?: () => void }) {
   const [passo, setPasso] = useState<Passo>("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -136,6 +167,13 @@ export function AccessoView({ da }: { da: string }) {
             {attesa ? "Controllo…" : passo === "password" ? "Entra" : "Conferma"}
           </Button>
         </form>
+        {onNomi && (
+          <div className="mt-4 text-center">
+            <button type="button" onClick={onNomi} className="min-h-11 px-2 text-[14px] font-semibold text-ink-3 underline">
+              Torna all&apos;elenco dei nomi
+            </button>
+          </div>
+        )}
       </div>
     </main>
   );

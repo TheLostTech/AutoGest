@@ -5,6 +5,7 @@ import { nextCookies } from "better-auth/next-js";
 import { admin, organization, twoFactor } from "better-auth/plugins";
 import { DATA_DIR, DB_FILE } from "@/lib/server-data";
 import { assistenzaPlugin } from "./assistenza";
+import { pinDispositivo } from "./pin-dispositivo";
 import { acAzienda, acPiattaforma, ruoliAzienda, ruoliPiattaforma } from "./permessi";
 
 // Il segreto viene da BETTER_AUTH_SECRET (obbligatorio con `next start`; in sviluppo Better Auth usa
@@ -24,6 +25,7 @@ export const auth = betterAuth({
     admin({ ac: acPiattaforma, roles: ruoliPiattaforma, adminRoles: ["superadmin"], defaultRole: "user" }),
     twoFactor({ issuer: "Autodemolizione 4.0" }),
     assistenzaPlugin,
+    pinDispositivo(),
     nextCookies(),
   ],
 });

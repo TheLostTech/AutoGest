@@ -46,8 +46,13 @@ export function useSessione(): { accesso: Accesso | null; ricarica: () => Promis
   return { accesso: esito && esito.ok ? esito.accesso : null, ricarica: () => caricaSessione(true) };
 }
 
-/** Esce dall'account e torna alla pagina di accesso. */
+/**
+ * Esce dall'account e torna alla pagina di accesso (su un dispositivo dell'azienda: all'elenco dei nomi).
+ * Prima prova a inviare le modifiche in sospeso; quelle non inviate restano per il prossimo accesso.
+ */
 export async function esci(): Promise<void> {
+  const { inviaInSospeso } = await import("../sync");
+  await inviaInSospeso().catch(() => false);
   const { authClient } = await import("../auth/client");
   await authClient.signOut().catch(() => undefined);
   window.location.assign("/accesso");
