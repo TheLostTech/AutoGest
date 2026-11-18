@@ -155,6 +155,68 @@ export type Condition = "A" | "B" | "C" | "D";
 
 export type ListingStatus = "non pubblicato" | "pubblicato" | "ritirato";
 
+// Annunci: una pagina in vendita può raggruppare più pezzi identici
+export type StatoNegozio = "online" | "esaurito" | "ritirato";
+export type StatoEbay =
+  | "non pubblicato"
+  | "in pubblicazione"
+  | "online"
+  | "esaurito"
+  | "chiuso da eBay"
+  | "ritirato"
+  | "errore";
+export interface VeicoloCompat {
+  marca: string;
+  modello: string;
+  anno?: number;
+  anni?: string;
+  motore?: string;
+}
+export interface Produttore {
+  ragioneSociale: string;
+  indirizzo: string;
+  citta: string;
+  cap: string;
+  paese: string;
+  email?: string;
+  sito?: string;
+}
+export type Gpsr =
+  | { tipo: "esente" }
+  | { tipo: "produttore"; produttore: Produttore }
+  | { tipo: "da confermare" };
+export interface AnnuncioEbay {
+  stato: StatoEbay;
+  daRiallineare: boolean;
+  listingId?: string;
+  url?: string;
+  categoria?: { id: string; nome: string };
+  quantitaInviata?: number;
+  prezzoInviato?: number;
+  errore?: string;
+  avvisi?: string[];
+  aggiornatoAt?: string;
+}
+export interface Annuncio {
+  id: string; // A-000001
+  chiave?: string;
+  typeId: string;
+  side?: string;
+  condition: Condition;
+  oem?: string;
+  spedibile: boolean;
+  price: number; // prezzo base dell'autodemolizione
+  titolo: string;
+  descrizione: string;
+  testoModificato: boolean;
+  caratteristiche: Record<string, string>;
+  gpsr: Gpsr;
+  negozio?: { stato: StatoNegozio };
+  ebay?: AnnuncioEbay;
+  createdAt: string;
+  esauritoDa?: string;
+}
+
 export interface Location {
   mag: string; // magazzino
   corsia: string; // T01…
@@ -199,6 +261,7 @@ export interface Part {
   aiSuggested?: { typeId: string; confidence: number; accepted: boolean };
   labelPrints: number;
   listing: ListingStatus;
+  annuncioId?: string; // annuncio a cui appartiene il pezzo (A-000001)
   createdAt: string;
   createdBy: string;
 }
