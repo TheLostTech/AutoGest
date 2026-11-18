@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CreditCard, Loader2, Trash2 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useCart } from "@/lib/cart";
@@ -26,6 +26,14 @@ export default function Carrello() {
   const [order, setOrder] = useState<Ordine>();
   const [error, setError] = useState("");
   const [paying, setPaying] = useState(false);
+  // Pagamento online attivo? Sconosciuto finché il server non risponde (il server rifiuta comunque gli ordini se non è attivo)
+  const [pagamentoAttivo, setPagamentoAttivo] = useState<boolean>();
+  useEffect(() => {
+    fetch("/api/negozio/catalogo", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j: { pagamentoAttivo?: boolean }) => setPagamentoAttivo(j.pagamentoAttivo === true))
+      .catch(() => undefined);
+  }, []);
   const [form, setForm] = useState({ nome: "", email: "", consegna: "spedizione" as "spedizione" | "ritiro" });
 
   // Un'unità per annuncio; foto dal prossimo a partire
@@ -99,7 +107,7 @@ export default function Carrello() {
       <div className="mx-auto max-w-md">
         <div className="rounded-md border border-hair bg-label p-6">
           <h1 className="text-[26px] font-bold">Ordine {order.id}</h1>
-          <p className="mt-1 text-ink-2">I pezzi sono riservati per te per 30 minuti. Pagina del provider di pagamento (simulata). Nessun dato della carta passa dal negozio.</p>
+          {order.pagamentoAttivo && <p className="mt-1 text-ink-2">I pezzi sono riservati per te per 30 minuti. Pagina del provider di pagamento (simulata). Nessun dato della carta passa dal negozio.</p>}
           <div className="code my-5 text-[44px] font-bold leading-none">{euro(order.amount)}</div>
           {error && <div className="mb-3"><Notice tone="danger">{error}</Notice></div>}
           {!order.pagamentoAttivo ? (
@@ -182,7 +190,8 @@ export default function Carrello() {
             <span className="code text-[34px] font-bold leading-none">{euro(total)}</span>
           </div>
           {error && <Notice tone="danger">{error}</Notice>}
-          <Button size="lg" type="submit" className="w-full" disabled={blocked.length > 0 || paying}>Vai al pagamento</Button>
+          {pagamentoAttivo === false && <Notice tone="warn">Pagamento online non ancora attivo</Notice>}
+          <Button size="lg" type="submit" className="w-full" disabled={blocked.length > 0 || paying || pagamentoAttivo === false}>Vai al pagamento</Button>
         </form>
       )}
     </div>

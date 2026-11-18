@@ -4,7 +4,7 @@ import { timingSafeEqual } from "node:crypto";
 import { connection } from "next/server";
 import { aggiornaStato } from "@/lib/archivio-azienda";
 import { nelArchivio, pagaOrdine, rilasciaScaduti, type StatoCondiviso } from "@/lib/negozio-ordine";
-import { archivioNegozioValido } from "@/lib/negozio-regole";
+import { archivioNegozioValido, decidiPagamento } from "@/lib/negozio-regole";
 import { corpoPubblico, datiNegozio, risposta } from "@/lib/negozio-server";
 
 const uguali = (a: string, b: string) => {
@@ -25,7 +25,8 @@ export async function POST(req: Request) {
   }
   const negozio = await datiNegozio();
   if (!negozio) return risposta({ error: "Il negozio non è disponibile in questo momento." }, 503);
-  if (!negozio.demo) return risposta({ error: "Pagamento online non ancora attivo" }, 403);
+  const dp = decidiPagamento(negozio.demo);
+  if (!dp.ok) return risposta({ error: dp.error }, dp.stato);
 
   let r: Esito;
   try {

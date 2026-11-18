@@ -1,7 +1,7 @@
 // Scadenza delle riserve e limiti degli ordini del negozio pubblico. Si eseguono con: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { archivioNegozioValido, decidiOrdine, ordiniScaduti, SCADENZA_RISERVA_MS } from "./negozio-regole.ts";
+import { archivioNegozioValido, decidiOrdine, decidiPagamento, ordiniScaduti, SCADENZA_RISERVA_MS } from "./negozio-regole.ts";
 
 const T0 = Date.parse("2026-03-01T10:00:00.000Z");
 const ordine = (id: string, over: Record<string, unknown> = {}) => ({ id, channel: "negozio", status: "in attesa di pagamento", createdAt: new Date(T0).toISOString(), ...over }) as never;
@@ -43,4 +43,9 @@ test("archivio: servono le liste e i contatori ordine ed evento", () => {
   assert.equal(archivioNegozioValido({ ...ok, counters: { order: 1 } }), false);
   assert.equal(archivioNegozioValido({ ...ok, orders: undefined }), false);
   assert.equal(archivioNegozioValido(null), false);
+});
+
+test("azienda non demo: nessun ordine e nessun pagamento (403 prima di ogni riserva)", () => {
+  assert.deepEqual(decidiPagamento(true), { ok: true });
+  assert.deepEqual(decidiPagamento(false), { ok: false, stato: 403, error: "Pagamento online non ancora attivo" });
 });

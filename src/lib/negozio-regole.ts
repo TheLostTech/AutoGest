@@ -38,3 +38,10 @@ export function archivioNegozioValido(s: Record<string, unknown> | null): boolea
   const c = s.counters as { order?: unknown; event?: unknown } | undefined;
   return typeof c?.order === "number" && typeof c?.event === "number";
 }
+
+export const PAGAMENTO_NON_ATTIVO = "Pagamento online non ancora attivo";
+
+/** Il pagamento simulato esiste solo sull'azienda demo: altrove non si crea nessun ordine (niente riserva, niente scrittura) e non si paga. */
+export function decidiPagamento(demo: boolean): { ok: true } | { ok: false; stato: 403; error: string } {
+  return demo ? { ok: true } : { ok: false, stato: 403, error: PAGAMENTO_NON_ATTIVO };
+}

@@ -3,15 +3,15 @@
 import { connection } from "next/server";
 import { leggiStato } from "@/lib/archivio-azienda";
 import { catalogoPubblico } from "@/lib/catalogo-pubblico";
-import { aziendaNegozio, risposta } from "@/lib/negozio-server";
+import { datiNegozio, risposta } from "@/lib/negozio-server";
 
 export async function GET() {
   await connection();
-  const az = await aziendaNegozio();
-  if (!az) return risposta({ annunci: [], parts: [], vehicles: [] });
+  const negozio = await datiNegozio();
+  if (!negozio) return risposta({ annunci: [], parts: [], vehicles: [], pagamentoAttivo: false });
   try {
-    const s = await leggiStato(az);
-    return risposta(catalogoPubblico((s.state ?? {}) as Parameters<typeof catalogoPubblico>[0]));
+    const s = await leggiStato(negozio.id);
+    return risposta({ ...catalogoPubblico((s.state ?? {}) as Parameters<typeof catalogoPubblico>[0]), pagamentoAttivo: negozio.demo });
   } catch (e) {
     console.error("Catalogo del negozio non leggibile", e);
     return risposta({ error: "Il catalogo non è disponibile in questo momento." }, 503);
