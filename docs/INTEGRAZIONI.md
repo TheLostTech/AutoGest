@@ -212,6 +212,43 @@ Esempio con 100 € (IVA inclusa) fissati dall'autodemolizione:
 
 **Resta da fare dal vivo, con la sandbox**: una pubblicazione di prova su eBay Italia con KType e con marca/modello/anno, per vedere quali campi obbligatori chiede `publishOffer` nelle categorie dei ricambi.
 
+**Cosa è costruito (prototipo, 18/11/2026)**
+
+- **Annunci con più pezzi uguali.** I pezzi con stesso tipo, codice verificato, lato, condizione, spedibilità e prezzo stanno in un solo annuncio con una quantità. Il prezzo è unico per annuncio: se lo cambi da un pezzo, il gestionale chiede conferma per tutti.
+- **Negozio online ed eBay leggono la stessa giacenza.** Un pezzo venduto al banco, sul negozio o su eBay scala la quantità ovunque. A zero l'annuncio resta come "esaurito" (sul negozio con il telefono, su eBay nascosto dalle ricerche) e torna online quando rientra un pezzo uguale.
+- **Vendite eBay importate** ogni 5 minuti, solo in modo Sandbox con il conto collegato (in Simulato si usa "Simula vendita su eBay"); in ogni modo c'è anche il pulsante "Controlla vendite eBay". Ogni controllo riguarda anche l'ora prima dell'ultimo, così un ordine che eBay mostra in ritardo non si perde; quelli già importati si riconoscono dal numero d'ordine. Se eBay vende un pezzo che da noi non c'è più, l'ordine è segnato "da gestire: manca 1 pezzo" in Vendite e in Da fare, finché non lo segni come gestito.
+- **Quantità e prezzo si riallineano da soli** ogni minuto (subito dopo un cambiamento), anche se due dispositivi hanno scritto insieme: il gestionale confronta quantità e prezzo di adesso con quelli mandati a eBay. Parte solo dopo che il dispositivo ha letto i dati aggiornati dagli altri.
+- **Categoria eBay.** La sceglie eBay alla prima pubblicazione, dalla parola del tipo di pezzo. Se eBay la rifiuta, o ne vuoi un'altra, scrivi il numero della categoria nell'anteprima o in "Modifica testo" dell'elenco annunci.
+- **Foto rimaste nel telefono non vanno su eBay.** Se il caricamento sul server non è riuscito, la foto resta solo nel telefono: il negozio la mostra, eBay no, e l'annuncio porta l'avviso "foto non ancora caricate sul server". Rifai la foto con la rete per mandarla.
+- **"Ripristina dati demo" non tocca eBay.** Gli annunci già mandati alla sandbox e l'archivio del ponte (`ebay.json` nella cartella dati del server, `.demo-data/` se non indicata: collegamento, politiche, foto, categorie, ordini già letti) restano. Ritira da eBay gli annunci prima del ripristino, o toglili dalla sandbox a mano.
+- **Modo Simulato (predefinito).** Senza chiavi eBay il gestionale usa un eBay finto, con la pagina `/ebay-simulato/<annuncio>` e il pulsante "Simula vendita su eBay". Serve a provare tutto senza account.
+- **Modo Sandbox.** Con le chiavi di prova il gestionale parla con le API vere di eBay (ambiente di prova): accesso OAuth, foto, categoria, caratteristiche, compatibilità veicoli, politiche, pubblicazione, ritiro e lettura ordini. Non esiste ancora il modo Produzione. Il codice non è mai stato eseguito contro eBay: la prova qui sotto serve a questo.
+
+**Prova in sandbox (guida per Alessandro)**
+
+1. Crea l'account sviluppatore gratuito su https://developer.ebay.com (eBay Developers Program).
+2. Nel portale, in "Application Keys", crea le chiavi **Sandbox**: ottieni **App ID** e **Cert ID**. Crea anche un utente di prova venditore in "Sandbox Users".
+3. Nelle impostazioni delle chiavi Sandbox, in "User Tokens", crea un **RuName** e, come indirizzo di accettazione ("Auth accepted URL"), metti l'indirizzo HTTPS del tunnel del prototipo seguito da `/api/ebay/ritorno`, per esempio `https://<tunnel>/api/ebay/ritorno`. eBay accetta solo HTTPS: `localhost` non va bene.
+4. Apri il gestionale dal tunnel, come Responsabile, in Impostazioni → Collegamenti → eBay. Scegli l'ambiente **Sandbox** e inserisci App ID, Cert ID e RuName. Il riquadro "Conto eBay" mostra l'indirizzo di ritorno da usare.
+5. Tocca **Collega account eBay**, accedi con l'utente di prova venditore e consenti l'accesso. Torni in Collegamenti con "Collegato". Al primo collegamento il gestionale crea le politiche (spedizione, pagamento, reso) e la sede; puoi cambiarle dai sei menu sotto "Conto eBay" e toccare "Salva scelte".
+6. In Pubblicazione tocca **Pubblica su eBay** su un annuncio pronto. Controlla poi su https://www.sandbox.ebay.it (o sandbox.ebay.com) con l'utente di prova: titolo, foto, prezzo (base +8%), quantità, caratteristiche e compatibilità. Gli avvisi dicono cosa eBay non ha accettato.
+7. Prova anche: una vendita al banco (la quantità su eBay scende), "Ritira da eBay" e un acquisto con un secondo utente di prova (compare in Vendite dopo il controllo).
+
+**Da verificare in sandbox** (ipotesi lette nelle specifiche eBay, non ancora provate)
+
+1. Nomi delle proprietà dei veicoli su eBay.it (marca, modello, anno, motore): se sono diversi, la compatibilità viene saltata con un avviso.
+2. Il motore (per esempio "1.6 JTDm 105 CV") probabilmente non coincide con i valori di eBay: viene scartato con un avviso.
+3. Valori di "Posizionamento sul veicolo" (Destra, Sinistra, Anteriore) e nomi di altre caratteristiche ("Numero ricambio produttore", "Tipo") nella categoria scelta.
+4. Servizi di spedizione (`IT_ExpressCourier` con costi di esempio 12 € e 45 €; ritiro con `IT_Pickup`).
+5. Adesione alle politiche di vendita (opt-in) e tempo di attivazione.
+6. Politica di reso: "14 giorni" potrebbe scontrarsi con la regola dei ricambi auto (30 giorni, reso a carico del venditore, errori 25123 e 25124).
+7. Ripubblicazione di un annuncio terminato da eBay e risposta quando per un SKU non esiste ancora un'offerta.
+8. Caricamento foto (risposta con l'indirizzo dell'immagine) e categoria suggerita dalla Taxonomy sull'albero 101.
+9. Condizioni "Usato ottimo" e "Per ricambi o non funzionante" ammesse nelle categorie dei ricambi.
+10. Dove compare l'annuncio di prova: `sandbox.ebay.it` o `sandbox.ebay.com`.
+11. Posizione dei dati GPSR (nell'offerta, non nell'articolo).
+12. Indirizzo della sede: quello predefinito è fittizio (Roma 00118), va cambiato.
+
 ---
 
 ## 5. Fisco, pagamenti, spedizioni, firma, conservazione, messaggi

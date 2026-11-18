@@ -156,6 +156,71 @@ export type Condition = "A" | "B" | "C" | "D";
 
 export type ListingStatus = "non pubblicato" | "pubblicato" | "ritirato";
 
+// Annunci: una pagina in vendita può raggruppare più pezzi identici
+export type StatoNegozio = "online" | "esaurito" | "ritirato";
+export type StatoEbay =
+  | "non pubblicato"
+  | "in pubblicazione"
+  | "online"
+  | "esaurito"
+  | "chiuso da eBay"
+  | "ritirato"
+  | "errore";
+export interface VeicoloCompat {
+  marca: string;
+  modello: string;
+  anno?: number;
+  anni?: string;
+  motore?: string;
+}
+export interface Produttore {
+  ragioneSociale: string;
+  indirizzo: string;
+  citta: string;
+  cap: string;
+  paese: string;
+  email?: string;
+  sito?: string;
+}
+export type Gpsr =
+  | { tipo: "esente" }
+  | { tipo: "produttore"; produttore: Produttore }
+  | { tipo: "da confermare" };
+export interface AnnuncioEbay {
+  stato: StatoEbay;
+  daRiallineare: boolean;
+  listingId?: string;
+  url?: string;
+  /** Categoria eBay: scelta da eBay alla prima pubblicazione, oppure scritta dall'operatore (manuale) */
+  categoria?: { id: string; nome?: string; manuale?: boolean };
+  quantitaInviata?: number;
+  prezzoInviato?: number;
+  errore?: string;
+  avvisi?: string[];
+  aggiornatoAt?: string;
+}
+export interface Annuncio {
+  id: string; // A-000001
+  chiave?: string;
+  typeId: string;
+  side?: string;
+  condition: Condition;
+  oem?: string;
+  spedibile: boolean;
+  price: number; // prezzo base dell'autodemolizione
+  titolo: string;
+  descrizione: string;
+  testoModificato: boolean;
+  caratteristiche: Record<string, string>;
+  gpsr: Gpsr;
+  /** GPSR confermato a mano dall'operatore: non si ricalcola quando cambiano marca o anno del veicolo */
+  gpsrManuale?: boolean;
+  negozio?: { stato: StatoNegozio };
+  ebay?: AnnuncioEbay;
+  createdAt: string;
+  esauritoDa?: string;
+}
+
 export interface Location {
   mag: string; // magazzino
   corsia: string; // T01…
@@ -185,6 +250,7 @@ export interface Part {
   side?: string;
   oem?: string;
   oemVerified: boolean;
+  spedibile?: boolean; // solo per i tipi non spedibili di serie: scelto alla creazione
   manufacturer?: string; // costruttore / fornitore primo impianto
   compat?: Compatibility;
   legacyCode?: string; // codice del gestionale precedente (magazzino migrato)
@@ -198,7 +264,7 @@ export interface Part {
   photos: string[];
   aiSuggested?: { typeId: string; confidence: number; accepted: boolean };
   labelPrints: number;
-  listing: ListingStatus;
+  annuncioId?: string; // annuncio a cui appartiene il pezzo (A-000001)
   createdAt: string;
   createdBy: string;
 }
@@ -238,6 +304,8 @@ export interface Order {
   status: OrderStatus;
   customer: string;
   paymentRef?: string;
+  ebayOrderId?: string; // ordine arrivato da eBay (canale "marketplace")
+  daGestire?: string; // es. "mancano 2 pezzi": venduti su eBay ma non più disponibili
   createdAt: string;
   history: { at: string; status: OrderStatus; note?: string }[];
 }
@@ -248,7 +316,7 @@ export interface AuditEvent {
   user: string;
   role: Role | "sistema" | "cliente";
   device: string;
-  entity: "veicolo" | "ricambio" | "ordine" | "regola" | "sistema";
+  entity: "veicolo" | "ricambio" | "annuncio" | "ordine" | "regola" | "sistema";
   entityId: string;
   action: string;
   detail?: string;

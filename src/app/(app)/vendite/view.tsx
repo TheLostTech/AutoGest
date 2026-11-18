@@ -28,7 +28,7 @@ function Vendite() {
   const [customer, setCustomer] = useState("");
   const [msg, setMsg] = useState<{ tone: "ok" | "danger" | "warn"; text: React.ReactNode } | null>(null);
   const [raceId, setRaceId] = useState("");
-  const [chan, setChan] = useState<"tutti" | Order["channel"]>("tutti");
+  const [chan, setChan] = useState<"tutti" | "ebay" | Order["channel"]>("tutti");
   const [which, setWhich] = useState<"da-gestire" | "tutti">("da-gestire");
   const [detail, setDetail] = useState<string | null>(null);
   const [docType, setDocType] = useState<"documento commerciale" | "fattura">("documento commerciale");
@@ -93,8 +93,8 @@ function Vendite() {
   // "Da gestire": ordini con un'azione aperta (incasso, consegna/spedizione, documento mancante)
   const hasDoc = (id: string) => s.docs.some((d) => d.orderId === id && d.type !== "preventivo" && d.type !== "nota di credito");
   const paidStates: Order["status"][] = ["pagato", "spedito", "consegnato"];
-  const open = (o: Order) => o.status === "in attesa di pagamento" || o.status === "pagato" || (paidStates.includes(o.status) && !hasDoc(o.id));
-  const orders = s.orders.filter((o) => (chan === "tutti" || o.channel === chan) && (which === "tutti" || open(o)));
+  const open = (o: Order) => o.status === "in attesa di pagamento" || o.status === "pagato" || (paidStates.includes(o.status) && !hasDoc(o.id)) || !!o.daGestire;
+  const orders = s.orders.filter((o) => (chan === "tutti" || (chan === "ebay" ? !!o.ebayOrderId : o.channel === chan && !o.ebayOrderId)) && (which === "tutti" || open(o)));
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -224,6 +224,7 @@ function Vendite() {
               <option value="banco">Banco</option>
               <option value="negozio">Negozio online</option>
               <option value="marketplace">Marketplace</option>
+              <option value="ebay">eBay</option>
             </select>
           </span>
         }
@@ -231,9 +232,12 @@ function Vendite() {
         <ul className="divide-y divide-hair-soft">
           {orders.length === 0 && <li className="px-4 py-6 text-ink-2">{which === "da-gestire" ? "Nessun ordine da gestire." : "Nessun ordine."}</li>}
           {orders.slice(0, which === "tutti" ? 60 : 200).map((o) => (
-            <li key={o.id} className="grid gap-3 px-4 py-3 md:grid-cols-[120px_110px_1fr_100px_auto] md:items-center">
+            <li key={o.id} className={`grid gap-3 px-4 py-3 md:grid-cols-[120px_110px_1fr_100px_auto] md:items-center ${o.daGestire ? "bg-warn-bg" : ""}`}>
               <span className="code text-[22px] font-bold leading-none">{o.id}</span>
-              <span className="text-sm font-semibold uppercase tracking-wide text-ink-2 code">{o.channel}</span>
+              <span className="text-sm font-semibold uppercase tracking-wide text-ink-2 code">
+                {o.ebayOrderId ? "eBay" : o.channel}
+                {o.ebayOrderId && <span className="block text-[12px] normal-case tracking-normal text-ink-3">{o.ebayOrderId}</span>}
+              </span>
               <span className="min-w-0 text-[15px]">
                 {o.partIds.map((pid) => {
                   // Ordine aperto: dove andare a prendere il pezzo (o se è già stato prelevato)
@@ -246,6 +250,7 @@ function Vendite() {
                     </span>
                   );
                 })}
+                {o.daGestire && <span className="mb-1 block text-sm font-semibold text-warn">Da gestire: {o.daGestire}</span>}
                 <span className="block text-sm text-ink-3">
                   {o.customer} · {dateIt(o.createdAt, true)}
                   {s.docs.filter((d) => d.orderId === o.id && d.type !== "preventivo").map((d) => (
@@ -263,6 +268,7 @@ function Vendite() {
                     <Button size="sm" variant="quiet" onClick={() => s.cancelOrder(o.id, "Annullato dall'operatore")}>Annulla</Button>
                   </>
                 )}
+                {o.daGestire && <Button size="sm" variant="secondary" onClick={() => s.markOrderHandled(o.id)}>Segna come gestito</Button>}
                 {o.status === "pagato" && <Button size="sm" onClick={() => s.shipOrder(o.id)}>{o.channel === "banco" || o.delivery === "ritiro" ? "Consegnato" : "Spedito"}</Button>}
                 {paidStates.includes(o.status) && !hasDoc(o.id) && (
                   <>

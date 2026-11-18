@@ -8,14 +8,23 @@ import { locToString, originLabel, WAREHOUSES, type Warehouse } from "./warehous
 import { eerByCode, movesForBonifica, movesForIntake, stockByEer } from "./ambiente";
 import { differenzaPesata } from "./stime";
 import { DEFAULT_LISTINI, onlinePrice, type Listino } from "./pricing";
+import { typeById } from "./catalog";
+import { GPSR_ERRORE, categoriaEbayDa, gpsrAfterVehicleChange, gpsrBlocksEbay, alignedPrice, groupKey, listingFieldsChanged, listingOf, membershipAfter, missingNote, partsOf, pickForSale, placementFor, quantityOf, refreshAnnuncio, shopPicks } from "./annunci";
+import { buildAnnuncio, fieldsFromPart, gpsrOf, textFor, type BozzaAnnuncio } from "./annuncio-build";
+import { isShippable } from "./spedizione";
+import type { EsitoAllinea, VenditaEbay } from "./ebay/contratto";
+import { applyEsito, type Inviato } from "./ebay/sync-puro";
 import type {
+  Annuncio,
   AuditEvent,
   BonificaItem,
   Channel,
   DocType,
   SalesDoc,
   Fir,
+  Gpsr,
   InventoryCount,
+  ListingStatus,
   Location,
   Order,
   Part,
@@ -27,7 +36,7 @@ import type {
   Vehicle,
   WasteMove,
 } from "./types";
-import { publishChecks } from "./logic";
+import { euro, publishChecks } from "./logic";
 import { canTransmit, firNumberTaken, isDraft, missingFields, monthLabel, nextRegisterNumber, periodsOf } from "./periodo";
 
 export const ROLE_USER: Record<Role, { user: string; device: string; label: string }> = {
@@ -49,12 +58,14 @@ interface Counters {
   docs: Record<"P" | "DC" | "FT" | "NC", number>;
   inventory: number;
   scrapPickup?: number;
+  annuncio: number;
 }
 
 interface State {
   role: Role;
   vehicles: Vehicle[];
   parts: Part[];
+  annunci: Annuncio[];
   orders: Order[];
   audit: AuditEvent[];
   rules: StockRule[];
@@ -70,23 +81,38 @@ interface State {
 }
 
 type Result<T = undefined> = { ok: true; value: T } | { ok: false; error: string; conflicts?: string[] };
+type Actor = { user: string; role: AuditEvent["role"]; device: string };
 
 interface Actions {
   setRole: (r: Role) => void;
   setActiveVehicle: (id?: string) => void;
   addVehicle: (v: Omit<Vehicle, "id" | "createdBy" | "intakeAt">) => string;
   updateVehicle: (id: string, patch: Partial<Vehicle>, action: string, detail?: string) => void;
-  addPart: (p: Omit<Part, "id" | "createdAt" | "createdBy" | "labelPrints" | "listing">) => string;
+  addPart: (p: Omit<Part, "id" | "createdAt" | "createdBy" | "labelPrints">) => string;
   updatePart: (id: string, patch: Partial<Part>, action: string, detail?: string) => void;
   printLabel: (id: string) => void;
   setLocation: (id: string, loc: Location) => void;
   pickPart: (id: string, detail?: string) => void;
   scrapPart: (id: string, reason: string) => Result;
-  unscrapPart: (id: string, prev: Pick<Part, "status" | "location" | "listing">) => void;
+  unscrapPart: (id: string, prev: Pick<Part, "status" | "location">) => void;
   scrapPickup: (partIds: string[], kg: number, eurPerKg: number, buyer: string) => Result<string>;
   setPartStatus: (id: string, status: PartStatus, reason?: string) => void;
-  publish: (id: string) => Result;
-  unpublish: (id: string) => void;
+  // Annunci: un annuncio raggruppa i pezzi uguali; la quantità è quella dei pezzi disponibili
+  publishAnnuncio: (partId: string, bozza: BozzaAnnuncio) => Result<string>;
+  placePart: (partId: string) => void;
+  resolvePrice: (partId: string, scelta: "annuncio" | "pezzo") => void;
+  setAnnuncioPrice: (annuncioId: string, price: number) => void;
+  withdrawAnnuncio: (annuncioId: string, canale: "negozio" | "ebay" | "tutti") => Result<string>;
+  republishAnnuncio: (annuncioId: string, canali: { negozio: boolean; ebay: boolean }) => Result<string>;
+  setAnnuncioGpsr: (annuncioId: string, gpsr: Gpsr) => void;
+  /** Numero della categoria eBay scritto dall'operatore; "" la toglie (la sceglie di nuovo eBay) */
+  setAnnuncioCategoria: (annuncioId: string, categoriaId: string) => Result<string>;
+  editAnnuncioText: (annuncioId: string, titolo: string, descrizione: string) => void;
+  regenerateText: (annuncioId: string) => void;
+  orderFromAnnunci: (channel: "negozio", annuncioIds: string[], customer: string, actor?: Actor, delivery?: "corriere" | "ritiro") => Result<string>;
+  importEbaySale: (v: VenditaEbay) => Result<string>;
+  setEbayResult: (annuncioId: string, esito: EsitoAllinea, inviato: Inviato) => void;
+  markOrderHandled: (orderId: string) => void;
   createOrder: (
     channel: Channel,
     partIds: string[],
@@ -125,9 +151,10 @@ interface Actions {
 }
 
 const now = () => new Date().toISOString();
+const EBAY_ACTOR: Actor = { user: "Connettore eBay", role: "sistema", device: "Ponte eBay" };
 
 // Chiave dei dati salvati: cambia quando cambia la struttura dei dati demo
-export const STORE_SCHEMA = "gestionale-demolizione-demo-v11";
+export const STORE_SCHEMA = "gestionale-demolizione-demo-v12";
 
 function initial(): State {
   const s = buildSeed();
@@ -135,6 +162,7 @@ function initial(): State {
     role: "smontatore",
     vehicles: s.vehicles,
     parts: s.parts,
+    annunci: s.annunci,
     orders: s.orders,
     audit: s.audit,
     rules: s.rules,
@@ -252,6 +280,83 @@ export const useStore = create<State & Actions>()(
           return { partId: pid, description: `${pid} · ${p?.description ?? "ricambio"}`, price: prices?.[pid] ?? p?.price ?? 0 };
         });
 
+      // ——— Annunci ———
+      const shipOf = (p: Part) => isShippable(p, typeById(p.typeId).shippable);
+      const keyOf = (p: Part) => groupKey(p, shipOf(p));
+      // Dati del pezzo che decidono l'annuncio: se cambiano, il pezzo può dover cambiare annuncio
+      const sigOf = (p: Part) => JSON.stringify([p.typeId, p.oem ?? "", p.oemVerified, p.side ?? "", p.condition, shipOf(p)]);
+      const checksPass = (p: Part) => publishChecks(p, get().vehicles.find((v) => v.id === p.vehicleId)).every((c) => c.ok || !c.blocking);
+      const annuncioEvent = (aid: string, action: string, detail?: string, actor?: Actor) => event({ entity: "annuncio", entityId: aid, action, detail, ...actor });
+      const setAnnuncioOf = (partId: string, aid: string | undefined) =>
+        set((st) => ({ parts: st.parts.map((x) => (x.id === partId ? { ...x, annuncioId: aid } : x)) }));
+
+      // Ricalcolo dopo ogni cambiamento che tocca quantità o dati: stato del negozio, data a zero,
+      // eBay da riallineare, testo riscritto se l'operatore non l'ha modificato
+      const touchAnnuncio = (aid: string) => {
+        let esaurito = false;
+        set((st) => {
+          const a = st.annunci.find((x) => x.id === aid);
+          if (!a) return {};
+          const next = refreshAnnuncio(a, st.parts, now(), (q) => textFor(a, st.parts, st.vehicles, q));
+          esaurito = !!next.esauritoDa && !a.esauritoDa;
+          return { annunci: st.annunci.map((x) => (x.id === aid ? next : x)) };
+        });
+        if (esaurito) push(annuncioEvent(aid, "Annuncio esaurito", "Nessun pezzo disponibile: l'annuncio resta, a zero"));
+      };
+
+      // Un pezzo disponibile, senza annuncio e che passa i controlli entra da solo nell'annuncio uguale con lo stesso prezzo
+      const placePart = (partId: string) => {
+        const s = get();
+        const p = s.parts.find((x) => x.id === partId);
+        if (!p || p.status !== "disponibile" || p.annuncioId || !checksPass(p)) return;
+        const place = placementFor(p, keyOf(p), s.annunci);
+        if (place.kind !== "unisci") return;
+        setAnnuncioOf(partId, place.annuncioId);
+        push(annuncioEvent(place.annuncioId, "Pezzo aggiunto all'annuncio", partId));
+        touchAnnuncio(place.annuncioId);
+      };
+
+      // I pezzi in coda uguali a un annuncio appena creato, ripubblicato o con un prezzo nuovo vi entrano da soli
+      const joinQueued = (aid: string) => {
+        const a = get().annunci.find((x) => x.id === aid);
+        if (!a?.chiave) return;
+        get()
+          .parts.filter((p) => !p.annuncioId && p.status === "disponibile" && keyOf(p) === a.chiave)
+          .forEach((p) => placePart(p.id));
+      };
+
+      // Dopo un cambio di stato: scartato o invendibile escono dall'annuncio; chi torna disponibile
+      // resta solo se passa i controlli (altrimenti torna in coda); poi si ricalcolano gli annunci toccati
+      // e i pezzi disponibili senza annuncio cercano un annuncio uguale
+      const settle = (ids: string[]) => {
+        const touched = new Set<string>();
+        for (const id of ids) {
+          const p = get().parts.find((x) => x.id === id);
+          if (!p?.annuncioId) continue;
+          touched.add(p.annuncioId);
+          if (membershipAfter(p, checksPass(p)) === p.annuncioId) {
+            // Resta o rientra disponibile: prende il prezzo dell'annuncio (un prezzo solo per i pezzi uguali)
+            const a = get().annunci.find((x) => x.id === p.annuncioId);
+            const price = alignedPrice(p, a);
+            if (price !== undefined) {
+              set((st) => ({ parts: st.parts.map((x) => (x.id === id ? { ...x, price } : x)) }));
+              push(event({ entity: "ricambio", entityId: id, action: `Prezzo allineato all'annuncio ${p.annuncioId}: ${euro(p.price)} → ${euro(price)}` }));
+            }
+            continue;
+          }
+          setAnnuncioOf(id, undefined);
+          push(
+            annuncioEvent(
+              p.annuncioId,
+              "Pezzo uscito dall'annuncio",
+              `${id} · ${p.status === "disponibile" ? "controlli di pubblicazione non superati: torna in coda" : p.status}`,
+            ),
+          );
+        }
+        touched.forEach(touchAnnuncio);
+        ids.forEach(placePart);
+      };
+
       return {
         ...initial(),
         setRole: (role) => set({ role }),
@@ -269,14 +374,35 @@ export const useStore = create<State & Actions>()(
         },
 
         updateVehicle: (id, patch, action, detail) => {
+          const prev = get().vehicles.find((v) => v.id === id);
           set((s) => ({ vehicles: s.vehicles.map((v) => (v.id === id ? { ...v, ...patch } : v)) }));
           push(event({ entity: "veicolo", entityId: id, action, detail }));
+          const next = get().vehicles.find((v) => v.id === id);
+          if (!prev || !next) return;
+          // Provenienza cambiata (es. tornata «da verificare»): i controlli bloccanti tolgono i suoi pezzi dagli annunci,
+          // e con la provenienza di nuovo verificata vi rientrano
+          if (prev.verification !== next.verification) settle(get().parts.filter((p) => p.vehicleId === id).map((p) => p.id));
+          // Marca, modello, versione, anno o km cambiati: gli annunci dei suoi pezzi riscrivono il testo
+          // (se non modificato) e si riallineano su eBay; con marca o anno cambiati si ricalcola anche il GPSR,
+          // salvo quello confermato a mano dall'operatore
+          const changed = listingFieldsChanged(prev, next);
+          if (!changed.text) return;
+          const aids = [...new Set(get().parts.filter((p) => p.vehicleId === id && p.annuncioId).map((p) => p.annuncioId!))];
+          if (changed.gpsr)
+            set((st) => ({
+              annunci: st.annunci.map((a) => {
+                if (!aids.includes(a.id)) return a;
+                const gpsr = gpsrAfterVehicleChange(a, gpsrOf(a, st.parts, st.vehicles, id));
+                return gpsr ? { ...a, gpsr } : a;
+              }),
+            }));
+          aids.forEach(touchAnnuncio);
         },
 
         addPart: (p) => {
           const n = get().counters.part + 1;
           const id = `R-${pad(n)}`;
-          const part: Part = { ...p, id, createdAt: now(), createdBy: ROLE_USER[get().role].user, labelPrints: 0, listing: "non pubblicato" };
+          const part: Part = { ...p, id, createdAt: now(), createdBy: ROLE_USER[get().role].user, labelPrints: 0 };
           const v = get().vehicles.find((x) => x.id === p.vehicleId);
           // Il primo pezzo catalogato da un veicolo accettato ne avvia lo smontaggio
           const starts = v?.work === "accettato" && p.origin !== "inventario";
@@ -287,14 +413,37 @@ export const useStore = create<State & Actions>()(
           }));
           if (starts) push(event({ entity: "veicolo", entityId: v!.id, action: "Smontaggio avviato", detail: `primo pezzo ${id}` }));
           push(event({ entity: "ricambio", entityId: id, action: "Ricambio catalogato", detail: `${p.description} da ${originLabel(p)}${p.aiSuggested ? ` · suggerimento IA ${p.aiSuggested.accepted ? "confermato" : "corretto"}` : ""}` }));
+          placePart(id);
           return id;
         },
 
         updatePart: (id, patch, action, detail) => {
-          // Un pezzo pubblicato senza prezzo non può restare in vendita online
-          const unpriced = "price" in patch && !patch.price;
-          set((s) => ({ parts: s.parts.map((p) => (p.id === id ? { ...p, ...patch, ...(unpriced && p.listing === "pubblicato" ? { listing: "ritirato" as const } : {}) } : p)) }));
+          const prev = get().parts.find((x) => x.id === id);
+          if (!prev) return;
+          const next: Part = { ...prev, ...patch };
+          set((s) => ({ parts: s.parts.map((p) => (p.id === id ? next : p)) }));
           push(event({ entity: "ricambio", entityId: id, action, detail }));
+          const a = prev.annuncioId ? get().annunci.find((x) => x.id === prev.annuncioId) : undefined;
+          if (a) {
+            // Cambio di chiave: con più pezzi il pezzo esce e torna in coda; con un pezzo solo cambia l'annuncio
+            const keyChanged = sigOf(prev) !== sigOf(next) && !(a.chiave && keyOf(next) === a.chiave);
+            if (keyChanged && partsOf(a, get().parts).length > 1) {
+              setAnnuncioOf(id, undefined);
+              push(annuncioEvent(a.id, "Pezzo uscito dall'annuncio", `${id} · dati cambiati: torna in coda`));
+            } else if (keyChanged) {
+              const f = fieldsFromPart(next, get().vehicles);
+              const generated = ["Tipo", "Marca", "Numero ricambio produttore", "Posizionamento sul veicolo"];
+              const kept = Object.fromEntries(Object.entries(a.caratteristiche).filter(([k]) => !generated.includes(k)));
+              set((s) => ({ annunci: s.annunci.map((x) => (x.id === a.id ? { ...x, ...f, caratteristiche: { ...kept, ...f.caratteristiche } } : x)) }));
+              push(annuncioEvent(a.id, "Dati dell'annuncio aggiornati", `da ${id}`));
+            }
+            // Prezzo: i pezzi uguali hanno un prezzo solo, quindi cambia quello dell'annuncio.
+            // Un pezzo venduto cambia solo il suo prezzo
+            const still = next.status !== "venduto" && get().parts.find((x) => x.id === id)?.annuncioId === a.id;
+            if (still && typeof patch.price === "number" && patch.price > 0 && patch.price !== a.price) get().setAnnuncioPrice(a.id, patch.price);
+          }
+          settle([id]);
+          if (a && get().parts.find((x) => x.id === id)?.annuncioId !== a.id) touchAnnuncio(a.id);
         },
 
         printLabel: (id) => {
@@ -309,6 +458,7 @@ export const useStore = create<State & Actions>()(
           const p = get().parts.find((x) => x.id === id);
           set((s) => ({ parts: s.parts.map((x) => (x.id === id ? { ...x, location: loc, missingSince: undefined } : x)) }));
           push(event({ entity: "ricambio", entityId: id, action: p?.location ? "Ricambio spostato" : "Posizione assegnata", detail: p?.location ? `${locToString(p.location)} → ${locToString(loc)}` : locToString(loc) }));
+          placePart(id);
         },
 
         // Il pezzo esce fisicamente dallo scaffale (prelievo per una vendita, o scansione annullata)
@@ -330,17 +480,19 @@ export const useStore = create<State & Actions>()(
           set((s) => ({
             parts: s.parts.map((x) =>
               x.id === id
-                ? { ...x, status: "scartato" as const, listing: x.listing === "pubblicato" ? ("ritirato" as const) : x.listing, location: undefined, missingSince: undefined, scrap: { at: now(), reason, from } }
+                ? { ...x, status: "scartato" as const, location: undefined, missingSince: undefined, scrap: { at: now(), reason, from } }
                 : x,
             ),
           }));
           push(event({ entity: "ricambio", entityId: id, action: "Messo nei rottami", detail: `${from ? `da ${from} · ` : ""}${reason}` }));
+          settle([id]);
           return { ok: true, value: undefined };
         },
 
         unscrapPart: (id, prev) => {
           set((s) => ({ parts: s.parts.map((x) => (x.id === id ? { ...x, ...prev, scrap: undefined } : x)) }));
           push(event({ entity: "ricambio", entityId: id, action: "Tolto dai rottami", detail: prev.location ? `rimesso in ${locToString(prev.location)}` : undefined }));
+          settle([id]);
         },
 
         scrapPickup: (partIds, kg, eurPerKg, buyer) => {
@@ -362,26 +514,324 @@ export const useStore = create<State & Actions>()(
         setPartStatus: (id, status, reason) => {
           const p = get().parts.find((x) => x.id === id);
           if (!p) return;
-          const listing = status === "disponibile" ? p.listing : p.listing === "pubblicato" && status !== "riservato" && status !== "venduto" ? "ritirato" : p.listing;
-          set((s) => ({ parts: s.parts.map((x) => (x.id === id ? { ...x, status, listing } : x)) }));
+          set((s) => ({ parts: s.parts.map((x) => (x.id === id ? { ...x, status } : x)) }));
           push(event({ entity: "ricambio", entityId: id, action: `Stato: ${p.status} → ${status}`, detail: reason }));
+          settle([id]);
         },
 
-        publish: (id) => {
+        // Il pezzo non ha un annuncio uguale: ne nasce uno nuovo, sui canali scelti
+        publishAnnuncio: (partId, bozza) => {
           const s = get();
-          const p = s.parts.find((x) => x.id === id);
+          const p = s.parts.find((x) => x.id === partId);
           if (!p) return { ok: false, error: "Ricambio non trovato" };
           const v = s.vehicles.find((x) => x.id === p.vehicleId);
           const missing = publishChecks(p, v).filter((c) => !c.ok && c.blocking);
           if (missing.length) return { ok: false, error: "Scheda incompleta", conflicts: missing.map((m) => m.label) };
-          set((st) => ({ parts: st.parts.map((x) => (x.id === id ? { ...x, listing: "pubblicato" } : x)) }));
-          push(event({ entity: "ricambio", entityId: id, action: "Pubblicato sul negozio" }));
-          return { ok: true, value: undefined };
+          if (p.annuncioId) return { ok: false, error: `Il pezzo è già nell'annuncio ${p.annuncioId}`, conflicts: [p.annuncioId] };
+          if (!bozza.canali.negozio && !bozza.canali.ebay) return { ok: false, error: "Scegli almeno un canale" };
+          if (bozza.canali.ebay && gpsrBlocksEbay(bozza.gpsr)) return { ok: false, error: GPSR_ERRORE };
+          const titolo = bozza.titolo.trim();
+          if (!titolo) return { ok: false, error: "Scrivi il titolo dell'annuncio" };
+          if (titolo.length > 80) return { ok: false, error: "Il titolo supera gli 80 caratteri ammessi da eBay" };
+          const categoria = categoriaEbayDa(bozza.categoriaEbay ?? "");
+          if (categoria === undefined) return { ok: false, error: "Il numero della categoria eBay ha solo cifre" };
+          // Con un annuncio uguale non se ne crea un secondo
+          const place = placementFor(p, keyOf(p), s.annunci);
+          if (place.kind === "unisci") {
+            placePart(partId);
+            return { ok: true, value: place.annuncioId };
+          }
+          if (place.kind === "prezzo diverso")
+            return { ok: false, error: `Prezzo diverso dall'annuncio ${place.annuncioId}: ${euro(p.price)} contro ${euro(place.prezzoAnnuncio)}`, conflicts: [place.annuncioId] };
+          if (place.kind === "annuncio ritirato") return { ok: false, error: `Ripubblica l'annuncio ${place.annuncioId}: è uguale a questo pezzo`, conflicts: [place.annuncioId] };
+          const n = s.counters.annuncio + 1;
+          const aid = `A-${pad(n)}`;
+          const base = buildAnnuncio([p], s.vehicles, aid, now());
+          const a: Annuncio = {
+            ...base,
+            titolo,
+            descrizione: bozza.descrizione.trim(),
+            testoModificato: bozza.testoModificato,
+            caratteristiche: bozza.caratteristiche,
+            gpsr: bozza.gpsr,
+            ...(bozza.gpsrManuale ? { gpsrManuale: true } : {}),
+            negozio: bozza.canali.negozio ? base.negozio : undefined,
+            ebay: bozza.canali.ebay
+              ? { stato: "in pubblicazione", daRiallineare: true, ...(categoria ? { categoria: { id: categoria, manuale: true } } : {}) }
+              : undefined,
+          };
+          set((st) => ({
+            annunci: [a, ...st.annunci],
+            parts: st.parts.map((x) => (x.id === partId ? { ...x, annuncioId: aid } : x)),
+            counters: { ...st.counters, annuncio: n },
+          }));
+          const canali = [bozza.canali.negozio && "negozio", bozza.canali.ebay && "eBay"].filter(Boolean).join(" ed ");
+          push(annuncioEvent(aid, "Annuncio creato", `${partId} · ${canali}`));
+          joinQueued(aid);
+          return { ok: true, value: aid };
         },
 
-        unpublish: (id) => {
-          set((s) => ({ parts: s.parts.map((x) => (x.id === id ? { ...x, listing: "ritirato" } : x)) }));
-          push(event({ entity: "ricambio", entityId: id, action: "Ritirato dal negozio" }));
+        placePart: (partId) => placePart(partId),
+
+        // Prezzo diverso da quello dell'annuncio uguale: si allinea il pezzo, oppure l'annuncio prende il prezzo nuovo
+        resolvePrice: (partId, scelta) => {
+          const s = get();
+          const p = s.parts.find((x) => x.id === partId);
+          if (!p || p.annuncioId || p.price === undefined) return;
+          const place = placementFor(p, keyOf(p), s.annunci);
+          if (place.kind !== "prezzo diverso") return;
+          if (scelta === "annuncio") {
+            set((st) => ({ parts: st.parts.map((x) => (x.id === partId ? { ...x, price: place.prezzoAnnuncio } : x)) }));
+            push(event({ entity: "ricambio", entityId: partId, action: "Prezzo allineato all'annuncio", detail: `${euro(p.price)} → ${euro(place.prezzoAnnuncio)} · ${place.annuncioId}` }));
+          } else get().setAnnuncioPrice(place.annuncioId, p.price);
+          placePart(partId);
+        },
+
+        // Un prezzo solo per i pezzi uguali: cambia sull'annuncio e su tutti i suoi pezzi non ancora venduti
+        setAnnuncioPrice: (annuncioId, price) => {
+          const a = get().annunci.find((x) => x.id === annuncioId);
+          if (!a || !Number.isFinite(price) || !(price > 0) || a.price === price) return;
+          const mine = partsOf(a, get().parts).filter((p) => p.status !== "venduto");
+          set((st) => ({
+            annunci: st.annunci.map((x) => (x.id === annuncioId ? { ...x, price } : x)),
+            parts: st.parts.map((x) => (x.annuncioId === annuncioId && x.status !== "venduto" ? { ...x, price } : x)),
+          }));
+          push(annuncioEvent(annuncioId, "Prezzo dell'annuncio cambiato", `${euro(a.price)} → ${euro(price)} · ${mine.length} ${mine.length === 1 ? "pezzo" : "pezzi"}`));
+          touchAnnuncio(annuncioId);
+          joinQueued(annuncioId);
+        },
+
+        withdrawAnnuncio: (annuncioId, canale) => {
+          const a = get().annunci.find((x) => x.id === annuncioId);
+          if (!a) return { ok: false, error: "Annuncio non trovato" };
+          const neg = canale !== "ebay" && !!a.negozio && a.negozio.stato !== "ritirato";
+          const eb = canale !== "negozio" && !!a.ebay && a.ebay.stato !== "ritirato";
+          if (!neg && !eb) return { ok: false, error: `L'annuncio ${annuncioId} è già ritirato` };
+          set((st) => ({
+            annunci: st.annunci.map((x) =>
+              x.id === annuncioId
+                ? {
+                    ...x,
+                    negozio: neg ? { stato: "ritirato" } : x.negozio,
+                    // Su eBay il ritiro si manda al ponte, salvo un annuncio mai partito
+                    ebay: eb && x.ebay ? { ...x.ebay, stato: "ritirato", daRiallineare: x.ebay.stato !== "non pubblicato" } : x.ebay,
+                  }
+                : x,
+            ),
+          }));
+          push(annuncioEvent(annuncioId, `Annuncio ritirato da ${neg && eb ? "negozio ed eBay" : neg ? "negozio" : "eBay"}`));
+          return { ok: true, value: annuncioId };
+        },
+
+        republishAnnuncio: (annuncioId, canali) => {
+          const a = get().annunci.find((x) => x.id === annuncioId);
+          if (!a) return { ok: false, error: "Annuncio non trovato" };
+          const neg = canali.negozio && (!a.negozio || a.negozio.stato === "ritirato");
+          const eb = canali.ebay && (!a.ebay || !["online", "esaurito", "in pubblicazione"].includes(a.ebay.stato));
+          if (!neg && !eb) return { ok: false, error: `L'annuncio ${annuncioId} è già online su quel canale` };
+          if (eb && gpsrBlocksEbay(a.gpsr)) return { ok: false, error: GPSR_ERRORE };
+          const qty = quantityOf(a, get().parts);
+          set((st) => ({
+            annunci: st.annunci.map((x) =>
+              x.id === annuncioId
+                ? {
+                    ...x,
+                    negozio: neg ? { stato: qty > 0 ? "online" : "esaurito" } : x.negozio,
+                    ebay: eb ? { ...x.ebay, stato: "in pubblicazione", daRiallineare: true, errore: undefined } : x.ebay,
+                  }
+                : x,
+            ),
+          }));
+          push(annuncioEvent(annuncioId, `Annuncio ripubblicato su ${neg && eb ? "negozio ed eBay" : neg ? "negozio" : "eBay"}`));
+          touchAnnuncio(annuncioId);
+          joinQueued(annuncioId);
+          return { ok: true, value: annuncioId };
+        },
+
+        // GPSR confermato dall'operatore: serve prima di attivare eBay
+        // Confermato a mano: resta anche se poi cambiano marca o anno del veicolo; "da confermare" lo riapre
+        setAnnuncioGpsr: (annuncioId, gpsr) => {
+          if (!get().annunci.some((x) => x.id === annuncioId)) return;
+          const gpsrManuale = gpsr.tipo !== "da confermare";
+          set((st) => ({ annunci: st.annunci.map((x) => (x.id === annuncioId ? { ...x, gpsr, gpsrManuale } : x)) }));
+          push(annuncioEvent(annuncioId, "GPSR dell'annuncio confermato", gpsr.tipo === "esente" ? "Messo in commercio prima del 13/12/2024" : gpsr.tipo === "produttore" ? gpsr.produttore.ragioneSociale : "da confermare"));
+          touchAnnuncio(annuncioId);
+        },
+
+        setAnnuncioCategoria: (annuncioId, categoriaId) => {
+          const a = get().annunci.find((x) => x.id === annuncioId);
+          if (!a?.ebay) return { ok: false, error: "L'annuncio non è su eBay" };
+          const id = categoriaEbayDa(categoriaId);
+          if (id === undefined) return { ok: false, error: "Il numero della categoria eBay ha solo cifre" };
+          const prima = a.ebay.categoria;
+          if ((id || undefined) === (prima?.manuale ? prima.id : undefined)) return { ok: true, value: annuncioId };
+          set((st) => ({
+            annunci: st.annunci.map((x) =>
+              x.id === annuncioId && x.ebay
+                ? {
+                    ...x,
+                    // Senza numero la categoria la sceglie di nuovo eBay; un annuncio ritirato non si rimanda
+                    ebay: { ...x.ebay, categoria: id ? { id, manuale: true } : undefined, daRiallineare: x.ebay.stato === "ritirato" ? x.ebay.daRiallineare : true },
+                  }
+                : x,
+            ),
+          }));
+          push(annuncioEvent(annuncioId, "Categoria eBay cambiata", id ? `${prima?.id ?? "scelta da eBay"} → ${id}` : "la sceglie eBay"));
+          return { ok: true, value: annuncioId };
+        },
+
+        editAnnuncioText: (annuncioId, titolo, descrizione) => {
+          const t = titolo.trim().slice(0, 80);
+          if (!t || !get().annunci.some((x) => x.id === annuncioId)) return;
+          set((st) => ({ annunci: st.annunci.map((x) => (x.id === annuncioId ? { ...x, titolo: t, descrizione: descrizione.trim(), testoModificato: true } : x)) }));
+          push(annuncioEvent(annuncioId, "Testo dell'annuncio modificato", t));
+          touchAnnuncio(annuncioId);
+        },
+
+        regenerateText: (annuncioId) => {
+          if (!get().annunci.some((x) => x.id === annuncioId)) return;
+          set((st) => ({ annunci: st.annunci.map((x) => (x.id === annuncioId ? { ...x, testoModificato: false } : x)) }));
+          push(annuncioEvent(annuncioId, "Testo dell'annuncio riscritto in automatico"));
+          touchAnnuncio(annuncioId);
+        },
+
+        // Ordine del negozio per annunci: il prossimo a partire si sceglie nello stesso aggiornamento
+        // che controlla la disponibilità, così lo stesso pezzo non si vende due volte
+        orderFromAnnunci: (channel, annuncioIds, customer, actor, delivery) => {
+          if (!annuncioIds.length) return { ok: false, error: "Il carrello è vuoto" };
+          let made = undefined as { id: string; partIds: string[]; annunci: string[] } | undefined;
+          let conflicts: string[] = [];
+          set((st) => {
+            const r = shopPicks(annuncioIds, st.annunci, st.parts);
+            if (r.conflicts.length || !r.picks.length) {
+              conflicts = r.conflicts;
+              return {};
+            }
+            const partIds = r.picks.map((x) => x.partId);
+            const prices = Object.fromEntries(r.picks.map((x) => [x.partId, onlinePrice(x.price) ?? 0]));
+            const amount = Math.round(Object.values(prices).reduce((t, x) => t + x, 0) * 100) / 100;
+            const pickupOnly = st.parts.some((p) => partIds.includes(p.id) && !shipOf(p));
+            const n = st.counters.order + 1;
+            const id = `O-${pad(n)}`;
+            const at = now();
+            made = { id, partIds, annunci: [...new Set(r.picks.map((x) => x.annuncioId))] };
+            return {
+              parts: st.parts.map((x) => (partIds.includes(x.id) ? { ...x, status: "riservato" as const } : x)),
+              orders: [
+                { id, channel, delivery: pickupOnly ? "ritiro" : delivery, partIds, amount, prices, status: "in attesa di pagamento", customer, createdAt: at, history: [{ at, status: "in attesa di pagamento" }] },
+                ...st.orders,
+              ],
+              counters: { ...st.counters, order: n },
+            };
+          });
+          if (!made) {
+            push(event({ entity: "ordine", entityId: "—", action: "Riserva rifiutata", detail: `${conflicts.join(", ")} non disponibile (${channel})`, ...actor }));
+            return { ok: false, error: "Ricambio non più disponibile", conflicts };
+          }
+          const { id, partIds } = made;
+          push(
+            event({ entity: "ordine", entityId: id, action: "Ordine creato", detail: `${channel} · ${made.annunci.join(", ")} · ${partIds.join(", ")}`, ...actor }),
+            ...partIds.map((pid) => event({ entity: "ricambio", entityId: pid, action: "Stato: disponibile → riservato", detail: id, ...actor })),
+          );
+          made.annunci.forEach(touchAnnuncio);
+          return { ok: true, value: id };
+        },
+
+        // Vendita arrivata da eBay: già pagata, prende tanti pezzi quanti ne sono stati comprati, i più vecchi.
+        // Se ne restano meno (venduti nel frattempo altrove) l'ordine si crea lo stesso, segnato da gestire.
+        importEbaySale: (v) => {
+          const valid =
+            !!v &&
+            typeof v.orderId === "string" &&
+            v.orderId.trim() !== "" &&
+            typeof v.sku === "string" &&
+            Number.isInteger(v.quantita) &&
+            v.quantita >= 1 &&
+            v.quantita <= 999 &&
+            Number.isFinite(v.prezzoUnitario) &&
+            v.prezzoUnitario >= 0;
+          if (!valid) return { ok: false, error: "Vendita eBay non valida" };
+          const actor: Actor = { user: "Connettore eBay", role: "sistema", device: "Ponte eBay" };
+          let dup = undefined as string | undefined;
+          let made = undefined as { id: string; partIds: string[]; daGestire?: string } | undefined;
+          set((st) => {
+            const prev = st.orders.find((o) => o.ebayOrderId === v.orderId);
+            if (prev) {
+              dup = prev.id;
+              return {};
+            }
+            const a = st.annunci.find((x) => x.id === v.sku);
+            const pick = a ? pickForSale(a, st.parts, v.quantita) : { partIds: [], mancano: v.quantita };
+            const note = missingNote(pick.mancano);
+            const daGestire = a ? note : `annuncio ${v.sku} non trovato${note ? `: ${note}` : ""}`;
+            const n = st.counters.order + 1;
+            const id = `O-${pad(n)}`;
+            const at = now();
+            made = { id, partIds: pick.partIds, daGestire };
+            const order: Order = {
+              id,
+              channel: "marketplace",
+              delivery: a && !a.spedibile ? "ritiro" : "corriere",
+              partIds: pick.partIds,
+              amount: Math.round(v.prezzoUnitario * v.quantita * 100) / 100,
+              prices: Object.fromEntries(pick.partIds.map((pid) => [pid, v.prezzoUnitario])),
+              status: "pagato",
+              // Un acquirente non testo (dati strani da eBay) non deve bloccare questa e le vendite dopo
+              customer: String(v.acquirente ?? "").trim().slice(0, 120) || "Acquirente eBay",
+              paymentRef: `EBAY-${v.orderId}`,
+              ebayOrderId: v.orderId,
+              daGestire,
+              createdAt: at,
+              history: [{ at, status: "pagato", note: `Vendita eBay del ${v.at} · ${v.quantita} pz` }],
+            };
+            return {
+              parts: st.parts.map((x) => (pick.partIds.includes(x.id) ? { ...x, status: "venduto" as const } : x)),
+              orders: [order, ...st.orders],
+              counters: { ...st.counters, order: n },
+            };
+          });
+          if (dup) return { ok: true, value: dup };
+          if (!made) return { ok: false, error: "Vendita eBay non importata" };
+          const { id, partIds, daGestire } = made;
+          push(
+            annuncioEvent(v.sku, "Vendita eBay importata", `${id} · ordine eBay ${v.orderId} · ${v.quantita} pz${daGestire ? ` · da gestire: ${daGestire}` : ""}`, actor),
+            event({ entity: "ordine", entityId: id, action: "Ordine creato", detail: `marketplace (eBay ${v.orderId}) · ${partIds.join(", ") || "nessun pezzo disponibile"}`, ...actor }),
+            ...partIds.map((pid) => event({ entity: "ricambio", entityId: pid, action: "Stato: disponibile → venduto", detail: `${id} · eBay`, ...actor })),
+          );
+          touchAnnuncio(v.sku);
+          return { ok: true, value: id };
+        },
+
+        // Esito del ponte eBay per un annuncio. Se nel frattempo l'annuncio è cambiato (quantità, prezzo, titolo,
+        // ritiro) rispetto a ciò che è stato inviato, resta da riallineare e riparte al giro dopo.
+        setEbayResult: (annuncioId, esito, inviato) => {
+          const st0 = get();
+          const a = st0.annunci.find((x) => x.id === annuncioId);
+          if (!a?.ebay) return;
+          const prevListingId = a.ebay.listingId;
+          const prevErrore = a.ebay.errore;
+          const cambiato =
+            quantityOf(a, st0.parts) !== inviato.quantita ||
+            onlinePrice(a.price) !== inviato.prezzo ||
+            (inviato.attivo !== undefined && inviato.attivo !== (a.ebay.stato !== "ritirato")) ||
+            (inviato.titolo !== undefined && inviato.titolo !== a.titolo);
+          const ebay = applyEsito(a, esito, inviato, now(), cambiato);
+          set((st) => ({ annunci: st.annunci.map((x) => (x.id === annuncioId ? { ...x, ebay } : x)) }));
+          if (esito.stato === "errore") {
+            if (prevErrore !== ebay.errore) push(annuncioEvent(annuncioId, "Errore eBay", ebay.errore, EBAY_ACTOR));
+          } else if (inviato.attivo === false && esito.stato === "ritirato" && !ebay.daRiallineare) {
+            push(annuncioEvent(annuncioId, "Ritirato da eBay", undefined, EBAY_ACTOR));
+          } else if (!prevListingId && ebay.listingId && esito.stato !== "ritirato") {
+            push(annuncioEvent(annuncioId, "Pubblicato su eBay", ebay.listingId, EBAY_ACTOR));
+          }
+        },
+
+        // Un ordine eBay con "da gestire" è stato sistemato a mano
+        markOrderHandled: (orderId) => {
+          const o = get().orders.find((x) => x.id === orderId);
+          if (!o?.daGestire) return;
+          set((st) => ({ orders: st.orders.map((x) => (x.id === orderId ? { ...x, daGestire: undefined } : x)) }));
+          push(event({ entity: "ordine", entityId: orderId, action: "Ordine eBay segnato come gestito", detail: o.daGestire }));
         },
 
         // Riserva atomica: controllo e cambio di stato nello stesso aggiornamento.
@@ -395,7 +845,9 @@ export const useStore = create<State & Actions>()(
           };
           const conflicts = partIds.filter((pid) => {
             const p = s.parts.find((x) => x.id === pid);
-            return !p || p.status !== "disponibile" || !priceOf(pid) || (channel !== "banco" && p.listing !== "pubblicato");
+            // Il negozio vende solo pezzi di un annuncio online sul negozio (non basta che sia online su eBay)
+            const shopOff = channel === "negozio" && s.annunci.find((a) => a.id === p?.annuncioId)?.negozio?.stato !== "online";
+            return !p || p.status !== "disponibile" || !priceOf(pid) || (channel !== "banco" && listingOf(p, s.annunci) !== "pubblicato") || shopOff;
           });
           if (conflicts.length) {
             push(event({ entity: "ordine", entityId: "—", action: "Riserva rifiutata", detail: `${conflicts.join(", ")} non disponibile (${channel})`, ...actor }));
@@ -428,6 +880,7 @@ export const useStore = create<State & Actions>()(
             event({ entity: "ordine", entityId: id, action: "Ordine creato", detail: `${channel} · ${partIds.join(", ")}`, ...actor }),
             ...partIds.map((pid) => event({ entity: "ricambio", entityId: pid, action: "Stato: disponibile → riservato", detail: id, ...actor })),
           );
+          settle(partIds);
           return { ok: true, value: id };
         },
 
@@ -440,13 +893,14 @@ export const useStore = create<State & Actions>()(
             orders: s.orders.map((x) => (x.id === orderId ? { ...x, status, paymentRef: success ? `PAY-DEMO-${orderId.slice(2)}` : undefined, history: [...x.history, { at, status, note: success ? "Conferma dal provider (simulata)" : "Rifiuto dal provider (simulato)" }] } : x)),
             // Venduto: esce dal negozio; pagamento fallito: torna disponibile
             parts: s.parts.map((x) =>
-              o.partIds.includes(x.id) ? { ...x, status: success ? "venduto" : "disponibile", listing: success && x.listing === "pubblicato" ? "ritirato" : x.listing } : x,
+              o.partIds.includes(x.id) ? { ...x, status: success ? "venduto" : "disponibile" } : x,
             ),
           }));
           push(
             event({ entity: "ordine", entityId: orderId, action: success ? "Pagamento confermato" : "Pagamento fallito", detail: success ? "Webhook provider (simulato)" : "Disponibilità ripristinata", ...actor }),
             ...o.partIds.map((pid) => event({ entity: "ricambio", entityId: pid, action: success ? "Stato: riservato → venduto" : "Stato: riservato → disponibile", detail: orderId, ...actor })),
           );
+          settle(o.partIds);
         },
 
         cancelOrder: (orderId, reason) => {
@@ -461,6 +915,7 @@ export const useStore = create<State & Actions>()(
             parts: s.parts.map((x) => (touchesParts && o.partIds.includes(x.id) && (x.status === "riservato" || x.status === "venduto") ? { ...x, status: "disponibile" } : x)),
           }));
           push(event({ entity: "ordine", entityId: orderId, action: "Ordine annullato", detail: `${reason ?? ""}${wasPaid ? " · rimborso da gestire" : ""}` }));
+          if (touchesParts) settle(o.partIds);
         },
 
         shipOrder: (orderId) => {
@@ -486,7 +941,7 @@ export const useStore = create<State & Actions>()(
           const at = now();
           set((s) => ({
             orders: s.orders.map((x) => (x.id === orderId ? { ...x, status: "reso", history: [...x.history, { at, status: "reso", note: "Ricambio rientrato: da ricontrollare" }] } : x)),
-            parts: s.parts.map((x) => (o.partIds.includes(x.id) ? { ...x, status: "bozza", listing: "ritirato" } : x)),
+            parts: s.parts.map((x) => (o.partIds.includes(x.id) ? { ...x, status: "bozza" } : x)),
           }));
           const inv = get().docs.find((d) => d.orderId === orderId && (d.type === "fattura" || d.type === "documento commerciale"));
           if (inv) newDoc({ type: "nota di credito", customer: inv.customer, lines: inv.lines.map((l) => ({ ...l, price: -l.price })), total: -inv.total, orderId, refDocId: inv.id, status: inv.type === "fattura" ? "inviata allo SdI" : "emesso" });
@@ -494,6 +949,8 @@ export const useStore = create<State & Actions>()(
             event({ entity: "ordine", entityId: orderId, action: "Reso registrato" }),
             ...o.partIds.map((pid) => event({ entity: "ricambio", entityId: pid, action: "Stato: venduto → bozza", detail: `Rientro da reso ${orderId}, da ricontrollare` })),
           );
+          // Il reso tiene il suo annuncio ma non conta finché non torna disponibile e passa i controlli
+          settle(o.partIds);
         },
 
         setRule: (typeId, min, max) => {
@@ -726,6 +1183,11 @@ export const useStore = create<State & Actions>()(
     },
   ),
 );
+
+export { buildAnnuncio };
+
+// Stato del pezzo sul negozio, ricavato dal suo annuncio
+export const useListing = (p: Part): ListingStatus => useStore((s) => listingOf(p, s.annunci));
 
 export const useHydrated = () => {
   // gestito da <Hydrator/>

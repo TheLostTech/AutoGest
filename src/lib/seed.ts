@@ -3,7 +3,12 @@ import { catalogFor, CATALOG_SOURCE } from "./partsdb";
 import { corsiaId, locToString, scaffaleId, warehouseFor } from "./warehouse";
 import { eerByCode, itemKg, movesForBonifica, movesForIntake, typicalBonifica } from "./ambiente";
 import { missingFields, monthKey } from "./periodo";
+import { groupKey } from "./annunci";
+import { buildAnnuncio } from "./annuncio-build";
+import { isShippable } from "./spedizione";
+import { twinSource, withTwins } from "./seed-twins";
 import type {
+  Annuncio,
   AuditEvent,
   Soggetto,
   Condition,
@@ -130,6 +135,7 @@ const PLAN: Record<string, string[]> = {
 export function buildSeed() {
   const r = rng(42);
   const parts: Part[] = [];
+  const published: Part[] = [];
   const audit: AuditEvent[] = [];
   let pn = 2300; // la numerazione riprende dopo il magazzino migrato
   let an = 1;
@@ -175,7 +181,7 @@ export function buildSeed() {
       const oemRead = !!cat && r() > 0.25;
       const verified = oemRead && r() > 0.35;
       const legacy = v.intakeAt < daysAgo(60) ? `K000${"ABCDEFGHJKLMNPRSTUVWXYZ"[Math.floor(r() * 23)]}${"ABCDEFGHJKLMNPRSTUVWXYZ"[Math.floor(r() * 23)]}${Math.floor(r() * 10)}${String(Math.floor(r() * 99)).padStart(2, "0")}` : undefined;
-      const published = (status === "disponibile" || status === "riservato") && hasPhoto && !!price && !fresh;
+      const online = (status === "disponibile" || status === "riservato") && hasPhoto && !!price && !fresh;
       const p: Part = {
         id,
         vehicleId: v.id,
@@ -203,16 +209,58 @@ export function buildSeed() {
           : undefined,
         photos: hasPhoto && t.render ? [t.render] : [],
         labelPrints: located ? 1 : 0,
-        listing: published ? "pubblicato" : "non pubblicato",
         createdAt: daysAgo(age, 9 + (i % 8)),
         createdBy: OPERATORS[i % OPERATORS.length],
       };
       parts.push(p);
+      if (online) published.push(p);
       log({ at: p.createdAt, user: p.createdBy, role: "smontatore", device: "Smartphone campo 1", entity: "ricambio", entityId: id, action: "Ricambio catalogato", detail: `${t.name} da ${v.id}` });
       if (p.labelPrints) log({ at: p.createdAt, user: p.createdBy, role: "smontatore", device: "Stampante etichette banco", entity: "ricambio", entityId: id, action: "Etichetta stampata" });
       if (p.location) log({ at: p.createdAt, user: "Paolo (magazzino)", role: "magazziniere", device: "Smartphone magazzino", entity: "ricambio", entityId: id, action: "Posizione assegnata", detail: locToString(p.location) });
-      if (p.listing === "pubblicato") log({ at: p.createdAt, user: "Sara (responsabile)", role: "responsabile", device: "PC ufficio", entity: "ricambio", entityId: id, action: "Pubblicato sul negozio" });
     });
+  }
+
+  // Due gemelli di un pezzo pubblicato (prima un cerchio): stesso veicolo, codice, condizione e prezzo.
+  // Così i dati demo hanno sempre un annuncio con più pezzi uguali. Non usa r(): il resto dei dati non cambia.
+  const catalogOf = (p: Part) => {
+    const v = SEED_VEHICLES.find((x) => x.id === p.vehicleId);
+    return v ? catalogFor(p.typeId, v.platform, p.side) : null;
+  };
+  const twinOf = twinSource(published, catalogOf, (typeId) => typeById(typeId).shippable);
+  if (twinOf) {
+    const { source, twins } = withTwins(twinOf, catalogOf(twinOf)!, [`R-${pad(++pn)}`, `R-${pad(++pn)}`]);
+    // Se il codice non era verificato, ora lo è (dal catalogo, come per gli altri pezzi verificati)
+    parts[parts.indexOf(twinOf)] = source;
+    published[published.indexOf(twinOf)] = source;
+    for (const twin of twins) {
+      parts.push(twin);
+      published.push(twin);
+      log({ at: twin.createdAt, user: twin.createdBy, role: "smontatore", device: "Smartphone campo 1", entity: "ricambio", entityId: twin.id, action: "Ricambio catalogato", detail: `${typeById(twin.typeId).name} da ${twin.vehicleId}` });
+      if (twin.location) log({ at: twin.createdAt, user: "Paolo (magazzino)", role: "magazziniere", device: "Smartphone magazzino", entity: "ricambio", entityId: twin.id, action: "Posizione assegnata", detail: locToString(twin.location) });
+    }
+  }
+
+  // Annunci sul negozio: i pezzi pubblicati uguali (stessa chiave) stanno nello stesso annuncio
+  const groups = new Map<string, Part[]>();
+  const order: Part[][] = []; // ogni gruppo, e ogni pezzo senza chiave, diventa un annuncio
+  for (const p of published) {
+    const key = groupKey(p, isShippable(p, typeById(p.typeId).shippable));
+    const g = key ? groups.get(key) : undefined;
+    if (g) g.push(p);
+    else {
+      const ng = [p];
+      if (key) groups.set(key, ng);
+      order.push(ng);
+    }
+  }
+  const annunci: Annuncio[] = [];
+  for (const g of order) {
+    const sorted = [...g].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    const aid = `A-${pad(annunci.length + 1)}`;
+    const at = sorted[0].createdAt;
+    annunci.push(buildAnnuncio(sorted, SEED_VEHICLES, aid, at));
+    for (const p of g) p.annuncioId = aid;
+    log({ at, user: "Sara (responsabile)", role: "responsabile", device: "PC ufficio", entity: "annuncio", entityId: aid, action: "Annuncio creato", detail: sorted.map((p) => p.id).join(", ") });
   }
 
   const orders: Order[] = [];
@@ -406,6 +454,7 @@ export function buildSeed() {
   return {
     vehicles,
     parts,
+    annunci,
     orders,
     audit,
     rules: SEED_RULES,
@@ -414,7 +463,7 @@ export function buildSeed() {
     soggetti,
     docs,
     inventory: [] as InventoryCount[],
-    counters: { vehicle: 118, part: pn, order: on, event: an, move: wasteMoves.length, fir: fn, docs: dn, inventory: 0 },
+    counters: { vehicle: 118, part: pn, order: on, event: an, move: wasteMoves.length, fir: fn, docs: dn, inventory: 0, annuncio: annunci.length },
   };
 }
 

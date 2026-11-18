@@ -8,6 +8,7 @@ import { BonificaBadge, ButtonLink, Panel, PageTitle, Plate } from "@/components
 import { bonificaClock, buildAgenda, urgencyOf, type AgendaItem, type Urgency } from "@/lib/agenda";
 import { isDraft, periodsOf } from "@/lib/periodo";
 import { dateIt, euro } from "@/lib/logic";
+import { listingOf } from "@/lib/annunci";
 import type { Role } from "@/lib/types";
 
 const GROUPS: { u: Urgency; label: string; tone: string }[] = [
@@ -73,7 +74,7 @@ export default function Oggi() {
     ],
     vendite: [
       { label: "Ricambi disponibili", value: String(avail.length) },
-      { label: "Online sul negozio", value: String(avail.filter((p) => p.listing === "pubblicato").length) },
+      { label: "Online sul negozio", value: String(avail.filter((p) => listingOf(p, s.annunci) === "pubblicato").length) },
       { label: "Venduto ultimi 30 giorni", value: euro(sold30.reduce((a, o) => a + o.amount, 0)) },
     ],
     consulente: [

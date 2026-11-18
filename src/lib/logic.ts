@@ -1,4 +1,5 @@
 import { PART_TYPES, typeById } from "./catalog";
+import { isShippable } from "./spedizione";
 import type { Order, Part, PartStatus, StockRule, Vehicle } from "./types";
 
 export type StockLevel = "manca" | "sotto soglia" | "sufficiente" | "eccesso";
@@ -84,7 +85,7 @@ export function publishChecks(p: Part, v?: Vehicle): Check[] {
       : p.origin === "inventario" && !p.vehicleId
         ? { label: "Provenienza non documentata (magazzino preesistente)", ok: false, blocking: false, hint: "Indica la pratica di demolizione passata se è nel vecchio archivio" }
         : { label: "Provenienza veicolo verificata", ok: v?.verification === "verificato", blocking: true, hint: "Veicolo in stato «da verificare»" },
-    { label: t.shippable ? "Spedibile con corriere" : "Solo ritiro in sede", ok: true, blocking: false },
+    { label: isShippable(p, t.shippable) ? "Spedibile con corriere" : "Solo ritiro in sede", ok: true, blocking: false },
     { label: p.compat?.verified ? `Compatibilità verificata su ${p.compat.platforms.length} modelli` : p.oem ? "Codice OEM non verificato: compatibilità non dichiarata" : "Nessun codice OEM: compatibilità non dichiarata", ok: !!p.compat?.verified, blocking: false },
   ];
 }

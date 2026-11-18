@@ -5,9 +5,11 @@ import Link from "next/link";
 import type { Part } from "@/lib/types";
 import { euro } from "@/lib/logic";
 import { locToString } from "@/lib/warehouse";
+import { useListing } from "@/lib/store";
 import { ListingChip, PartImage, StatusChip } from "./ui";
 
 export function PartRow({ part, href, right }: { part: Part; href?: string; right?: React.ReactNode }) {
+  const listing = useListing(part);
   return (
     <Link href={href ?? `/ricambi/${part.id}`} className="grid grid-cols-[64px_1fr_auto] items-center gap-3 px-4 py-3 hover:bg-carton md:grid-cols-[64px_130px_1fr_120px_110px_90px]">
       <PartImage src={part.photos[0]} typeId={part.typeId} className="size-16 rounded bg-white [&>span]:hidden" />
@@ -19,7 +21,7 @@ export function PartRow({ part, href, right }: { part: Part; href?: string; righ
           <span>da {originLabel(part)}</span>
           {part.legacyCode && <span className="code">{part.legacyCode}</span>}
           {part.oem && <span className="code">OE {part.oem}</span>}
-          <ListingChip listing={part.listing} />
+          <ListingChip listing={listing} />
         </span>
       </span>
       <span className="hidden md:block">

@@ -7,12 +7,14 @@ import { useStore } from "@/lib/store";
 import { PART_TYPES, PLATFORMS, CONDITIONS, typeById } from "@/lib/catalog";
 import { euro, fits } from "@/lib/logic";
 import { onlinePrice } from "@/lib/pricing";
+import { nextToShip, partsOf, quantityOf } from "@/lib/annunci";
+import type { Annuncio, Part } from "@/lib/types";
 import { PartImage } from "@/components/ui";
 
 const CATS = PART_TYPES.filter((t) => t.render);
 
 export default function Negozio() {
-  const { parts, vehicles } = useStore();
+  const { parts, vehicles, annunci } = useStore();
   const [make, setMake] = useState("");
   const [platform, setPlatform] = useState("");
   const [type, setType] = useState("");
@@ -20,16 +22,57 @@ export default function Negozio() {
   const vById = useMemo(() => new Map(vehicles.map((v) => [v.id, v])), [vehicles]);
   const makes = [...new Set(PLATFORMS.map((p) => p.make))];
 
-  const online = parts.filter((p) => p.listing === "pubblicato" && p.status === "disponibile");
+  // Annunci del negozio con il pezzo da mostrare: il prossimo a partire o, se esauriti, l'ultimo entrato
+  const shown = annunci
+    .filter((a) => a.negozio && a.negozio.stato !== "ritirato")
+    .flatMap((a) => {
+      const qty = quantityOf(a, parts);
+      const mine = partsOf(a, parts);
+      const rep: Part | undefined = qty > 0 ? nextToShip(a, parts)[0] : [...mine].sort((x, y) => y.createdAt.localeCompare(x.createdAt))[0];
+      return rep ? [{ a, qty, rep }] : [];
+    });
   const query = q.trim().toLowerCase();
-  const list = online.filter((p) => {
+  const matches = shown.filter(({ a, rep: p }) => {
     const v = vById.get(p.vehicleId);
     if (platform && !fits(p, v?.platform, platform)) return false;
     if (make && !platform && v?.make !== make && !p.compat?.platforms.some((pl) => PLATFORMS.find((x) => x.id === pl)?.make === make)) return false;
-    if (type && p.typeId !== type) return false;
-    if (query && !`${p.description} ${p.oem ?? ""} ${p.oem?.replace(/[\s-]/g, "") ?? ""} ${p.manufacturer ?? ""} ${p.id}`.toLowerCase().includes(query)) return false;
+    if (type && a.typeId !== type) return false;
+    if (query && !`${a.titolo} ${a.descrizione} ${a.oem ?? ""} ${a.oem?.replace(/[\s.-]/g, "") ?? ""} ${p.manufacturer ?? ""} ${a.id}`.toLowerCase().includes(query)) return false;
     return true;
   });
+  const list = matches.filter((x) => x.qty > 0);
+  const esauriti = matches.filter((x) => x.qty === 0);
+
+  const card = ({ a, qty, rep: p }: { a: Annuncio; qty: number; rep: Part }) => {
+    const v = vById.get(p.vehicleId);
+    return (
+      <li key={a.id}>
+        <Link href={`/negozio/${a.id}`} className={`label-sheet flex h-full flex-col overflow-hidden transition-colors hover:border-band ${qty === 0 ? "opacity-70" : ""}`}>
+          <div className="flex items-center justify-between bg-band px-3 py-1 text-white">
+            <span className="code text-[11px] font-semibold uppercase tracking-[0.12em]">{typeById(a.typeId).category}</span>
+            {qty === 0 ? <span className="code text-[11px] font-semibold uppercase tracking-[0.12em]">Esaurito</span> : p.compat?.verified && <span className="code text-[11px] font-semibold uppercase tracking-[0.12em]">OE verificato</span>}
+          </div>
+          <PartImage src={p.photos[0]} typeId={a.typeId} className="aspect-square w-full bg-white p-3" />
+          <div className="flex flex-1 flex-col border-t border-hair-soft p-3">
+            <span className="code text-[26px] font-bold leading-none">{a.id}</span>
+            <span className="mt-1 line-clamp-2 font-semibold leading-snug">{a.titolo}</span>
+            <span className="mt-1 text-[13px] text-ink-2">
+              {v ? <>da {v.make} {v.model} {v.year} · <span className="code font-semibold">{p.vehicleId}</span></> : p.pastDossier?.model ? `da ${p.pastDossier.model}` : "dal nostro magazzino"}
+            </span>
+            {qty > 1 && <span className="mt-1 text-[13px] font-semibold text-band">{qty} disponibili</span>}
+            {platform && v?.platform !== platform && <span className="mt-1 text-[13px] font-semibold text-ok">Compatibile con la tua auto (codice OE verificato)</span>}
+            <span className="mt-auto flex items-end justify-between pt-3">
+              <span className="code text-[26px] font-bold leading-none">{euro(onlinePrice(a.price))}</span>
+              <span className="flex items-center gap-1.5" title={CONDITIONS[a.condition].label}>
+                <span className="text-[12px] text-ink-3">cond.</span>
+                <span className="code grid size-8 place-items-center rounded border-2 border-ink text-[20px] font-bold leading-none">{a.condition}</span>
+              </span>
+            </span>
+          </div>
+        </Link>
+      </li>
+    );
+  };
 
   return (
     <div>
@@ -74,41 +117,18 @@ export default function Negozio() {
         {(make || type || q) && <button onClick={() => { setMake(""); setPlatform(""); setType(""); setQ(""); }} className="text-sm font-semibold text-band">Azzera filtri</button>}
       </div>
 
-      <ul className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-        {list.map((p) => {
-          const v = vById.get(p.vehicleId);
-          return (
-            <li key={p.id}>
-              <Link href={`/negozio/${p.id}`} className="label-sheet flex h-full flex-col overflow-hidden transition-colors hover:border-band">
-                <div className="flex items-center justify-between bg-band px-3 py-1 text-white">
-                  <span className="code text-[11px] font-semibold uppercase tracking-[0.12em]">{typeById(p.typeId).category}</span>
-                  {p.compat?.verified && <span className="code text-[11px] font-semibold uppercase tracking-[0.12em]">OE verificato</span>}
-                </div>
-                <PartImage src={p.photos[0]} typeId={p.typeId} className="aspect-square w-full bg-white p-3" />
-                <div className="flex flex-1 flex-col border-t border-hair-soft p-3">
-                  <span className="code text-[26px] font-bold leading-none">{p.id}</span>
-                  <span className="mt-1 line-clamp-2 font-semibold leading-snug">{p.description}</span>
-                  <span className="mt-1 text-[13px] text-ink-2">
-                    {v ? <>da {v.make} {v.model} {v.year} · <span className="code font-semibold">{p.vehicleId}</span></> : p.pastDossier?.model ? `da ${p.pastDossier.model}` : "dal nostro magazzino"}
-                  </span>
-                  {platform && v?.platform !== platform && <span className="mt-1 text-[13px] font-semibold text-ok">Compatibile con la tua auto (codice OE verificato)</span>}
-                  <span className="mt-auto flex items-end justify-between pt-3">
-                    <span className="code text-[26px] font-bold leading-none">{euro(onlinePrice(p.price))}</span>
-                    <span className="flex items-center gap-1.5" title={CONDITIONS[p.condition].label}>
-                      <span className="text-[12px] text-ink-3">cond.</span>
-                      <span className="code grid size-8 place-items-center rounded border-2 border-ink text-[20px] font-bold leading-none">{p.condition}</span>
-                    </span>
-                  </span>
-                </div>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
+      <ul className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">{list.map(card)}</ul>
       {list.length === 0 && (
         <p className="mt-6 rounded-md border border-hair bg-label p-6 text-center text-ink-2">
           Nessun ricambio online per questa ricerca. I ricambi compaiono solo quando la scheda è completa e verificata.
         </p>
+      )}
+      {esauriti.length > 0 && (
+        <section className="mt-10">
+          <h2 className="text-[22px] font-bold">Esauriti</h2>
+          <p className="text-sm text-ink-2">Chiamaci: potremmo averne altri o trovarli per te.</p>
+          <ul className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">{esauriti.map(card)}</ul>
+        </section>
       )}
     </div>
   );

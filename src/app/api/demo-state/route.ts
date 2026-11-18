@@ -9,7 +9,7 @@ const DIR = DATA_DIR;
 const FILE = path.join(DIR, "state.json");
 
 // Collezioni con ID: il server fonde per ID invece di sovrascrivere
-const PREPEND = ["vehicles", "parts", "orders", "docs", "firs"] as const; // i nuovi in cima
+const PREPEND = ["vehicles", "parts", "annunci", "orders", "docs", "firs"] as const; // i nuovi in cima
 const APPEND = ["audit", "wasteMoves", "inventory"] as const; // i nuovi in fondo (cronologici)
 const WHOLE = ["rules", "listini", "warehouses", "soggetti"] as const; // piccole: si sostituiscono intere
 

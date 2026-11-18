@@ -9,6 +9,8 @@ import { euro } from "@/lib/logic";
 import { onlinePrice } from "@/lib/pricing";
 import { typeById } from "@/lib/catalog";
 import { Button, Field, Notice, PartImage } from "@/components/ui";
+import { isShippable } from "@/lib/spedizione";
+import { nextToShip, partsOf, quantityOf } from "@/lib/annunci";
 
 type Step = "carrello" | "pagamento" | "esito";
 
@@ -21,21 +23,26 @@ export default function Carrello() {
   const [paying, setPaying] = useState(false);
   const [form, setForm] = useState({ nome: "", email: "", consegna: "spedizione" as "spedizione" | "ritiro" });
 
-  const items = cart.ids.map((id) => s.parts.find((p) => p.id === id)).filter((p) => !!p);
-  const total = Math.round(items.reduce((a, p) => a + (onlinePrice(p.price) ?? 0), 0) * 100) / 100;
-  const blocked = items.filter((p) => p.status !== "disponibile" || p.listing !== "pubblicato");
-  const pickupOnly = items.some((p) => !typeById(p.typeId).shippable);
+  // Un'unità per annuncio; foto dal prossimo a partire
+  const items = cart.ids.flatMap((id) => {
+    const a = s.annunci.find((x) => x.id === id);
+    if (!a) return [];
+    const p = nextToShip(a, s.parts)[0] ?? partsOf(a, s.parts)[0];
+    return [{ a, p, ok: a.negozio?.stato === "online" && quantityOf(a, s.parts) > 0 }];
+  });
+  const total = Math.round(items.reduce((t, x) => t + (onlinePrice(x.a.price) ?? 0), 0) * 100) / 100;
+  const blocked = items.filter((x) => !x.ok);
+  const pickupOnly = items.some((x) => !isShippable(x.a, typeById(x.a.typeId).shippable));
   const order = orderId ? s.orders.find((o) => o.id === orderId) : undefined;
 
   function placeOrder(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    const r = s.createOrder(
+    const r = s.orderFromAnnunci(
       "negozio",
       cart.ids,
       form.nome || "Cliente online",
       { user: form.nome || "Cliente online", role: "cliente", device: "Negozio online" },
-      undefined,
       form.consegna === "ritiro" || pickupOnly ? "ritiro" : "corriere",
     );
     if (!r.ok) {
@@ -98,16 +105,16 @@ export default function Carrello() {
           <p className="mt-4 text-ink-2">Il carrello è vuoto. <Link href="/negozio" className="font-semibold text-band">Sfoglia i ricambi</Link></p>
         ) : (
           <ul className="mt-4 divide-y divide-hair rounded-md border border-hair bg-label">
-            {items.map((p) => (
-              <li key={p.id} className="grid grid-cols-[72px_1fr_auto_auto] items-center gap-3 p-3">
-                <PartImage src={p.photos[0]} typeId={p.typeId} className="size-[72px] rounded bg-white" />
+            {items.map(({ a, p, ok }) => (
+              <li key={a.id} className="grid grid-cols-[72px_1fr_auto_auto] items-center gap-3 p-3">
+                <PartImage src={p?.photos[0]} typeId={a.typeId} className="size-[72px] rounded bg-white" />
                 <span className="min-w-0">
-                  <Link href={`/negozio/${p.id}`} className="block truncate font-semibold">{p.description}</Link>
-                  <span className="code text-sm text-ink-3">{p.id}</span>
-                  {blocked.includes(p) && <span className="block text-sm font-semibold text-danger">Non più disponibile</span>}
+                  <Link href={`/negozio/${a.id}`} className="block truncate font-semibold">{a.titolo}</Link>
+                  <span className="code text-sm text-ink-3">{a.id}</span>
+                  {!ok && <span className="block text-sm font-semibold text-danger">Non più disponibile</span>}
                 </span>
-                <span className="code text-[20px] font-bold">{euro(onlinePrice(p.price))}</span>
-                <button onClick={() => cart.remove(p.id)} className="grid size-10 place-items-center text-ink-3 hover:text-danger" aria-label={`Rimuovi ${p.id}`}>
+                <span className="code text-[20px] font-bold">{euro(onlinePrice(a.price))}</span>
+                <button onClick={() => cart.remove(a.id)} className="grid size-10 place-items-center text-ink-3 hover:text-danger" aria-label={`Rimuovi ${a.id}`}>
                   <Trash2 className="size-5" />
                 </button>
               </li>

@@ -1,13 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { ShoppingBag } from "lucide-react";
 import { useCart } from "@/lib/cart";
+import { useStore } from "@/lib/store";
 import { BRAND, DEMO_NOTICE } from "@/lib/config";
 import { LostarCredit } from "@/components/Lostar";
 
 export default function ShopLayout({ children }: { children: React.ReactNode }) {
   const n = useCart((s) => s.ids.length);
+  const annunci = useStore((s) => s.annunci);
+  const keepOnly = useCart((s) => s.keepOnly);
+  // Il carrello tiene solo codici di annunci esistenti
+  useEffect(() => keepOnly(annunci.map((a) => a.id)), [annunci, keepOnly]);
   return (
     <div className="min-h-dvh bg-ground">
       <div className="bg-ink px-4 py-1.5 text-center text-[12px] font-semibold uppercase tracking-[0.14em] text-white/80 code">

@@ -198,13 +198,14 @@ export function buildAgenda(
       due: addDays(lost.map((p) => p.missingSince!).sort()[0], 3),
       roles: ["magazziniere", "responsabile"],
     });
-  const offline = parts.filter((p) => p.status === "disponibile" && p.listing === "non pubblicato");
+  // Senza annuncio: anche quelli con un prezzo diverso dall'annuncio uguale o con l'annuncio uguale ritirato
+  const offline = parts.filter((p) => p.status === "disponibile" && !p.annuncioId);
   if (offline.length)
     items.push({
       id: "online",
       kind: "ricambi",
       title: `Porta online ${offline.length} ${offline.length === 1 ? "ricambio disponibile" : "ricambi disponibili"}`,
-      detail: "Sono in magazzino ma non si vedono sul negozio",
+      detail: "Sono in magazzino ma non sono in nessun annuncio",
       action: "Pubblica",
       href: "/pubblicazione",
       roles: ["responsabile"],
@@ -225,6 +226,18 @@ export function buildAgenda(
 
   // Ordini
   for (const o of orders) {
+    // Venduto su eBay ma senza abbastanza pezzi (partiti nel frattempo da un altro canale)
+    if (o.daGestire && o.status !== "annullato")
+      items.push({
+        id: `gestire-${o.id}`,
+        kind: "ordine",
+        title: `Ordine eBay ${o.id} da gestire: ${o.daGestire}`,
+        detail: `${o.customer}${o.ebayOrderId ? ` · ordine eBay ${o.ebayOrderId}` : ""} · contatta l'acquirente o rimborsa`,
+        action: "Apri",
+        href: "/vendite",
+        due: o.createdAt,
+        roles: ["vendite", "responsabile"],
+      });
     if (o.status === "in attesa di pagamento")
       items.push({
         id: `paga-${o.id}`,

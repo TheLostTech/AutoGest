@@ -1,5 +1,6 @@
 "use client";
 
+import { useListing, useStore } from "@/lib/store";
 import type { Part } from "@/lib/types";
 
 // Il ciclo di vita del pezzo come linea a fermate: ogni passaggio resta visibile.
@@ -13,11 +14,14 @@ const STOPS = [
 ] as const;
 
 export function Lifecycle({ part }: { part: Part }) {
+  const listing = useListing(part);
+  // Prima ogni reso segnava il pezzo «ritirato»: il reso si legge anche dagli ordini, per i pezzi mai stati online
+  const returned = useStore((s) => s.orders.some((o) => o.status === "reso" && o.partIds.includes(part.id)));
   const reached: Record<string, boolean> = {
     catalogato: true,
     etichettato: part.labelPrints > 0,
     posizione: !!part.location,
-    online: part.listing === "pubblicato",
+    online: listing === "pubblicato",
     riservato: part.status === "riservato" || part.status === "venduto",
     venduto: part.status === "venduto",
   };
@@ -56,7 +60,7 @@ export function Lifecycle({ part }: { part: Part }) {
           Fuori linea: {part.status}. Il pezzo resta tracciato ma non è vendibile.
         </p>
       )}
-      {part.status === "bozza" && part.listing === "ritirato" && (
+      {part.status === "bozza" && (listing === "ritirato" || returned) && (
         <p className="mt-3 rounded bg-warn-bg px-3 py-2 text-sm font-semibold text-warn">Rientrato da reso: da ricontrollare prima di rimetterlo in vendita.</p>
       )}
     </div>

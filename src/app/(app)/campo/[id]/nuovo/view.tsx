@@ -13,6 +13,8 @@ import { suggestUsedPrice } from "@/lib/pricing";
 import type { Condition } from "@/lib/types";
 import { Button, ButtonLink, Empty, Field, Plate } from "@/components/ui";
 import { PartLabel } from "@/components/PartLabel";
+import { ShippingChoice } from "@/components/ShippingChoice";
+import { asksShipping } from "@/lib/spedizione";
 
 export default function Page() {
   return (
@@ -37,6 +39,7 @@ function NuovoPezzo() {
   const [aiState, setAiState] = useState<"idle" | "loading" | "proposed" | "accepted" | "rejected">("idle");
   const [condition, setCondition] = useState<Condition | undefined>();
   const [side, setSide] = useState<string>("");
+  const [spedibile, setSpedibile] = useState(false);
   const [oem, setOem] = useState("");
   const [defects, setDefects] = useState("");
   const [price, setPrice] = useState("");
@@ -81,6 +84,7 @@ function NuovoPezzo() {
       side: side || undefined,
       oem: oemOk && cat ? cat.oem : oem.trim() || undefined,
       oemVerified: oemOk,
+      spedibile: asksShipping(t.shippable) ? spedibile : undefined,
       manufacturer: (oemOk || oem.trim()) && cat ? cat.manufacturer : undefined,
       compat: oemOk && cat ? { platforms: cat.platforms, source: cat.source, verified: true, checkedAt: new Date().toISOString() } : undefined,
       km: v!.km,
@@ -125,6 +129,7 @@ function NuovoPezzo() {
               setAiState("idle");
               setCondition(undefined);
               setSide("");
+              setSpedibile(false);
               setOem("");
               setDefects("");
               setPrice("");
@@ -234,6 +239,8 @@ function NuovoPezzo() {
           </div>
           {tried && !condition && <p className="mt-1 text-sm font-medium text-danger">Scegli le condizioni</p>}
         </fieldset>
+
+        {t && asksShipping(t.shippable) && <ShippingChoice value={spedibile} onChange={setSpedibile} />}
 
         {cat && (!t?.sided || side) && (
           <div className={`rounded-md border p-4 ${oemOk ? "border-ok bg-ok-bg" : "border-hair bg-label"}`}>

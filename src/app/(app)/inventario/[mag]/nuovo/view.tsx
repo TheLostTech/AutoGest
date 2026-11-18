@@ -10,6 +10,8 @@ import { savePhoto, identifyFromPhoto } from "@/lib/services";
 import { locLong, locToString, normLoc } from "@/lib/warehouse";
 import { Button, Empty, Field, Notice } from "@/components/ui";
 import type { Condition } from "@/lib/types";
+import { ShippingChoice } from "@/components/ShippingChoice";
+import { asksShipping } from "@/lib/spedizione";
 
 // Ciò che resta uguale tra un pezzo e il successivo (stesso scaffale, spesso stessa auto)
 interface Sticky {
@@ -44,6 +46,7 @@ export default function AggiungiRicambio() {
   const [guessing, setGuessing] = useState(false);
   const [typeId, setTypeId] = useState("");
   const [side, setSide] = useState("");
+  const [spedibile, setSpedibile] = useState(false);
   const [dicitura, setDicitura] = useState<string | null>(null); // null = composta in automatico
   const [legacy, setLegacy] = useState("");
   const [condition, setCondition] = useState<Condition | undefined>();
@@ -102,6 +105,7 @@ export default function AggiungiRicambio() {
       side: side || undefined,
       oem: oem.trim().toUpperCase() || undefined,
       oemVerified: false,
+      spedibile: asksShipping(t.shippable) ? spedibile : undefined,
       legacyCode: legacy.trim().toUpperCase() || undefined,
       price: price ? Number(price) : undefined,
       location: loc,
@@ -114,6 +118,7 @@ export default function AggiungiRicambio() {
     setGuess(null);
     setTypeId("");
     setSide("");
+    setSpedibile(false);
     setDicitura(null);
     setLegacy("");
     setCondition(undefined);
@@ -243,6 +248,7 @@ export default function AggiungiRicambio() {
             </div>
             {tried && !condition && <span className="mt-1 block text-sm font-medium text-danger">Indica le condizioni</span>}
           </div>
+          {t && asksShipping(t.shippable) && <ShippingChoice value={spedibile} onChange={setSpedibile} />}
         </section>
 
         {/* Ubicazione nel magazzino */}
