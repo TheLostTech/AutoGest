@@ -30,3 +30,8 @@ export function percorsoDaSicuro(da: string | null | undefined): string {
     return "/";
   }
 }
+
+// Area del super admin: serve l'accesso (lo chiede il proxy) ma non carica i dati di nessuna azienda.
+export function percorsoPiattaforma(percorso: string): boolean {
+  return percorso === "/piattaforma" || percorso.startsWith("/piattaforma/");
+}

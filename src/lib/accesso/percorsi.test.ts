@@ -38,3 +38,12 @@ test("percorsoApi", () => {
   assert.equal(percorsoApi("/apix"), false);
   assert.equal(percorsoApi("/ricambi"), false);
 });
+
+test("percorsoPiattaforma riconosce solo l'area del super admin, che non è pubblica", async () => {
+  const { percorsoPiattaforma } = await import("./percorsi.ts");
+  for (const p of ["/piattaforma", "/piattaforma/nuova", "/piattaforma/aziende/x"]) {
+    assert.equal(percorsoPiattaforma(p), true, p);
+    assert.equal(percorsoPubblico(p), false, p);
+  }
+  for (const p of ["/piattaformax", "/", "/api/piattaforma/aziende"]) assert.equal(percorsoPiattaforma(p), false, p);
+});

@@ -6,7 +6,7 @@ import { abilitaSalvataggioLocale, STORE_SCHEMA, useStore } from "@/lib/store";
 import { avviaVuotoPrimaDelSync, startSync } from "@/lib/sync";
 import { BloccoInattivita } from "./BloccoInattivita";
 import { caricaSessione } from "@/lib/accesso/client";
-import { percorsoPubblico } from "@/lib/accesso/percorsi";
+import { percorsoPiattaforma, percorsoPubblico } from "@/lib/accesso/percorsi";
 import type { Accesso } from "@/lib/accesso/regole";
 
 // Nome da mostrare per chi usa il dispositivo: dal collegamento a PIN il dispositivo ha un nome, altrimenti "Browser"
@@ -19,7 +19,8 @@ export function Hydrator({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   // Le pagine pubbliche (accesso, negozio, eBay simulato, ...) non toccano i dati della gestione:
   // niente salvataggio nel browser e niente sincronizzazione con l'archivio di un'azienda.
-  const pubblica = percorsoPubblico(path);
+  // L'area Piattaforma del super admin non è di nessuna azienda: stessa cosa (l'accesso lo chiede il proxy).
+  const pubblica = percorsoPubblico(path) || percorsoPiattaforma(path);
 
   useEffect(() => {
     if (pubblica) {
