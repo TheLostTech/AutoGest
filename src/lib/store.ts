@@ -39,6 +39,7 @@ import type {
   WasteMove,
 } from "./types";
 import { euro, publishChecks } from "./logic";
+import { ordineNegozio, pagaOrdine } from "./negozio-ordine";
 import { canTransmit, firNumberTaken, isDraft, missingFields, monthLabel, nextRegisterNumber, periodsOf } from "./periodo";
 
 // Chi sta usando questo dispositivo: arriva dalla sessione (mai dai dati salvati nel browser).
@@ -714,43 +715,12 @@ export const useStore = create<State & Actions>()(
         // Ordine del negozio per annunci: il prossimo a partire si sceglie nello stesso aggiornamento
         // che controlla la disponibilità, così lo stesso pezzo non si vende due volte
         orderFromAnnunci: (channel, annuncioIds, customer, actor, delivery) => {
-          if (!annuncioIds.length) return { ok: false, error: "Il carrello è vuoto" };
-          let made = undefined as { id: string; partIds: string[]; annunci: string[] } | undefined;
-          let conflicts: string[] = [];
-          set((st) => {
-            const r = shopPicks(annuncioIds, st.annunci, st.parts);
-            if (r.conflicts.length || !r.picks.length) {
-              conflicts = r.conflicts;
-              return {};
-            }
-            const partIds = r.picks.map((x) => x.partId);
-            const prices = Object.fromEntries(r.picks.map((x) => [x.partId, onlinePrice(x.price) ?? 0]));
-            const amount = Math.round(Object.values(prices).reduce((t, x) => t + x, 0) * 100) / 100;
-            const pickupOnly = st.parts.some((p) => partIds.includes(p.id) && !shipOf(p));
-            const n = st.counters.order + 1;
-            const id = `O-${pad(n)}`;
-            const at = now();
-            made = { id, partIds, annunci: [...new Set(r.picks.map((x) => x.annuncioId))] };
-            return {
-              parts: st.parts.map((x) => (partIds.includes(x.id) ? { ...x, status: "riservato" as const } : x)),
-              orders: [
-                { id, channel, delivery: pickupOnly ? "ritiro" : delivery, partIds, amount, prices, status: "in attesa di pagamento", customer, createdAt: at, history: [{ at, status: "in attesa di pagamento" }] },
-                ...st.orders,
-              ],
-              counters: { ...st.counters, order: n },
-            };
-          });
-          if (!made) {
-            push(event({ entity: "ordine", entityId: "—", action: "Riserva rifiutata", detail: `${conflicts.join(", ")} non disponibile (${channel})`, ...actor }));
-            return { ok: false, error: "Ricambio non più disponibile", conflicts };
-          }
-          const { id, partIds } = made;
-          push(
-            event({ entity: "ordine", entityId: id, action: "Ordine creato", detail: `${channel} · ${made.annunci.join(", ")} · ${partIds.join(", ")}`, ...actor }),
-            ...partIds.map((pid) => event({ entity: "ricambio", entityId: pid, action: "Stato: disponibile → riservato", detail: id, ...actor })),
-          );
-          made.annunci.forEach(touchAnnuncio);
-          return { ok: true, value: id };
+          // La logica è in negozio-ordine.ts: la usa anche il server per gli ordini del negozio pubblico
+          const { role, operatore } = get();
+          const predefinito = { user: nomeOperatore(operatore), role, device: dispositivoOperatore(operatore) };
+          const r = ordineNegozio(get(), { annuncioIds, cliente: customer, consegna: delivery, attore: actor, predefinito }, now());
+          set({ parts: r.st.parts, orders: r.st.orders, counters: r.st.counters, audit: r.st.audit, annunci: r.st.annunci });
+          return r.ok ? { ok: true, value: r.ordineId } : { ok: false, error: r.error, conflicts: r.conflicts };
         },
 
         // Vendita arrivata da eBay: già pagata, prende tanti pezzi quanti ne sono stati comprati, i più vecchi.
@@ -901,22 +871,11 @@ export const useStore = create<State & Actions>()(
         },
 
         payOrder: (orderId, success, actor) => {
-          const o = get().orders.find((x) => x.id === orderId);
-          if (!o || o.status !== "in attesa di pagamento") return;
-          const at = now();
-          const status = success ? "pagato" : "pagamento fallito";
-          set((s) => ({
-            orders: s.orders.map((x) => (x.id === orderId ? { ...x, status, paymentRef: success ? `PAY-DEMO-${orderId.slice(2)}` : undefined, history: [...x.history, { at, status, note: success ? "Conferma dal provider (simulata)" : "Rifiuto dal provider (simulato)" }] } : x)),
-            // Venduto: esce dal negozio; pagamento fallito: torna disponibile
-            parts: s.parts.map((x) =>
-              o.partIds.includes(x.id) ? { ...x, status: success ? "venduto" : "disponibile" } : x,
-            ),
-          }));
-          push(
-            event({ entity: "ordine", entityId: orderId, action: success ? "Pagamento confermato" : "Pagamento fallito", detail: success ? "Webhook provider (simulato)" : "Disponibilità ripristinata", ...actor }),
-            ...o.partIds.map((pid) => event({ entity: "ricambio", entityId: pid, action: success ? "Stato: riservato → venduto" : "Stato: riservato → disponibile", detail: orderId, ...actor })),
-          );
-          settle(o.partIds);
+          const { role, operatore } = get();
+          const predefinito = { user: nomeOperatore(operatore), role, device: dispositivoOperatore(operatore) };
+          const st = pagaOrdine(get(), orderId, success, actor ?? predefinito, now(), predefinito);
+          if (st === get()) return;
+          set({ parts: st.parts, orders: st.orders, counters: st.counters, audit: st.audit, annunci: st.annunci });
         },
 
         cancelOrder: (orderId, reason) => {

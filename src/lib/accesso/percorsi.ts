@@ -35,3 +35,8 @@ export function percorsoDaSicuro(da: string | null | undefined): string {
 export function percorsoPiattaforma(percorso: string): boolean {
   return percorso === "/piattaforma" || percorso.startsWith("/piattaforma/");
 }
+
+// Negozio online ed eBay simulato: leggono il catalogo pubblico dal server, mai l'archivio dell'azienda.
+export function percorsoNegozio(percorso: string): boolean {
+  return ["/negozio", "/ebay-simulato"].some((p) => percorso === p || percorso.startsWith(p + "/"));
+}

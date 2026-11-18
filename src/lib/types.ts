@@ -305,6 +305,7 @@ export interface Order {
   customer: string;
   paymentRef?: string;
   ebayOrderId?: string; // ordine arrivato da eBay (canale "marketplace")
+  tokenNegozio?: string; // ordine del negozio pubblico: chi lo ha fatto lo mostra per pagare (16 byte casuali, in esadecimale)
   daGestire?: string; // es. "mancano 2 pezzi": venduti su eBay ma non più disponibili
   createdAt: string;
   history: { at: string; status: OrderStatus; note?: string }[];

@@ -3,14 +3,32 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { abilitaSalvataggioLocale, STORE_SCHEMA, useStore } from "@/lib/store";
-import { avviaVuotoPrimaDelSync, startSync } from "@/lib/sync";
+import { avviaVuotoPrimaDelSync, startSync, syncAvviata } from "@/lib/sync";
 import { BloccoInattivita } from "./BloccoInattivita";
 import { caricaSessione } from "@/lib/accesso/client";
-import { percorsoPiattaforma, percorsoPubblico } from "@/lib/accesso/percorsi";
+import { percorsoNegozio, percorsoPiattaforma, percorsoPubblico } from "@/lib/accesso/percorsi";
 import type { Accesso } from "@/lib/accesso/regole";
 
 // Nome da mostrare per chi usa il dispositivo: dal collegamento a PIN il dispositivo ha un nome, altrimenti "Browser"
 const operatoreDa = (a: Accesso) => ({ nome: a.utente.nome, dispositivo: a.dispositivo?.nome ?? "Browser", assistenza: !!a.assistenza });
+
+const RICARICA_CATALOGO_MS = 30_000;
+// Il catalogo pubblico è nello store di questa pagina: lo store non va più usato per la gestione senza ricaricare
+let catalogoNelloStore = false;
+
+async function caricaCatalogo(): Promise<void> {
+  try {
+    const r = await fetch("/api/negozio/catalogo", { cache: "no-store" });
+    if (!r.ok) return;
+    const c = (await r.json()) as { annunci?: unknown; parts?: unknown; vehicles?: unknown };
+    if (!Array.isArray(c.annunci) || !Array.isArray(c.parts) || !Array.isArray(c.vehicles)) return;
+    // Solo i tre elenchi del catalogo, e solo in memoria: niente copia locale, niente sincronizzazione
+    useStore.setState({ annunci: c.annunci, parts: c.parts, vehicles: c.vehicles } as unknown as Partial<ReturnType<typeof useStore.getState>>);
+    catalogoNelloStore = true;
+  } catch {
+    // server non raggiungibile: resta l'ultimo catalogo caricato
+  }
+}
 
 export function Hydrator({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
@@ -21,10 +39,35 @@ export function Hydrator({ children }: { children: React.ReactNode }) {
   // niente salvataggio nel browser e niente sincronizzazione con l'archivio di un'azienda.
   // L'area Piattaforma del super admin non è di nessuna azienda: stessa cosa (l'accesso lo chiede il proxy).
   const pubblica = percorsoPubblico(path) || percorsoPiattaforma(path);
+  // Negozio ed eBay simulato: niente archivio dell'azienda, solo il catalogo pubblico dal server
+  const negozio = percorsoNegozio(path);
+  const [catalogoPronto, setCatalogoPronto] = useState(false);
 
   useEffect(() => {
+    if (negozio) {
+      abilitaSalvataggioLocale(false);
+      // Arrivati qui dalla gestione senza ricaricare: la sincronizzazione è già attiva e spedirebbe il catalogo come modifiche
+      if (syncAvviata()) {
+        window.location.reload();
+        return;
+      }
+      let attivo = true;
+      useStore.setState({ annunci: [], parts: [], vehicles: [] });
+      const giro = () => void caricaCatalogo();
+      void caricaCatalogo().finally(() => attivo && setCatalogoPronto(true));
+      const t = setInterval(giro, RICARICA_CATALOGO_MS);
+      return () => {
+        attivo = false;
+        clearInterval(t);
+      };
+    }
     if (pubblica) {
       abilitaSalvataggioLocale(false);
+      return;
+    }
+    // Tornati alla gestione dal negozio senza ricaricare: lo store ha il catalogo pubblico al posto dell'archivio
+    if (catalogoNelloStore) {
+      window.location.reload();
       return;
     }
     let attivo = true;
@@ -65,8 +108,15 @@ export function Hydrator({ children }: { children: React.ReactNode }) {
       attivo = false;
       unsub();
     };
-  }, [pubblica]);
+  }, [pubblica, negozio]);
 
+  if (negozio && !catalogoPronto) {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-ground">
+        <div className="code text-2xl font-semibold tracking-wide text-band">CARICAMENTO…</div>
+      </div>
+    );
+  }
   if (!pubblica && !ready) {
     return (
       <div className="grid min-h-dvh place-items-center bg-ground">

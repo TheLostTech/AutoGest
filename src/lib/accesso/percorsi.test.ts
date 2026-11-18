@@ -47,3 +47,9 @@ test("percorsoPiattaforma riconosce solo l'area del super admin, che non è pubb
   }
   for (const p of ["/piattaformax", "/", "/api/piattaforma/aziende"]) assert.equal(percorsoPiattaforma(p), false, p);
 });
+
+test("percorsoNegozio: negozio ed eBay simulato sì, le altre pagine pubbliche e la gestione no", async () => {
+  const { percorsoNegozio } = await import("./percorsi.ts");
+  for (const p of ["/negozio", "/negozio/A-000001", "/negozio/carrello", "/ebay-simulato/A-000001"]) assert.equal(percorsoNegozio(p), true, p);
+  for (const p of ["/", "/scopri", "/news", "/accesso", "/negozi", "/negozio-x", "/vendite"]) assert.equal(percorsoNegozio(p), false, p);
+});

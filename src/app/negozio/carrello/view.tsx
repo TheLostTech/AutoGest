@@ -13,54 +13,85 @@ import { isShippable } from "@/lib/spedizione";
 import { nextToShip, partsOf, quantityOf } from "@/lib/annunci";
 
 type Step = "carrello" | "pagamento" | "esito";
+type Consegna = "corriere" | "ritiro";
+// Ordine fatto sul server: il token serve a pagarlo; importo e consegna arrivano dalle risposte
+type Ordine = { id: string; token: string; amount: number; delivery: Consegna; pagato?: boolean };
 
 export default function Carrello() {
-  const s = useStore();
+  // Il catalogo pubblico (annunci e pezzi in vendita): lo carica l'Hydrator dal server
+  const annunci = useStore((x) => x.annunci);
+  const parts = useStore((x) => x.parts);
   const cart = useCart();
   const [step, setStep] = useState<Step>("carrello");
-  const [orderId, setOrderId] = useState<string>();
+  const [order, setOrder] = useState<Ordine>();
   const [error, setError] = useState("");
   const [paying, setPaying] = useState(false);
   const [form, setForm] = useState({ nome: "", email: "", consegna: "spedizione" as "spedizione" | "ritiro" });
 
   // Un'unità per annuncio; foto dal prossimo a partire
   const items = cart.ids.flatMap((id) => {
-    const a = s.annunci.find((x) => x.id === id);
+    const a = annunci.find((x) => x.id === id);
     if (!a) return [];
-    const p = nextToShip(a, s.parts)[0] ?? partsOf(a, s.parts)[0];
-    return [{ a, p, ok: a.negozio?.stato === "online" && quantityOf(a, s.parts) > 0 }];
+    const p = nextToShip(a, parts)[0] ?? partsOf(a, parts)[0];
+    return [{ a, p, ok: a.negozio?.stato === "online" && quantityOf(a, parts) > 0 }];
   });
   const total = Math.round(items.reduce((t, x) => t + (onlinePrice(x.a.price) ?? 0), 0) * 100) / 100;
   const blocked = items.filter((x) => !x.ok);
   const pickupOnly = items.some((x) => !isShippable(x.a, typeById(x.a.typeId).shippable));
-  const order = orderId ? s.orders.find((o) => o.id === orderId) : undefined;
 
-  function placeOrder(e: React.FormEvent) {
+  async function placeOrder(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    const r = s.orderFromAnnunci(
-      "negozio",
-      cart.ids,
-      form.nome || "Cliente online",
-      { user: form.nome || "Cliente online", role: "cliente", device: "Negozio online" },
-      form.consegna === "ritiro" || pickupOnly ? "ritiro" : "corriere",
-    );
-    if (!r.ok) {
-      setError(`Mentre completavi l'ordine, ${r.conflicts?.join(", ")} è stato venduto o riservato su un altro canale. Toglilo dal carrello per continuare.`);
-      return;
+    setPaying(true);
+    const delivery: Consegna = form.consegna === "ritiro" || pickupOnly ? "ritiro" : "corriere";
+    try {
+      const r = await fetch("/api/negozio/ordine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ annuncioIds: cart.ids, nome: form.nome || "Cliente online", consegna: delivery }),
+      });
+      const j = (await r.json().catch(() => ({}))) as { ordineId?: string; token?: string; importo?: number; conflicts?: string[]; error?: string };
+      if (r.status === 409) {
+        setError(`Mentre completavi l'ordine, ${(j.conflicts ?? []).join(", ")} è stato venduto o riservato su un altro canale. Toglilo dal carrello per continuare.`);
+        return;
+      }
+      if (!r.ok || !j.ordineId || !j.token) {
+        setError(j.error ?? "Non riesco a registrare l'ordine: riprova tra poco.");
+        return;
+      }
+      setOrder({ id: j.ordineId, token: j.token, amount: j.importo ?? total, delivery });
+      setStep("pagamento");
+    } catch {
+      setError("Non riesco a raggiungere il negozio: riprova tra poco.");
+    } finally {
+      setPaying(false);
     }
-    setOrderId(r.value);
-    setStep("pagamento");
   }
 
   async function pay(success: boolean) {
-    if (!orderId) return;
+    if (!order) return;
     setPaying(true);
+    setError("");
     await new Promise((r) => setTimeout(r, 900));
-    s.payOrder(orderId, success, { user: form.nome || "Cliente online", role: "cliente", device: "Provider di pagamento (simulato)" });
-    setPaying(false);
-    setStep("esito");
-    if (success) cart.clear();
+    try {
+      const r = await fetch("/api/negozio/paga", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ordineId: order.id, token: order.token, riuscito: success }),
+      });
+      if (!r.ok) {
+        const j = (await r.json().catch(() => ({}))) as { error?: string };
+        setError(j.error ?? "Non riesco a registrare il pagamento: riprova tra poco.");
+        return;
+      }
+      setOrder({ ...order, pagato: success });
+      setStep("esito");
+      if (success) cart.clear();
+    } catch {
+      setError("Non riesco a raggiungere il negozio: riprova tra poco.");
+    } finally {
+      setPaying(false);
+    }
   }
 
   if (step === "pagamento" && order) {
@@ -70,6 +101,7 @@ export default function Carrello() {
           <h1 className="text-[26px] font-bold">Ordine {order.id}</h1>
           <p className="mt-1 text-ink-2">Pagina del provider di pagamento (simulata). I pezzi sono riservati per te mentre completi il pagamento. Nessun dato della carta passa dal negozio.</p>
           <div className="code my-5 text-[44px] font-bold leading-none">{euro(order.amount)}</div>
+          {error && <div className="mb-3"><Notice tone="danger">{error}</Notice></div>}
           <div className="grid gap-2">
             <Button size="lg" onClick={() => pay(true)} disabled={paying}>
               {paying ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <CreditCard className="size-5" aria-hidden />}
@@ -83,15 +115,14 @@ export default function Carrello() {
   }
 
   if (step === "esito" && order) {
-    const ok = order.status === "pagato";
+    const ok = order.pagato === true;
     return (
       <div className="mx-auto max-w-md rounded-md border border-hair bg-label p-6">
         <Notice tone={ok ? "ok" : "danger"}>{ok ? "Pagamento confermato. Grazie!" : "Pagamento non riuscito. I pezzi sono tornati disponibili."}</Notice>
         <p className="code mt-4 text-[34px] font-bold">{order.id}</p>
         <p className="text-ink-2">{ok ? (order.delivery === "ritiro" ? "Ti avvisiamo quando i pezzi sono pronti per il ritiro in sede." : "Riceverai il tracking quando il pacco parte.") + " Ogni pezzo è identificato dal suo codice univoco." : "Puoi riprovare dal carrello."}</p>
         <div className="mt-5 flex gap-2">
-          {ok ? <Link href="/negozio" className="font-semibold text-band">Torna al catalogo</Link> : <Button onClick={() => { setStep("carrello"); setOrderId(undefined); }}>Torna al carrello</Button>}
-          <Link href="/vendite" className="ml-auto text-sm font-semibold text-ink-3 underline">Vedi l&apos;ordine nel gestionale</Link>
+          {ok ? <Link href="/negozio" className="font-semibold text-band">Torna al catalogo</Link> : <Button onClick={() => { setStep("carrello"); setOrder(undefined); }}>Torna al carrello</Button>}
         </div>
       </div>
     );
@@ -126,7 +157,7 @@ export default function Carrello() {
         <form onSubmit={placeOrder} className="h-fit space-y-4 rounded-md border border-hair bg-label p-5">
           <h2 className="text-[20px] font-bold">Dati ordine</h2>
           <Field label="Nome e cognome">
-            <input className="field" required value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} autoComplete="name" />
+            <input className="field" required maxLength={80} value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} autoComplete="name" />
           </Field>
           <Field label="Email">
             <input className="field" type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" />
@@ -147,7 +178,7 @@ export default function Carrello() {
             <span className="code text-[34px] font-bold leading-none">{euro(total)}</span>
           </div>
           {error && <Notice tone="danger">{error}</Notice>}
-          <Button size="lg" type="submit" className="w-full" disabled={blocked.length > 0}>Vai al pagamento</Button>
+          <Button size="lg" type="submit" className="w-full" disabled={blocked.length > 0 || paying}>Vai al pagamento</Button>
         </form>
       )}
     </div>

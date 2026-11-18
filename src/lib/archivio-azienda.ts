@@ -9,7 +9,10 @@ import { STORE_SCHEMA } from "@/lib/schema";
 import type { Rec, Stored } from "@/lib/archivio-unione";
 
 const code = (a: string) => path.join(cartellaAzienda(a), "state.json");
-const blocchi = new Map<string, Promise<unknown>>();
+// Sulla globalThis: le route di Next possono avere ognuna la propria copia di questo modulo, ma il blocco deve essere uno solo
+// (l'ordine del negozio e il salvataggio di un dispositivo passano da route diverse).
+const g = globalThis as typeof globalThis & { __blocchiArchivio?: Map<string, Promise<unknown>> };
+const blocchi = (g.__blocchiArchivio ??= new Map<string, Promise<unknown>>());
 
 // Sempre dal file: anche altri processi sullo stesso Mac leggono e scrivono qui
 // File assente: state null. File presente ma illeggibile o corrotto: errore (ArchivioIlleggibile), mai da sovrascrivere.

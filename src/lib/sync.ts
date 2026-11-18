@@ -303,6 +303,8 @@ export async function inviaInSospeso(): Promise<boolean> {
 }
 
 let started = false;
+/** La sincronizzazione con l'archivio è partita su questa pagina: lo stato dello store non va più sostituito con altri dati. */
+export const syncAvviata = (): boolean => started;
 
 /**
  * Azienda vera senza copia locale: si parte da un archivio vuoto. Solo prima che la sincronizzazione parta, e come
