@@ -8,10 +8,12 @@
     "start": "next start",
     "lint": "eslint",
     "postinstall": "node -e \"require('fs').mkdirSync('public/zxing',{recursive:true});require('fs').copyFileSync('node_modules/zxing-wasm/dist/reader/zxing_reader.wasm','public/zxing/zxing_reader.wasm')\"",
-    "test": "node --test src/lib/*.test.ts src/lib/ebay/*.test.ts"
+    "test": "node --test src/lib/*.test.ts src/lib/ebay/*.test.ts src/lib/accesso/*.test.ts"
   },
   "dependencies": {
     "barcode-detector": "3.2.3",
+    "better-auth": "^1.7.25",
+    "better-sqlite3": "^13.2.0",
     "jsbarcode": "^3.12.3",
     "lucide-react": "^1.73.0",
     "next": "16.4.6",
@@ -22,6 +24,7 @@
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "4.3.3",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",

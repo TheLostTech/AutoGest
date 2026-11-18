@@ -6,3 +6,5 @@ import path from "node:path";
 // Nel passaggio al cloud questo modulo è l'unico punto da sostituire (database + archivio di file).
 export const DATA_DIR = path.resolve(/*turbopackIgnore: true*/ process.env.DATI_DIR || path.join(process.cwd(), ".demo-data"));
 export const PHOTO_DIR = path.join(DATA_DIR, "foto");
+// Database della piattaforma: utenti, aziende, ruoli e sessioni (Better Auth).
+export const DB_FILE = path.join(DATA_DIR, "piattaforma.sqlite");
