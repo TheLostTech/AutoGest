@@ -6,6 +6,7 @@ import { CreditCard, Loader2, Trash2 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useCart } from "@/lib/cart";
 import { euro } from "@/lib/logic";
+import { onlinePrice } from "@/lib/pricing";
 import { typeById } from "@/lib/catalog";
 import { Button, Field, Notice, PartImage } from "@/components/ui";
 
@@ -21,7 +22,7 @@ export default function Carrello() {
   const [form, setForm] = useState({ nome: "", email: "", consegna: "spedizione" as "spedizione" | "ritiro" });
 
   const items = cart.ids.map((id) => s.parts.find((p) => p.id === id)).filter((p) => !!p);
-  const total = items.reduce((a, p) => a + (p.price ?? 0), 0);
+  const total = Math.round(items.reduce((a, p) => a + (onlinePrice(p.price) ?? 0), 0) * 100) / 100;
   const blocked = items.filter((p) => p.status !== "disponibile" || p.listing !== "pubblicato");
   const pickupOnly = items.some((p) => !typeById(p.typeId).shippable);
   const order = orderId ? s.orders.find((o) => o.id === orderId) : undefined;
@@ -105,7 +106,7 @@ export default function Carrello() {
                   <span className="code text-sm text-ink-3">{p.id}</span>
                   {blocked.includes(p) && <span className="block text-sm font-semibold text-danger">Non più disponibile</span>}
                 </span>
-                <span className="code text-[20px] font-bold">{euro(p.price)}</span>
+                <span className="code text-[20px] font-bold">{euro(onlinePrice(p.price))}</span>
                 <button onClick={() => cart.remove(p.id)} className="grid size-10 place-items-center text-ink-3 hover:text-danger" aria-label={`Rimuovi ${p.id}`}>
                   <Trash2 className="size-5" />
                 </button>

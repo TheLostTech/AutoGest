@@ -6,6 +6,7 @@ import { Search } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { PART_TYPES, PLATFORMS, CONDITIONS, typeById } from "@/lib/catalog";
 import { euro, fits } from "@/lib/logic";
+import { onlinePrice } from "@/lib/pricing";
 import { PartImage } from "@/components/ui";
 
 const CATS = PART_TYPES.filter((t) => t.render);
@@ -92,7 +93,7 @@ export default function Negozio() {
                   </span>
                   {platform && v?.platform !== platform && <span className="mt-1 text-[13px] font-semibold text-ok">Compatibile con la tua auto (codice OE verificato)</span>}
                   <span className="mt-auto flex items-end justify-between pt-3">
-                    <span className="code text-[26px] font-bold leading-none">{euro(p.price)}</span>
+                    <span className="code text-[26px] font-bold leading-none">{euro(onlinePrice(p.price))}</span>
                     <span className="flex items-center gap-1.5" title={CONDITIONS[p.condition].label}>
                       <span className="text-[12px] text-ink-3">cond.</span>
                       <span className="code grid size-8 place-items-center rounded border-2 border-ink text-[20px] font-bold leading-none">{p.condition}</span>

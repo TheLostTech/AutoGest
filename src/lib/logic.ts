@@ -90,7 +90,9 @@ export function publishChecks(p: Part, v?: Vehicle): Check[] {
 }
 
 export const euro = (n?: number) =>
-  typeof n === "number" ? n.toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }) : "—";
+  typeof n === "number"
+    ? n.toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: Number.isInteger(n) ? 0 : 2, minimumFractionDigits: Number.isInteger(n) ? 0 : 2 })
+    : "—";
 
 export const dateIt = (iso: string, withTime = false) =>
   new Date(iso).toLocaleString("it-IT", withTime ? { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" } : { day: "2-digit", month: "short", year: "numeric" });

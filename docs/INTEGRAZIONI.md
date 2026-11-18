@@ -159,6 +159,59 @@ Tutti i collegamenti nell'app sono oggi **simulati**. Costi e fonti nelle sezion
 | Google Merchant Center (negozio proprio) | https://support.google.com/merchants/answer/6324469 | Account del cliente con dominio verificato | **Merchant API v1** (la Content API è dismessa dal 18/08/2026); `condition=used`, `mpn` = codice OE | Schede gratuite; annunci a CPC |
 | Subito.it | — | — | Nessuna API ufficiale | — |
 
+### eBay: dal ricambio all'annuncio con un tocco (ricerca del 18/11/2026)
+
+**Strada consigliata: API REST "Sell" di eBay chiamate dal nostro server, testo dell'annuncio scritto dal nostro modello IA.** Nessun plugin o connettore pronto fa il lavoro al posto nostro per un gestionale fatto su misura.
+
+**Cosa usare**
+| Pezzo | API eBay | A cosa serve |
+|---|---|---|
+| Accesso del cliente | OAuth "authorization code grant" https://developer.ebay.com/api-docs/static/oauth-authorization-code-grant.html | Il titolare accede a eBay una volta e autorizza il gestionale. Token di accesso di 2 ore, rinnovo per circa 18 mesi, poi si riautorizza. Libreria ufficiale: https://github.com/eBay/ebay-oauth-nodejs-client |
+| Condizioni di vendita | Account API (business policies, `inventory_location`) | Una volta per cliente: spedizione, pagamento, reso e magazzino. Senza l'adesione alle business policies l'Inventory API non pubblica |
+| Foto | Media API `createImageFromFile` https://developer.ebay.com/api-docs/commerce/media/resources/image/methods/createImageFromFile | Carica le foto su eBay e restituisce l'URL da mettere nell'annuncio. JPG, PNG, WEBP, HEIC; 50 caricamenti ogni 5 secondi; fino a 24 foto |
+| Categoria e caratteristiche | Taxonomy API: `getCategorySuggestions`, `getItemAspectsForCategory`, `getCompatibilityProperties` (eBay Italia = albero **101**) https://developer.ebay.com/api-docs/sell/taxonomy/resources/category_tree/methods/getCompatibilityProperties | Categoria giusta e caratteristiche obbligatorie (marca, codice OE, lato…) |
+| Annuncio | Inventory API: `createOrReplaceInventoryItem` (SKU = R-000000) → `createOffer` → `publishOffer` https://developer.ebay.com/api-docs/sell/static/inventory/publishing-offers.html | Tre chiamate e il pezzo è online sul profilo del cliente. Alcuni campi facoltativi in creazione diventano obbligatori alla pubblicazione |
+| Compatibilità veicoli | Inventory API `createOrReplaceProductCompatibility` https://developer.ebay.com/api-docs/sell/inventory/resources/inventory_item/product_compatibility/methods/createOrReplaceProductCompatibility | Elenco dei veicoli su cui monta il pezzo, in due modi: `compatibilityProperties` (marca, modello, anno, versione, motore, con i valori presi dalla Taxonomy `getCompatibilityPropertyValues`, gratis) oppure `productIdentifier.ktype`. **KType confermato su eBay.it** dalla specifica ufficiale: "Only the AU, DE, ES, FR, IT, and UK marketplaces support the use of K Type Numbers". Note per veicolo fino a 500 caratteri (es. posizione del pezzo) |
+| Venduto o ritirato | `withdrawOffer`, `deleteInventoryItem`; quantità a 0 | Il pezzo venduto al banco o su un altro canale sparisce da eBay |
+| Ordini eBay | Notification API, argomento "Order Confirmation" (dal 1/12/2025) + Fulfillment API `getOrders` | Il pezzo venduto su eBay passa a "venduto" nel gestionale, con riserva unica tra canali. Il vecchio `ITEM_SOLD` non esiste più nelle API nuove (da fonte non ufficiale) |
+| Alternativa in blocco | Feed API, file XML `LMS_ADD_FIXED_PRICE_ITEM` (con `LMS_VERIFY_…` per la prova) https://developer.ebay.com/api-docs/sell/static/feed/lms-feeds-overview.html | Per caricare il magazzino migrato tutto insieme |
+
+**Cosa NON usare (per ora)**
+- **Inventory Mapping API** (l'IA di eBay che crea l'annuncio da foto e titolo, GraphQL): solo eBay USA e **esclude Ricambi e accessori**. https://developer.ebay.com/develop/api/sell/inventory_mapping.md
+- **Server MCP per eBay**: quello ufficiale (`@ebay/npm-public-api-mcp`, https://github.com/eBay/npm-public-api-mcp) è in sola lettura e senza sandbox; quelli completi (es. `ebay-mcp` di YosefHayim) sono progetti non ufficiali. Servono a un assistente IA, non a un gestionale che pubblica per i clienti.
+- **Moduli per e-commerce** (M2E Pro per Magento, Prestalia FastBay per PrestaShop, bindCommerce, Marketrock, Base.com): funzionano solo dentro quelle piattaforme. Utili come riferimento su come trattano compatibilità e KType.
+- **Ovoko e Multibreves**: pubblicano anche su eBay, ma il cliente pagherebbe un secondo intermediario. Restano utili per gli altri marketplace (sezione 4).
+
+**L'annuncio scritto in automatico**
+Il gestionale ha già tutto: tipo di pezzo, veicolo d'origine (marca, modello, versione, anno, alimentazione, km), codice OE, lato, condizione, difetti, foto, prezzo, ubicazione. Il nostro modello IA con visione compone titolo (massimo 80 caratteri, con marca, modello, pezzo, codice OE), descrizione e caratteristiche eBay; la Taxonomy API dice quali caratteristiche sono obbligatorie per la categoria. L'operatore vede l'anteprima e tocca "Pubblica su eBay".
+
+**Nostra commissione: sovrapprezzo dell'8% (decisione del 18/11/2026)**
+Ogni annuncio pubblicato dal gestionale esce a **prezzo dell'autodemolizione + 8%**. L'8% è la nostra commissione per la gestione del venduto. Vale per **tutti i canali online**: eBay, Ovoko e gli altri marketplace, negozio online del cliente. Al banco resta il prezzo dell'autodemolizione, con i suoi listini. eBay però paga il conto del venditore, cioè l'autodemolizione, e non noi: la commissione si fattura al cliente sui pezzi venduti, per esempio una volta al mese, e si storna se il pezzo viene reso.
+
+Esempio con 100 € (IVA inclusa) fissati dall'autodemolizione:
+| | Senza gestionale | Con l'8% |
+|---|---|---|
+| Prezzo su eBay | 100,00 € | 108,00 € |
+| Commissione eBay (12,5% + 0,35 €) | 12,85 € | 13,85 € |
+| Nostra commissione | — | 8,00 € |
+| Resta all'autodemolizione | 87,15 € | 86,15 € |
+
+- **eBay prende la sua percentuale anche sul nostro 8%**: 1 € ogni 100 €, oggi a carico dell'autodemolizione. Per coprirlo il sovrapprezzo dovrebbe essere circa 9,14%.
+- **IVA**: gli 8 € pagati dall'acquirente contengono 1,44 € di IVA che l'autodemolizione versa. Per un costo netto di 8 € la nostra fattura va fatta così: 6,56 € + 22% IVA = 8,00 €. Fatturare invece 8 € + IVA = 9,76 € le costerebbe 1,44 € in più. Se il cliente vende l'usato in regime del margine, il calcolo cambia. **Da validare col commercialista** e da scrivere nel contratto.
+
+**Obblighi da rispettare nell'annuncio**
+- **GPSR** (sicurezza dei prodotti UE): vale anche per l'usato venduto da professionisti. Nell'Inventory API sono i campi `regulatory.manufacturer`, `regulatory.responsiblePersons` (fino a 5, sede UE) e `regulatory.productSafety`. Se mancano dove servono, l'annuncio resta invisibile o non acquistabile nell'UE finché non si completano. Vedi le risposte qui sotto.
+- **Garanzia e reso** per i privati: garanzia legale di 2 anni, riducibile a 1 sull'usato con accordo; recesso di 14 giorni nelle vendite a distanza (Codice del consumo). La politica di reso eBay del cliente deve rispettarli. Da validare col commercialista.
+- **Account del cliente**: venditore professionale (account aziendale), con le business policies attive.
+
+**Risposte ai dubbi (18/11/2026)**
+1. **KType su eBay.it: sì.** Lo dice la specifica ufficiale dell'Inventory API (https://developer.ebay.com/develop/api/spec/inventory_api.json, tipo `ProductIdentifier`) e la guida della Trading API (Italia, sito 101: https://developer.ebay.com/api-docs/user-guides/static/trading-user-guide/manually-specify-compatibility.html). Se il KType non è nel catalogo eBay, quel veicolo viene scartato. **Si può partire senza KType**: per il veicolo d'origine bastano marca, modello, anno e motore, presi con la Taxonomy API, gratis. Per allargare la compatibilità ad altri veicoli servono KType e codici OE da una banca dati a licenza (TecDoc, sezione 3).
+2. **GPSR sui ricambi usati: quasi sempre basta poco.** Secondo eBay (https://www.ebay.com/sellercenter/resources/general-product-safety-regulation · https://www.ebay.de/verkaeuferportal/gesetzliche-steuerliche-vorgaben/verordnung-produktsicherheit), i prodotti messi sul mercato UE **prima del 13/12/2024** e conformi alla direttiva precedente non hanno bisogno dei dati GPSR (art. 51). Per un pezzo smontato, conta l'anno del veicolo: auto immatricolate prima di quella data → esenti, secondo eBay. Per le auto più recenti: produttore = casa auto (tabella marca → sede UE, da compilare una volta). Esclusi anche i pezzi "da riparare o riciclare" dichiarati come tali. eBay avverte che altri interpretano la norma diversamente: va validato col consulente. Quali categorie chiedono i dati su eBay.it lo dice la Metadata API `getRegulatoryPolicies`.
+3. **Negozio eBay: non serve per le API.** I requisiti ufficiali sono un account del Developers Program (nostro) e il conto venditore con le business policies attive. Il negozio è richiesto solo dalla Stores API (categorie della vetrina), che non ci serve. La pagina eBay.it sugli strumenti in blocco elenca Inventory, Trading e Feed API senza chiedere un negozio (https://www.ebay.it/help/selling/listings/listing-tips/bulk-listing-tool?id=4160). Il vincolo "Pro Basic e superiori" esiste solo su eBay Australia (https://www.ebay.com.au/sellercentre/integration-tools). Il negozio conviene comunque per le tariffe e le inserzioni gratuite.
+4. **Limiti di chiamate: bastano quelli di base.** Inventory API 2 milioni di chiamate al giorno per applicazione; foto 50 caricamenti ogni 5 secondi per utente (il limite giornaliero è indicato in modo diverso da due pagine eBay: 200.000 o 1 milione). Con 10 clienti e 100 pezzi al giorno ciascuno siamo intorno a 10.000 chiamate al giorno. Oltre si chiede l'"Application Growth Check", gratis (https://developer.ebay.com/api-docs/static/gs_request-an-application-growth.html).
+
+**Resta da fare dal vivo, con la sandbox**: una pubblicazione di prova su eBay Italia con KType e con marca/modello/anno, per vedere quali campi obbligatori chiede `publishOffer` nelle categorie dei ricambi.
+
 ---
 
 ## 5. Fisco, pagamenti, spedizioni, firma, conservazione, messaggi

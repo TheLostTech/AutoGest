@@ -23,4 +23,9 @@ export function suggestUsedPrice(newPrice: number, condition: Condition, inStock
   return Math.max(5, Math.round(p / 5) * 5);
 }
 
-export const listPrice = (base: number | undefined, l: Listino | undefined) => (base === undefined ? undefined : Math.round(base * (1 + (l?.pct ?? 0) / 100)));
+// Canali online (negozio, eBay e altri marketplace): al prezzo dell'autodemolizione si aggiunge
+// la commissione di gestione del venduto. Al banco no. Calcoli e IVA: docs/INTEGRAZIONI.md, sezione eBay.
+export const ONLINE_FEE_PCT = 8;
+export const onlinePrice = (base: number | undefined) => (base === undefined ? undefined : Math.round(base * (100 + ONLINE_FEE_PCT)) / 100);
+
+export const listPrice =(base: number | undefined, l: Listino | undefined) => (base === undefined ? undefined : Math.round(base * (1 + (l?.pct ?? 0) / 100)));

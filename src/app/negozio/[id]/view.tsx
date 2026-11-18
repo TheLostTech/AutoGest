@@ -8,6 +8,7 @@ import { useStore } from "@/lib/store";
 import { useCart } from "@/lib/cart";
 import { CONDITIONS, typeById } from "@/lib/catalog";
 import { euro } from "@/lib/logic";
+import { onlinePrice } from "@/lib/pricing";
 import { platformLabel } from "@/lib/partsdb";
 import { Button, PartImage } from "@/components/ui";
 
@@ -52,7 +53,7 @@ export default function Prodotto() {
         <div>
           <h1 className="text-[30px] font-bold leading-tight">{p.description}</h1>
           <p className="mt-1 text-[15px] text-ink-2">{t.category} · codice <span className="code font-semibold text-ink">{p.id}</span></p>
-          <div className="code mt-3 text-[44px] font-bold leading-none">{euro(p.price)}</div>
+          <div className="code mt-3 text-[44px] font-bold leading-none">{euro(onlinePrice(p.price))}</div>
           <p className="mt-1 text-sm text-ink-3">IVA e documenti fiscali da definire (prototipo)</p>
 
           <dl className="mt-6 grid grid-cols-[140px_1fr] gap-y-2.5 border-y border-hair py-4 text-[15px]">

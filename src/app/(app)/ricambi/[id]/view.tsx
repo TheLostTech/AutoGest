@@ -11,7 +11,7 @@ import { firstFreeSlot, locLong, locToString, normLoc, warehouseFor } from "@/li
 import { LocationPicker, locComplete, startLocation } from "@/components/LocationPicker";
 import { CatalogPanel } from "@/components/CatalogPanel";
 import { catalogFor } from "@/lib/partsdb";
-import { listPrice, suggestUsedPrice } from "@/lib/pricing";
+import { listPrice, ONLINE_FEE_PCT, onlinePrice, suggestUsedPrice } from "@/lib/pricing";
 import { savePhoto } from "@/lib/services";
 import type { Location } from "@/lib/types";
 import { PartLabel } from "@/components/PartLabel";
@@ -252,6 +252,9 @@ export default function SchedaRicambio() {
                         <span className="text-ink-2">{l.name}</span> <b className="code text-[16px]">{euro(listPrice(p.price, l))}</b>
                       </span>
                     ))}
+                    <span className="text-sm" title={`Negozio online e marketplace: prezzo + ${ONLINE_FEE_PCT}% di gestione del venduto`}>
+                      <span className="text-ink-2">Online (+{ONLINE_FEE_PCT}%)</span> <b className="code text-[16px]">{euro(onlinePrice(p.price))}</b>
+                    </span>
                   </dd>
                 </>
               )}
