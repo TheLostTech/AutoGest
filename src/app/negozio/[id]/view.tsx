@@ -12,18 +12,21 @@ import { onlinePrice } from "@/lib/pricing";
 import { platformLabel } from "@/lib/partsdb";
 import { Button, PartImage } from "@/components/ui";
 import { isShippable } from "@/lib/spedizione";
+import { listingOf } from "@/lib/annunci";
 
 export default function Prodotto() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const p = useStore((s) => s.parts.find((x) => x.id === id));
   const v = useStore((s) => s.vehicles.find((x) => x.id === p?.vehicleId));
+  const annunci = useStore((s) => s.annunci);
   const add = useCart((s) => s.add);
   const inCart = useCart((s) => s.ids.includes(id));
   const [img, setImg] = useState(0);
 
-  const sellable = p && p.listing === "pubblicato" && p.status === "disponibile";
-  if (!p || p.listing !== "pubblicato") {
+  const listing = p ? listingOf(p, annunci) : "non pubblicato";
+  const sellable = p && listing === "pubblicato" && p.status === "disponibile";
+  if (!p || listing !== "pubblicato") {
     return (
       <div className="rounded-md border border-hair bg-label p-8 text-center">
         <p className="font-semibold">Ricambio non disponibile online.</p>

@@ -7,12 +7,13 @@ import { useStore } from "@/lib/store";
 import { PART_TYPES, PLATFORMS, CONDITIONS, typeById } from "@/lib/catalog";
 import { euro, fits } from "@/lib/logic";
 import { onlinePrice } from "@/lib/pricing";
+import { listingOf } from "@/lib/annunci";
 import { PartImage } from "@/components/ui";
 
 const CATS = PART_TYPES.filter((t) => t.render);
 
 export default function Negozio() {
-  const { parts, vehicles } = useStore();
+  const { parts, vehicles, annunci } = useStore();
   const [make, setMake] = useState("");
   const [platform, setPlatform] = useState("");
   const [type, setType] = useState("");
@@ -20,7 +21,7 @@ export default function Negozio() {
   const vById = useMemo(() => new Map(vehicles.map((v) => [v.id, v])), [vehicles]);
   const makes = [...new Set(PLATFORMS.map((p) => p.make))];
 
-  const online = parts.filter((p) => p.listing === "pubblicato" && p.status === "disponibile");
+  const online = parts.filter((p) => listingOf(p, annunci) === "pubblicato" && p.status === "disponibile");
   const query = q.trim().toLowerCase();
   const list = online.filter((p) => {
     const v = vById.get(p.vehicleId);

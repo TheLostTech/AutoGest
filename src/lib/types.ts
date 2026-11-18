@@ -260,7 +260,6 @@ export interface Part {
   photos: string[];
   aiSuggested?: { typeId: string; confidence: number; accepted: boolean };
   labelPrints: number;
-  listing: ListingStatus;
   annuncioId?: string; // annuncio a cui appartiene il pezzo (A-000001)
   createdAt: string;
   createdBy: string;

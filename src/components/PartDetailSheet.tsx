@@ -9,6 +9,7 @@ import { platformLabel } from "@/lib/partsdb";
 import { locLong } from "@/lib/warehouse";
 import { dateIt, euro } from "@/lib/logic";
 import { isShippable } from "@/lib/spedizione";
+import { listingOf } from "@/lib/annunci";
 import { Button, ListingChip, PartImage, Plate, StatusChip } from "./ui";
 
 // Scheda di consultazione del ricambio, aperta sopra la pagina corrente (es. dal banco vendite):
@@ -167,7 +168,7 @@ export function PartDetailSheet({
 
             <Section title="Magazzino e tracciamento">
               <Row k="Posizione">{p.location ? locLong(p.location) : <span className="text-warn">da assegnare</span>}</Row>
-              <Row k="Negozio online"><ListingChip listing={p.listing} /></Row>
+              <Row k="Negozio online"><ListingChip listing={listingOf(p, s.annunci)} /></Row>
               <Row k="Etichette">{p.labelPrints === 0 ? "non stampata" : p.labelPrints === 1 ? "stampata 1 volta" : `stampata ${p.labelPrints} volte`}</Row>
               <Row k="Catalogato">{dateIt(p.createdAt, true)} · {p.createdBy}</Row>
               {p.aiSuggested && (

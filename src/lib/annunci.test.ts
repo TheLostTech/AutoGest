@@ -28,7 +28,6 @@ function part(over: Partial<Part> = {}): Part {
     oemVerified: true,
     photos: [],
     labelPrints: 0,
-    listing: "non pubblicato",
     price: 90,
     createdAt: "2026-01-01T10:00:00.000Z",
     createdBy: "test",

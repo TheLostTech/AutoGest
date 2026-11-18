@@ -8,7 +8,10 @@ import { locToString, originLabel, WAREHOUSES, type Warehouse } from "./warehous
 import { eerByCode, movesForBonifica, movesForIntake, stockByEer } from "./ambiente";
 import { differenzaPesata } from "./stime";
 import { DEFAULT_LISTINI, onlinePrice, type Listino } from "./pricing";
+import { listingOf, negozioStato, quantityOf } from "./annunci";
+import { buildAnnuncio } from "./annuncio-build";
 import type {
+  Annuncio,
   AuditEvent,
   BonificaItem,
   Channel,
@@ -16,6 +19,7 @@ import type {
   SalesDoc,
   Fir,
   InventoryCount,
+  ListingStatus,
   Location,
   Order,
   Part,
@@ -49,12 +53,14 @@ interface Counters {
   docs: Record<"P" | "DC" | "FT" | "NC", number>;
   inventory: number;
   scrapPickup?: number;
+  annuncio: number;
 }
 
 interface State {
   role: Role;
   vehicles: Vehicle[];
   parts: Part[];
+  annunci: Annuncio[];
   orders: Order[];
   audit: AuditEvent[];
   rules: StockRule[];
@@ -76,13 +82,13 @@ interface Actions {
   setActiveVehicle: (id?: string) => void;
   addVehicle: (v: Omit<Vehicle, "id" | "createdBy" | "intakeAt">) => string;
   updateVehicle: (id: string, patch: Partial<Vehicle>, action: string, detail?: string) => void;
-  addPart: (p: Omit<Part, "id" | "createdAt" | "createdBy" | "labelPrints" | "listing">) => string;
+  addPart: (p: Omit<Part, "id" | "createdAt" | "createdBy" | "labelPrints">) => string;
   updatePart: (id: string, patch: Partial<Part>, action: string, detail?: string) => void;
   printLabel: (id: string) => void;
   setLocation: (id: string, loc: Location) => void;
   pickPart: (id: string, detail?: string) => void;
   scrapPart: (id: string, reason: string) => Result;
-  unscrapPart: (id: string, prev: Pick<Part, "status" | "location" | "listing">) => void;
+  unscrapPart: (id: string, prev: Pick<Part, "status" | "location">) => void;
   scrapPickup: (partIds: string[], kg: number, eurPerKg: number, buyer: string) => Result<string>;
   setPartStatus: (id: string, status: PartStatus, reason?: string) => void;
   publish: (id: string) => Result;
@@ -126,7 +132,7 @@ interface Actions {
 const now = () => new Date().toISOString();
 
 // Chiave dei dati salvati: cambia quando cambia la struttura dei dati demo
-export const STORE_SCHEMA = "gestionale-demolizione-demo-v11";
+export const STORE_SCHEMA = "gestionale-demolizione-demo-v12";
 
 function initial(): State {
   const s = buildSeed();
@@ -134,6 +140,7 @@ function initial(): State {
     role: "smontatore",
     vehicles: s.vehicles,
     parts: s.parts,
+    annunci: s.annunci,
     orders: s.orders,
     audit: s.audit,
     rules: s.rules,
@@ -275,7 +282,7 @@ export const useStore = create<State & Actions>()(
         addPart: (p) => {
           const n = get().counters.part + 1;
           const id = `R-${pad(n)}`;
-          const part: Part = { ...p, id, createdAt: now(), createdBy: ROLE_USER[get().role].user, labelPrints: 0, listing: "non pubblicato" };
+          const part: Part = { ...p, id, createdAt: now(), createdBy: ROLE_USER[get().role].user, labelPrints: 0 };
           const v = get().vehicles.find((x) => x.id === p.vehicleId);
           // Il primo pezzo catalogato da un veicolo accettato ne avvia lo smontaggio
           const starts = v?.work === "accettato" && p.origin !== "inventario";
@@ -290,9 +297,7 @@ export const useStore = create<State & Actions>()(
         },
 
         updatePart: (id, patch, action, detail) => {
-          // Un pezzo pubblicato senza prezzo non può restare in vendita online
-          const unpriced = "price" in patch && !patch.price;
-          set((s) => ({ parts: s.parts.map((p) => (p.id === id ? { ...p, ...patch, ...(unpriced && p.listing === "pubblicato" ? { listing: "ritirato" as const } : {}) } : p)) }));
+          set((s) => ({ parts: s.parts.map((p) => (p.id === id ? { ...p, ...patch } : p)) }));
           push(event({ entity: "ricambio", entityId: id, action, detail }));
         },
 
@@ -329,7 +334,7 @@ export const useStore = create<State & Actions>()(
           set((s) => ({
             parts: s.parts.map((x) =>
               x.id === id
-                ? { ...x, status: "scartato" as const, listing: x.listing === "pubblicato" ? ("ritirato" as const) : x.listing, location: undefined, missingSince: undefined, scrap: { at: now(), reason, from } }
+                ? { ...x, status: "scartato" as const, location: undefined, missingSince: undefined, scrap: { at: now(), reason, from } }
                 : x,
             ),
           }));
@@ -361,8 +366,7 @@ export const useStore = create<State & Actions>()(
         setPartStatus: (id, status, reason) => {
           const p = get().parts.find((x) => x.id === id);
           if (!p) return;
-          const listing = status === "disponibile" ? p.listing : p.listing === "pubblicato" && status !== "riservato" && status !== "venduto" ? "ritirato" : p.listing;
-          set((s) => ({ parts: s.parts.map((x) => (x.id === id ? { ...x, status, listing } : x)) }));
+          set((s) => ({ parts: s.parts.map((x) => (x.id === id ? { ...x, status } : x)) }));
           push(event({ entity: "ricambio", entityId: id, action: `Stato: ${p.status} → ${status}`, detail: reason }));
         },
 
@@ -373,14 +377,31 @@ export const useStore = create<State & Actions>()(
           const v = s.vehicles.find((x) => x.id === p.vehicleId);
           const missing = publishChecks(p, v).filter((c) => !c.ok && c.blocking);
           if (missing.length) return { ok: false, error: "Scheda incompleta", conflicts: missing.map((m) => m.label) };
-          set((st) => ({ parts: st.parts.map((x) => (x.id === id ? { ...x, listing: "pubblicato" } : x)) }));
-          push(event({ entity: "ricambio", entityId: id, action: "Pubblicato sul negozio" }));
+          // Un pezzo che ha già un annuncio (ritirato) lo rimette online; altrimenti nasce un annuncio nuovo
+          const old = p.annuncioId ? s.annunci.find((a) => a.id === p.annuncioId) : undefined;
+          if (old) {
+            const stato = negozioStato({ ...old, negozio: { stato: "online" } }, quantityOf(old, s.parts)) ?? "online";
+            set((st) => ({ annunci: st.annunci.map((a) => (a.id === old.id ? { ...a, negozio: { stato } } : a)) }));
+            push(event({ entity: "ricambio", entityId: id, action: "Pubblicato sul negozio", detail: `Annuncio ${old.id}` }));
+            return { ok: true, value: undefined };
+          }
+          const n = s.counters.annuncio + 1;
+          const aid = `A-${pad(n)}`;
+          const a = buildAnnuncio([p], s.vehicles, aid, now());
+          set((st) => ({
+            annunci: [a, ...st.annunci],
+            parts: st.parts.map((x) => (x.id === id ? { ...x, annuncioId: aid } : x)),
+            counters: { ...st.counters, annuncio: n },
+          }));
+          push(event({ entity: "ricambio", entityId: id, action: "Pubblicato sul negozio", detail: `Annuncio ${aid}` }));
           return { ok: true, value: undefined };
         },
 
         unpublish: (id) => {
-          set((s) => ({ parts: s.parts.map((x) => (x.id === id ? { ...x, listing: "ritirato" } : x)) }));
-          push(event({ entity: "ricambio", entityId: id, action: "Ritirato dal negozio" }));
+          const aid = get().parts.find((x) => x.id === id)?.annuncioId;
+          if (!aid) return;
+          set((s) => ({ annunci: s.annunci.map((a) => (a.id === aid ? { ...a, negozio: { stato: "ritirato" } } : a)) }));
+          push(event({ entity: "ricambio", entityId: id, action: "Ritirato dal negozio", detail: `Annuncio ${aid}` }));
         },
 
         // Riserva atomica: controllo e cambio di stato nello stesso aggiornamento.
@@ -394,7 +415,7 @@ export const useStore = create<State & Actions>()(
           };
           const conflicts = partIds.filter((pid) => {
             const p = s.parts.find((x) => x.id === pid);
-            return !p || p.status !== "disponibile" || !priceOf(pid) || (channel !== "banco" && p.listing !== "pubblicato");
+            return !p || p.status !== "disponibile" || !priceOf(pid) || (channel !== "banco" && listingOf(p, s.annunci) !== "pubblicato");
           });
           if (conflicts.length) {
             push(event({ entity: "ordine", entityId: "—", action: "Riserva rifiutata", detail: `${conflicts.join(", ")} non disponibile (${channel})`, ...actor }));
@@ -439,7 +460,7 @@ export const useStore = create<State & Actions>()(
             orders: s.orders.map((x) => (x.id === orderId ? { ...x, status, paymentRef: success ? `PAY-DEMO-${orderId.slice(2)}` : undefined, history: [...x.history, { at, status, note: success ? "Conferma dal provider (simulata)" : "Rifiuto dal provider (simulato)" }] } : x)),
             // Venduto: esce dal negozio; pagamento fallito: torna disponibile
             parts: s.parts.map((x) =>
-              o.partIds.includes(x.id) ? { ...x, status: success ? "venduto" : "disponibile", listing: success && x.listing === "pubblicato" ? "ritirato" : x.listing } : x,
+              o.partIds.includes(x.id) ? { ...x, status: success ? "venduto" : "disponibile" } : x,
             ),
           }));
           push(
@@ -485,7 +506,7 @@ export const useStore = create<State & Actions>()(
           const at = now();
           set((s) => ({
             orders: s.orders.map((x) => (x.id === orderId ? { ...x, status: "reso", history: [...x.history, { at, status: "reso", note: "Ricambio rientrato: da ricontrollare" }] } : x)),
-            parts: s.parts.map((x) => (o.partIds.includes(x.id) ? { ...x, status: "bozza", listing: "ritirato" } : x)),
+            parts: s.parts.map((x) => (o.partIds.includes(x.id) ? { ...x, status: "bozza" } : x)),
           }));
           const inv = get().docs.find((d) => d.orderId === orderId && (d.type === "fattura" || d.type === "documento commerciale"));
           if (inv) newDoc({ type: "nota di credito", customer: inv.customer, lines: inv.lines.map((l) => ({ ...l, price: -l.price })), total: -inv.total, orderId, refDocId: inv.id, status: inv.type === "fattura" ? "inviata allo SdI" : "emesso" });
@@ -717,6 +738,11 @@ export const useStore = create<State & Actions>()(
     },
   ),
 );
+
+export { buildAnnuncio };
+
+// Stato del pezzo sul negozio, ricavato dal suo annuncio
+export const useListing = (p: Part): ListingStatus => useStore((s) => listingOf(p, s.annunci));
 
 export const useHydrated = () => {
   // gestito da <Hydrator/>

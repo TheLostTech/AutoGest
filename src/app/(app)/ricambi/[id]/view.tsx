@@ -15,6 +15,7 @@ import { ShippingChoice } from "@/components/ShippingChoice";
 import { asksShipping, isShippable } from "@/lib/spedizione";
 import { listPrice, ONLINE_FEE_PCT, onlinePrice, suggestUsedPrice } from "@/lib/pricing";
 import { savePhoto } from "@/lib/services";
+import { listingOf } from "@/lib/annunci";
 import type { Location } from "@/lib/types";
 import { PartLabel } from "@/components/PartLabel";
 import { Lifecycle } from "@/components/Lifecycle";
@@ -37,6 +38,7 @@ export default function SchedaRicambio() {
   const t = typeById(p.typeId);
   const suggestedWh = warehouseFor(t.category, t.shippable, s.warehouses);
   const pickLoc = loc ?? firstFreeSlot(suggestedWh, s.parts) ?? startLocation(suggestedWh.id, s.warehouses, s.parts);
+  const listing = listingOf(p, s.annunci);
   const checks = publishChecks(p, v);
   const blocking = checks.filter((c) => c.blocking && !c.ok);
   const history = s.audit.filter((e) => e.entityId === p.id || e.detail?.includes(p.id)).reverse();
@@ -55,7 +57,7 @@ export default function SchedaRicambio() {
     <div className="mx-auto max-w-6xl">
       <div className="mb-4 flex flex-wrap items-center gap-3 text-[15px]">
         <StatusChip status={p.status} />
-        <ListingChip listing={p.listing} />
+        <ListingChip listing={listing} />
         <span className="text-ink-3">catalogato {dateIt(p.createdAt, true)} da {p.createdBy}</span>
       </div>
 
@@ -302,7 +304,7 @@ export default function SchedaRicambio() {
                   Approva scheda
                 </Button>
               )}
-              {p.listing !== "pubblicato" ? (
+              {listing !== "pubblicato" ? (
                 <Button
                   disabled={blocking.length > 0}
                   onClick={() => {

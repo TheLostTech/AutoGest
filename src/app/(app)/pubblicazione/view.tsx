@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { publishChecks, euro } from "@/lib/logic";
+import { listingOf } from "@/lib/annunci";
 import { Button, Empty, Notice, PageTitle, Panel, PartImage, StatusChip } from "@/components/ui";
 
 export default function Pubblicazione() {
@@ -11,11 +12,11 @@ export default function Pubblicazione() {
   const [msg, setMsg] = useState("");
   const vById = new Map(s.vehicles.map((v) => [v.id, v]));
   const queue = s.parts
-    .filter((p) => (p.status === "bozza" || p.status === "disponibile") && p.listing !== "pubblicato")
+    .filter((p) => (p.status === "bozza" || p.status === "disponibile") && listingOf(p, s.annunci) !== "pubblicato")
     .map((p) => ({ p, missing: publishChecks(p, vById.get(p.vehicleId)).filter((c) => c.blocking && !c.ok) }))
     .sort((a, b) => a.missing.length - b.missing.length);
   // In blocco si pubblicano solo i pezzi mai ritirati: quelli tolti dal negozio a mano tornano online solo uno per uno
-  const ready = queue.filter((x) => x.missing.length === 0 && x.p.status === "disponibile" && x.p.listing === "non pubblicato");
+  const ready = queue.filter((x) => x.missing.length === 0 && x.p.status === "disponibile" && listingOf(x.p, s.annunci) === "non pubblicato");
 
   return (
     <div className="mx-auto max-w-6xl">

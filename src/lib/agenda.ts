@@ -198,7 +198,7 @@ export function buildAgenda(
       due: addDays(lost.map((p) => p.missingSince!).sort()[0], 3),
       roles: ["magazziniere", "responsabile"],
     });
-  const offline = parts.filter((p) => p.status === "disponibile" && p.listing === "non pubblicato");
+  const offline = parts.filter((p) => p.status === "disponibile" && !p.annuncioId);
   if (offline.length)
     items.push({
       id: "online",

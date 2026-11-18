@@ -162,7 +162,7 @@ export default function Scansione() {
   }
 
   function scarta(p: Part, reason: string) {
-    const prev = { status: p.status, location: p.location, listing: p.listing };
+    const prev = { status: p.status, location: p.location };
     const r = s.scrapPart(p.id, reason);
     setPending(null);
     if (!r.ok) {

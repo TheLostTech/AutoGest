@@ -4,7 +4,7 @@
 // Ruolo e veicolo attivo restano propri di ogni dispositivo; tutto il resto è condiviso.
 import { STORE_SCHEMA, useStore } from "./store";
 
-const PREPEND = ["vehicles", "parts", "orders", "docs", "firs"] as const;
+const PREPEND = ["vehicles", "parts", "annunci", "orders", "docs", "firs"] as const;
 const APPEND = ["audit", "wasteMoves", "inventory"] as const;
 const LISTS = [...PREPEND, ...APPEND] as const;
 const WHOLE = ["rules", "listini", "warehouses", "soggetti"] as const;
