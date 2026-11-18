@@ -184,6 +184,7 @@ export interface Part {
   side?: string;
   oem?: string;
   oemVerified: boolean;
+  spedibile?: boolean; // solo per i tipi non spedibili di serie: scelto alla creazione
   manufacturer?: string; // costruttore / fornitore primo impianto
   compat?: Compatibility;
   legacyCode?: string; // codice del gestionale precedente (magazzino migrato)

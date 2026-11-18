@@ -11,6 +11,7 @@ import { euro } from "@/lib/logic";
 import { onlinePrice } from "@/lib/pricing";
 import { platformLabel } from "@/lib/partsdb";
 import { Button, PartImage } from "@/components/ui";
+import { isShippable } from "@/lib/spedizione";
 
 export default function Prodotto() {
   const { id } = useParams<{ id: string }>();
@@ -84,7 +85,7 @@ export default function Prodotto() {
           </dl>
 
           <ul className="mt-4 space-y-2 text-[15px]">
-            <li className="flex items-center gap-2">{t.shippable ? <Truck className="size-5 text-band" aria-hidden /> : <StoreIcon className="size-5 text-band" aria-hidden />}{t.shippable ? "Spedizione con corriere (tariffe da definire)" : "Solo ritiro in sede: pezzo voluminoso"}</li>
+            <li className="flex items-center gap-2">{isShippable(p, t.shippable) ? <Truck className="size-5 text-band" aria-hidden /> : <StoreIcon className="size-5 text-band" aria-hidden />}{isShippable(p, t.shippable) ? "Spedizione con corriere (tariffe da definire)" : "Solo ritiro in sede: pezzo voluminoso"}</li>
             <li className="flex items-center gap-2"><ShieldCheck className="size-5 text-band" aria-hidden />Pezzo unico tracciato: quello che vedi è quello che ricevi</li>
           </ul>
 

@@ -9,6 +9,7 @@ import { euro } from "@/lib/logic";
 import { onlinePrice } from "@/lib/pricing";
 import { typeById } from "@/lib/catalog";
 import { Button, Field, Notice, PartImage } from "@/components/ui";
+import { isShippable } from "@/lib/spedizione";
 
 type Step = "carrello" | "pagamento" | "esito";
 
@@ -24,7 +25,7 @@ export default function Carrello() {
   const items = cart.ids.map((id) => s.parts.find((p) => p.id === id)).filter((p) => !!p);
   const total = Math.round(items.reduce((a, p) => a + (onlinePrice(p.price) ?? 0), 0) * 100) / 100;
   const blocked = items.filter((p) => p.status !== "disponibile" || p.listing !== "pubblicato");
-  const pickupOnly = items.some((p) => !typeById(p.typeId).shippable);
+  const pickupOnly = items.some((p) => !isShippable(p, typeById(p.typeId).shippable));
   const order = orderId ? s.orders.find((o) => o.id === orderId) : undefined;
 
   function placeOrder(e: React.FormEvent) {

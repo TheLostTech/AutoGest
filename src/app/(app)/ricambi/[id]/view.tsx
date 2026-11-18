@@ -11,6 +11,8 @@ import { firstFreeSlot, locLong, locToString, normLoc, warehouseFor } from "@/li
 import { LocationPicker, locComplete, startLocation } from "@/components/LocationPicker";
 import { CatalogPanel } from "@/components/CatalogPanel";
 import { catalogFor } from "@/lib/partsdb";
+import { ShippingChoice } from "@/components/ShippingChoice";
+import { asksShipping, isShippable } from "@/lib/spedizione";
 import { listPrice, ONLINE_FEE_PCT, onlinePrice, suggestUsedPrice } from "@/lib/pricing";
 import { savePhoto } from "@/lib/services";
 import type { Location } from "@/lib/types";
@@ -218,7 +220,19 @@ export default function SchedaRicambio() {
               <dt className="text-ink-3">Condizioni</dt>
               <dd><b className="code text-[18px]">{p.condition}</b> {CONDITIONS[p.condition].label}{p.defects ? ` · ${p.defects}` : ""}</dd>
               <dt className="text-ink-3">Spedizione</dt>
-              <dd>{t.shippable ? "Spedibile" : "Solo ritiro in sede"}</dd>
+              <dd>
+                {asksShipping(t.shippable) ? (
+                  <ShippingChoice
+                    value={isShippable(p, t.shippable)}
+                    onChange={(spedibile) => {
+                      s.updatePart(p.id, { spedibile }, "Spedizione modificata", spedibile ? "Spedibile con corriere" : "Solo ritiro in sede");
+                      flash("ok", "Spedizione aggiornata");
+                    }}
+                  />
+                ) : (
+                  "Spedibile"
+                )}
+              </dd>
               <dt className="text-ink-3">Prezzo</dt>
               <dd className="flex items-center gap-2">
                 <input className="field code h-11 min-h-0 w-28 text-[18px] font-bold" inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value.replace(/[^0-9]/g, ""))} aria-label="Prezzo in euro" />

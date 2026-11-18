@@ -10,6 +10,8 @@ import { savePhoto, identifyFromPhoto } from "@/lib/services";
 import { locLong, locToString, sameRipiano } from "@/lib/warehouse";
 import { Button, Empty, Field, Notice, PartImage } from "@/components/ui";
 import type { Condition, Location, Part } from "@/lib/types";
+import { ShippingChoice } from "@/components/ShippingChoice";
+import { asksShipping } from "@/lib/spedizione";
 
 export default function Page() {
   return (
@@ -172,6 +174,7 @@ function AddFound({
   const [guessing, setGuessing] = useState(false);
   const [typeId, setTypeId] = useState("");
   const [side, setSide] = useState("");
+  const [spedibile, setSpedibile] = useState(false);
   const [condition, setCondition] = useState<Condition | undefined>();
   const [box, setBox] = useState(contenitori ? "1" : "");
   // La provenienza resta tra un pezzo e l'altro: spesso sullo stesso ripiano ci sono pezzi della stessa auto
@@ -235,6 +238,7 @@ function AddFound({
       side: side || undefined,
       oem: oem.trim().toUpperCase() || undefined,
       oemVerified: false,
+      spedibile: asksShipping(t.shippable) ? spedibile : undefined,
       legacyCode: legacy.trim().toUpperCase() || undefined,
       price: price ? Number(price) : undefined,
       location: { ...loc, contenitore: contenitori ? box : undefined },
@@ -329,6 +333,8 @@ function AddFound({
         </div>
         {tried && !condition && <span className="mt-1 block text-sm font-medium text-danger">Indica le condizioni</span>}
       </div>
+
+      {t && asksShipping(t.shippable) && <ShippingChoice value={spedibile} onChange={setSpedibile} />}
 
       {/* Provenienza: tracciabilità anche per il magazzino preesistente */}
       <div>
