@@ -236,6 +236,23 @@ export const SERVIZI: Servizio[] = [
     ],
   },
   {
+    id: "ebay",
+    nome: "eBay",
+    gruppo: "consumo",
+    uso: "Vendite: annunci su eBay Italia",
+    costo: "Il Developers Program è gratuito; su eBay si pagano le commissioni di vendita",
+    accesso: "registrazione",
+    modo: "api",
+    link: { label: "eBay Developers Program", href: "https://developer.ebay.com/" },
+    nota: "Simulato finché non scegli Sandbox e inserisci le chiavi del Developers Program.",
+    campi: [
+      { key: "ambiente", label: "Ambiente", tipo: "scelta", opzioni: ["Simulato", "Sandbox"] },
+      { key: "appId", label: "App ID (Client ID)", tipo: "testo" },
+      { key: "certId", label: "Cert ID (Client Secret)", tipo: "segreto" },
+      { key: "ruName", label: "RuName (nome dell'indirizzo di ritorno)", tipo: "testo", facoltativo: true, hint: "Facoltativo con l'ambiente Simulato." },
+    ],
+  },
+  {
     id: "whatsapp",
     nome: "WhatsApp Business",
     gruppo: "consumo",

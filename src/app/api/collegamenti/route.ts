@@ -4,36 +4,11 @@
 // Chiave: variabile CHIAVE_COLLEGAMENTI (64 caratteri esadecimali) o, se manca, un file generato nella
 // cartella dati. Nel prodotto vero la chiave va in un archivio di segreti, non accanto ai dati.
 import { connection } from "next/server";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { DATA_DIR } from "@/lib/server-data";
 import { servizioById, type StatoServizio } from "@/lib/collegamenti";
 import { cifra } from "@/lib/cifratura";
+import { altroSito, load, save, MAX_TEXT, type Salvato } from "@/lib/collegamenti-server";
 
-const FILE = path.join(DATA_DIR, "collegamenti.json");
 const MAX_FILE = 64 * 1024; // un certificato .p12 pesa pochi KB
-const MAX_TEXT = 4000;
-
-interface Salvato {
-  valori: Record<string, string | string[]>;
-  segreti: Record<string, string>; // cifrati
-  file: Record<string, { nome: string; byte: number; dati: string }>; // dati cifrati
-  aggiornato?: string;
-}
-type Archivio = Record<string, Salvato>;
-
-async function load(): Promise<Archivio> {
-  try {
-    return JSON.parse(await readFile(FILE, "utf8")) as Archivio;
-  } catch {
-    return {};
-  }
-}
-
-async function save(a: Archivio) {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(FILE, JSON.stringify(a), { mode: 0o600 });
-}
 
 function pubblico(s?: Salvato): StatoServizio {
   return {
@@ -45,19 +20,6 @@ function pubblico(s?: Salvato): StatoServizio {
 }
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
-
-// Nessun login vero nel prototipo: chiunque raggiunga il server può chiamare questa API.
-// Intanto si bloccano le richieste partite da pagine di altri siti (il browser manda sempre Origin
-// su PUT e DELETE). Prima della produzione: login con ruolo responsabile verificato qui sul server.
-function altroSito(req: Request) {
-  const origin = req.headers.get("origin");
-  if (!origin) return false;
-  try {
-    return new URL(origin).host !== req.headers.get("host");
-  } catch {
-    return true;
-  }
-}
 
 // Campi che dicono dove mandare le credenziali: se cambiano, la password salvata va reinserita,
 // così nessuno può dirottarla verso un altro indirizzo senza conoscerla

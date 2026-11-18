@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "postinstall": "node -e \"require('fs').mkdirSync('public/zxing',{recursive:true});require('fs').copyFileSync('node_modules/zxing-wasm/dist/reader/zxing_reader.wasm','public/zxing/zxing_reader.wasm')\"",
-    "test": "node --test src/lib/*.test.ts"
+    "test": "node --test src/lib/*.test.ts src/lib/ebay/*.test.ts"
   },
   "dependencies": {
     "barcode-detector": "3.2.3",
