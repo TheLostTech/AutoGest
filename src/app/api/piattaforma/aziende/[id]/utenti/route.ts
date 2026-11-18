@@ -1,11 +1,10 @@
 // Utenti di un'azienda: elenco e creazione (con richiesta scritta). Solo super admin.
-import { randomBytes } from "node:crypto";
 import { connection } from "next/server";
 import { superadminDaRichiesta } from "@/lib/accesso/server";
 import { RUOLI, RUOLO_LABEL, ruoliAStringa, ruoliDaStringa } from "@/lib/accesso/ruoli";
 import { pinValido } from "@/lib/accesso/pin";
 import { richiestaObbligatoria } from "@/lib/accesso/richieste";
-import { impostaPin } from "@/lib/auth/pin-dispositivo";
+import { creaMembro } from "@/lib/piattaforma/crea";
 import { aggiungiRichiesta, elencoRichieste } from "@/lib/piattaforma/richieste-file";
 import { descrizioneRichiesta, EMAIL, richiestaDaCorpo, ruoliDaCorpo } from "@/lib/piattaforma/utenti";
 import { AVVISO_REGISTRO, aziendaEsiste, contesto, daAltroSito, errore, leggiJson, ok, registra, testo } from "@/lib/piattaforma/server";
@@ -79,28 +78,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const c = await contesto();
   if (conEmail && (await c.internalAdapter.findUserByEmail(emailIn))) return errore(409, "Esiste già una persona con questa email.");
 
-  // Chi entra solo con il PIN ha un'email interna (mai raggiungibile) e nessuna password
-  const provvisoria = `nuovo-${randomBytes(8).toString("hex")}@pin.invalid`;
-  const utente = await c.internalAdapter.createUser({ name: nome, email: conEmail ? emailIn : provvisoria, emailVerified: conEmail ? false : true }, { method: "admin" });
+  let userId: string;
   try {
-    if (!conEmail) await c.internalAdapter.updateUser(utente.id, { email: `${utente.id}@pin.invalid` });
-    if (conEmail) {
-      await c.internalAdapter.linkAccount({ userId: utente.id, providerId: "credential", accountId: utente.id, password: await c.password.hash(passwordIn) });
-    }
-    await c.adapter.create({ model: "member", data: { organizationId: id, userId: utente.id, role: ruoliAStringa(ruoli), createdAt: new Date() } });
-    if (pinIn) await impostaPin(c, utente.id, id, pinIn);
-    if (r.richiesta) {
-      await aggiungiRichiesta(id, { userId: utente.id, azione: "Utente creato", quando: new Date().toISOString(), autore: g.utente.nome, ...r.richiesta });
-    }
+    userId = await creaMembro(c, id, { nome, ruoli, ...(conEmail ? { email: emailIn, password: passwordIn } : {}), ...(pinIn ? { pin: pinIn } : {}) }, async (uid) => {
+      if (r.richiesta) {
+        await aggiungiRichiesta(id, { userId: uid, azione: "Utente creato", quando: new Date().toISOString(), autore: g.utente.nome, ...r.richiesta });
+      }
+    });
   } catch (e) {
-    // Niente utenti a metà: si toglie tutto quello che è stato creato
-    await c.adapter.delete({ model: "member", where: [{ field: "userId", value: utente.id }] }).catch(() => undefined);
-    await c.adapter.delete({ model: "pinUtente", where: [{ field: "userId", value: utente.id }] }).catch(() => undefined);
-    await c.adapter.delete({ model: "account", where: [{ field: "userId", value: utente.id }] }).catch(() => undefined);
-    await c.adapter.delete({ model: "user", where: [{ field: "id", value: utente.id }] }).catch(() => undefined);
     console.error("Creazione utente non riuscita", e);
     return errore(500, "Non riesco a creare l'utente. Riprova.");
   }
+  const utente = { id: userId };
 
   const modo = [conEmail ? "email e password" : "", pinIn ? "PIN" : ""].filter(Boolean).join(" + ");
   const scritto = await registra(id, g.utente.nome, {

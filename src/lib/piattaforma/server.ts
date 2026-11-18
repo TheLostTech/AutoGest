@@ -2,6 +2,7 @@ import type { AuthContext } from "better-auth";
 import { auth } from "@/lib/auth/server";
 import { aggiungiEventi, type NuovoEvento } from "@/lib/archivio-azienda";
 import { altroSito, richiestaDellApp } from "@/lib/collegamenti-server";
+import { rispostaNonPronta } from "@/lib/accesso/pronta";
 import { idAziendaValido } from "@/lib/accesso/id-azienda";
 
 // Funzioni comuni delle route /api/piattaforma/*: tutte per il super admin, mai per le aziende.
@@ -49,6 +50,8 @@ export function eSuperadmin(role: string | null | undefined): boolean {
 
 /** Sessione con password di un super admin, anche prima del codice dal telefono (serve alla pagina Sicurezza). */
 export async function superadminBase(req: Request) {
+  const nonPronta = rispostaNonPronta();
+  if (nonPronta) return { risposta: nonPronta };
   const dati = await auth.api.getSession({ headers: req.headers, query: { disableCookieCache: true, disableRefresh: true } });
   if (!dati) return { risposta: errore(401, "Accedi per continuare.", "nessuna-sessione") };
   const { session, user } = dati;

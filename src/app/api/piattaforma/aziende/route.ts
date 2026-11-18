@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { connection } from "next/server";
 import { superadminDaRichiesta } from "@/lib/accesso/server";
 import { creaStatoAzienda } from "@/lib/archivio-azienda";
+import { creaAzienda } from "@/lib/piattaforma/crea";
 import { statoVuoto } from "@/lib/stato-iniziale";
 import { DEFAULT_LISTINI } from "@/lib/pricing";
 import { WAREHOUSES } from "@/lib/warehouse";
@@ -52,11 +53,7 @@ export async function POST(req: Request) {
   const nome = testo(corpo?.nome, 2, 80);
   if (!nome) return errore(400, "Scrivi il nome dell'azienda (da 2 a 80 caratteri).");
   const c = await contesto();
-  // Creata dall'adapter: il super admin non diventa mai membro (né proprietario) dell'azienda.
-  const org = await c.adapter.create<Record<string, unknown>, { id: string; name: string }>({
-    model: "organization",
-    data: { name: nome, slug: slugDa(nome), createdAt: new Date(), metadata: JSON.stringify({ demo: false }) },
-  });
+  const org = await creaAzienda(c, nome, slugDa(nome), false);
   // Archivio vuoto: tutte le liste a zero, nessun dato demo
   await creaStatoAzienda(org.id, statoVuoto({ listini: DEFAULT_LISTINI, warehouses: WAREHOUSES }));
   const scritto = await registra(org.id, g.utente.nome, { entity: "sistema", entityId: org.id, action: "Azienda creata", detail: nome });

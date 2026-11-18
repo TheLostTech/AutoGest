@@ -1,6 +1,7 @@
 // Negozio pubblico, lato server: quale azienda vende online e come si leggono le richieste dei visitatori. Solo server.
 import type { AuthContext } from "better-auth";
 import { auth } from "@/lib/auth/server";
+import { rispostaNonPronta } from "@/lib/accesso/pronta";
 import { idAziendaValido } from "@/lib/accesso/id-azienda";
 import { richiestaDellApp } from "@/lib/collegamenti-server";
 
@@ -28,6 +29,7 @@ const eDemo = (metadata: unknown): boolean => {
  */
 export async function datiNegozio(): Promise<DatiNegozio | null> {
   const c = g.__aziendaNegozio;
+  if (rispostaNonPronta()) return null; // avvio non riuscito: come senza negozio (catalogo vuoto, ordini 503)
   if (c && c.fino > Date.now()) return c.dati;
   let dati: DatiNegozio | null = null;
   try {

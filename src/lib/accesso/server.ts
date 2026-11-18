@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth/server";
 import { richiestaPassiva } from "./attivita";
+import { rispostaNonPronta } from "./pronta";
 import type { Role } from "@/lib/types";
 import {
   decidiAccesso,
@@ -56,6 +57,8 @@ function aziendaVista(o: { id: string; name: string; metadata?: unknown } | null
 }
 
 export async function accessoDaRichiesta(req: Request, opzioni: { attivitaAlle?: number } = {}): Promise<Accesso | Response> {
+  const nonPronta = rispostaNonPronta();
+  if (nonPronta) return nonPronta;
   const dati = await leggiSessione(req);
   const ora = Date.now();
   if (!dati) return negata(401, "nessuna-sessione");
@@ -166,6 +169,8 @@ export function soloRuoli(a: Accesso, ...r: Role[]): Response | null {
 }
 
 export async function superadminDaRichiesta(req: Request): Promise<{ utente: { id: string; nome: string } } | Response> {
+  const nonPronta = rispostaNonPronta();
+  if (nonPronta) return nonPronta;
   const dati = await leggiSessione(req);
   if (!dati) return negata(401, "nessuna-sessione");
   const { session, user } = dati;
