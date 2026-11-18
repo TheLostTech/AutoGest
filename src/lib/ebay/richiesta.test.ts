@@ -1,31 +1,23 @@
 // Richiesta per eBay costruita da un annuncio. Si eseguono con: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { richiestaPer } from "./richiesta.ts";
+import { richiestaPer, type ContestoRichiesta } from "./richiesta.ts";
 import { onlinePrice } from "../pricing.ts";
-import type { Annuncio, Part } from "../types.ts";
+import type { Annuncio } from "../types.ts";
 
-let n = 0;
-function part(over: Partial<Part> = {}): Part {
-  n += 1;
-  return {
-    id: `R-${String(n).padStart(6, "0")}`, vehicleId: "V-1", typeId: "faro", description: "Faro", condition: "B",
-    status: "disponibile", oem: "50510123A", oemVerified: true, photos: [`/f/${n}.jpg`], labelPrints: 0, price: 90,
-    annuncioId: "A-000001", createdAt: `2026-01-0${(n % 9) + 1}T10:00:00.000Z`, createdBy: "t", ...over,
-  };
-}
 function annuncio(over: Partial<Annuncio> = {}): Annuncio {
   return {
     id: "A-000001", typeId: "faro", condition: "B", spedibile: true, price: 95, titolo: "Faro anteriore", descrizione: "Ottimo",
     testoModificato: false, caratteristiche: { Marca: "Fiat" }, gpsr: { tipo: "esente" }, createdAt: "2026-01-01T10:00:00.000Z", ...over,
   };
 }
-const richiesta = (a: Annuncio, parts: Part[], shippable = true) =>
-  richiestaPer(a, parts, shippable, (b) => onlinePrice(b) as number);
+const ctx = (over: Partial<ContestoRichiesta> = {}): ContestoRichiesta => ({
+  quantita: 1, foto: ["/uno.jpg"], compatibilita: [], categoriaQuery: "faro anteriore", typeShippable: true, ...over,
+});
+const richiesta = (a: Annuncio, c: ContestoRichiesta = ctx()) => richiestaPer(a, c, (b) => onlinePrice(b) as number);
 
 test("prezzo online con l'8%", () => {
-  const p = part({ photos: ["/uno.jpg"] });
-  const r = richiesta(annuncio({ price: 95 }), [p]);
+  const r = richiesta(annuncio({ price: 95 }));
   assert.equal(r.prezzo, 102.6);
   assert.equal(r.sku, "A-000001");
   assert.equal(r.quantita, 1);
@@ -33,28 +25,31 @@ test("prezzo online con l'8%", () => {
 });
 
 test("a zero pezzi la richiesta resta attiva con quantità 0", () => {
-  const nuovo = part({ status: "venduto", photos: ["/ultimo.jpg"], createdAt: "2026-03-01T10:00:00.000Z" });
-  const vecchio = part({ status: "venduto", photos: ["/vecchio.jpg"], createdAt: "2026-02-01T10:00:00.000Z" });
-  const r = richiesta(annuncio(), [vecchio, nuovo]);
+  const r = richiesta(annuncio(), ctx({ quantita: 0, foto: ["/ultimo.jpg"] }));
   assert.equal(r.quantita, 0);
   assert.equal(r.attivo, true);
   assert.deepEqual(r.foto, ["/ultimo.jpg"]);
 });
 
 test("annuncio ritirato su eBay → attivo false", () => {
-  const a = annuncio({ ebay: { stato: "ritirato", daRiallineare: true } });
-  assert.equal(richiesta(a, [part()]).attivo, false);
+  assert.equal(richiesta(annuncio({ ebay: { stato: "ritirato", daRiallineare: true } })).attivo, false);
 });
 
 test("categoria già scelta e condizione passano nella richiesta", () => {
-  const a = annuncio({ ebay: { stato: "online", daRiallineare: false, categoria: { id: "33710", nome: "Fari" } } });
-  const r = richiesta(a, [part()]);
+  const r = richiesta(annuncio({ ebay: { stato: "online", daRiallineare: false, categoria: { id: "33710", nome: "Fari" } } }));
   assert.equal(r.categoriaId, "33710");
   assert.equal(r.condizione, "B");
 });
 
+test("compatibilità e categoriaQuery del contesto passano invariate", () => {
+  const compatibilita = [{ marca: "Fiat", modello: "Panda", anno: 2015 }];
+  const r = richiesta(annuncio(), ctx({ compatibilita, categoriaQuery: "faro fanale anteriore" }));
+  assert.deepEqual(r.compatibilita, compatibilita);
+  assert.equal(r.categoriaQuery, "faro fanale anteriore");
+});
+
 test("spedizione", () => {
-  assert.equal(richiesta(annuncio({ spedibile: true }), [part()], false).spedizione, "voluminoso");
-  assert.equal(richiesta(annuncio({ spedibile: false }), [part()], false).spedizione, "ritiro");
-  assert.equal(richiesta(annuncio({ typeId: "alternatore" }), [part({ typeId: "alternatore" })], true).spedizione, "corriere");
+  assert.equal(richiesta(annuncio({ spedibile: true }), ctx({ typeShippable: false })).spedizione, "voluminoso");
+  assert.equal(richiesta(annuncio({ spedibile: false }), ctx({ typeShippable: false })).spedizione, "ritiro");
+  assert.equal(richiesta(annuncio({ typeId: "alternatore" }), ctx({ typeShippable: true })).spedizione, "corriere");
 });
