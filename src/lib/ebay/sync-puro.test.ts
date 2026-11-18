@@ -47,3 +47,37 @@ test("esito buono azzera errore e segno, e salva quantità e prezzo inviati", ()
   assert.equal(e.listingId, "SIM-A-1");
   assert.equal(e.aggiornatoAt, "2026-02-01T00:00:00Z");
 });
+
+const esitoOnline = { stato: "online" as const, listingId: "L1", url: "/u", avvisi: [] };
+
+test("una risposta vecchia non cancella un ritiro fatto nel frattempo", () => {
+  const e = applyEsito(ann("A-1", { daRiallineare: true, stato: "ritirato", listingId: "L1" }), esitoOnline, { quantita: 1, prezzo: 1, attivo: true }, "T");
+  assert.equal(e.stato, "ritirato");
+  assert.equal(e.daRiallineare, true);
+  assert.equal(e.listingId, "L1");
+});
+
+test("una risposta di ritiro non cancella una ripubblicazione fatta nel frattempo", () => {
+  const e = applyEsito(ann("A-1", { daRiallineare: true, stato: "in pubblicazione", listingId: "L1" }), { stato: "ritirato", avvisi: [] }, { quantita: 1, prezzo: 1, attivo: false }, "T");
+  assert.equal(e.stato, "in pubblicazione");
+  assert.equal(e.daRiallineare, true);
+});
+
+test("ritiro confermato senza cambi: ritirato e allineato", () => {
+  const e = applyEsito(ann("A-1", { daRiallineare: true, stato: "ritirato", listingId: "L1" }), { stato: "ritirato", avvisi: [] }, { quantita: 1, prezzo: 1, attivo: false }, "T");
+  assert.equal(e.stato, "ritirato");
+  assert.equal(e.daRiallineare, false);
+});
+
+test("un errore su un annuncio già online ne tiene lo stato e salva l'errore", () => {
+  const e = applyEsito(ann("A-1", { daRiallineare: true, stato: "online", listingId: "L1" }), { stato: "errore", avvisi: [], errore: "eBay non risponde" }, { quantita: 1, prezzo: 1, attivo: true }, "T");
+  assert.equal(e.stato, "online");
+  assert.equal(e.errore, "eBay non risponde");
+  assert.equal(e.daRiallineare, true);
+});
+
+test("se l'annuncio è cambiato durante la richiesta resta da riallineare", () => {
+  const e = applyEsito(ann("A-1", { daRiallineare: true, stato: "online", listingId: "L1" }), esitoOnline, { quantita: 1, prezzo: 1, attivo: true }, "T", true);
+  assert.equal(e.daRiallineare, true);
+  assert.equal(e.stato, "online");
+});

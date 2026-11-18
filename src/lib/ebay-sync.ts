@@ -20,6 +20,8 @@ const ULTIMO_CONTROLLO = "ebay-vendite-ultimo-controllo";
 
 // Una sola sincronizzazione alla volta per scheda. Altre schede o dispositivi possono mandare lo stesso annuncio: il ponte è idempotente.
 let inCorso = false;
+// Un cambiamento arrivato mentre un giro è in corso: a fine giro se ne fa un altro
+let ripeti = false;
 // Ultima richiesta andata in errore per annuncio: non si rimanda uguale finché non cambia o scatta il giro dei 60 secondi
 const ultimoErrore = new Map<string, string>();
 
@@ -52,7 +54,10 @@ async function manda(r: RichiestaAllinea): Promise<EsitoAllinea | undefined> {
 }
 
 export async function riallinea(force = false): Promise<void> {
-  if (inCorso) return;
+  if (inCorso) {
+    ripeti = true;
+    return;
+  }
   inCorso = true;
   try {
     const tentati = new Set<string>();
@@ -72,6 +77,10 @@ export async function riallinea(force = false): Promise<void> {
     }
   } finally {
     inCorso = false;
+  }
+  if (ripeti) {
+    ripeti = false;
+    await riallinea(false);
   }
 }
 
@@ -101,11 +110,15 @@ export async function controllaVendite(): Promise<{ ok: boolean; nuove: number; 
     const { vendite } = (await res.json()) as { vendite: VenditaEbay[] };
     const st = useStore.getState();
     let nuove = 0;
+    let fallite = 0;
     for (const v of vendite) {
       const gia = useStore.getState().orders.some((o) => o.ebayOrderId === v.orderId);
       const r = st.importEbaySale(v);
-      if (r.ok && !gia) nuove++;
+      if (!r.ok) fallite++;
+      else if (!gia) nuove++;
     }
+    // Se una vendita non si è importata, la data non avanza: al prossimo controllo si riprova (le già importate si ignorano)
+    if (fallite > 0) return { ok: false, nuove, errore: `${fallite} ${fallite === 1 ? "vendita" : "vendite"} eBay non importate` };
     try {
       localStorage.setItem(ULTIMO_CONTROLLO, prima);
     } catch {}
@@ -146,10 +159,12 @@ export function useEbaySync(): void {
       if (s.annunci !== prev.annunci) presto();
     });
     const giro = setInterval(() => void riallinea(true), OGNI_MS);
-    const vendite = setInterval(async () => {
+    const controlloAutomatico = async () => {
       const p = await statoPonte();
       if (attivo && p?.modo === "Sandbox" && p.collegato) void controllaVendite();
-    }, VENDITE_OGNI_MS);
+    };
+    void controlloAutomatico();
+    const vendite = setInterval(() => void controlloAutomatico(), VENDITE_OGNI_MS);
     return () => {
       attivo = false;
       clearTimeout(t);

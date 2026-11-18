@@ -19,23 +19,29 @@ export function nextToSync(annunci: Annuncio[]): Annuncio | undefined {
   return da.find((a) => !a.ebay?.errore) ?? da[0];
 }
 
-/** Il nuovo stato eBay dell'annuncio dopo la risposta del ponte. In errore resta da riallineare. */
-export function applyEsito(a: Annuncio, esito: EsitoAllinea, inviato: Inviato, at: string): AnnuncioEbay {
+/**
+ * Il nuovo stato eBay dell'annuncio dopo la risposta del ponte. In errore resta da riallineare.
+ * `cambiato`: nel frattempo l'annuncio è cambiato (quantità, prezzo, titolo) rispetto alla richiesta.
+ * Se è cambiato il ritiro/ripubblicazione, lo stato di adesso vince sulla risposta a una richiesta vecchia.
+ */
+export function applyEsito(a: Annuncio, esito: EsitoAllinea, inviato: Inviato, at: string, cambiato = false): AnnuncioEbay {
   const prev: AnnuncioEbay = a.ebay ?? { stato: "non pubblicato", daRiallineare: true };
   if (esito.stato === "errore") {
     return {
       ...prev,
-      // Un ritiro fallito resta un ritiro: al giro dopo non deve rimettere l'annuncio online
-      stato: prev.stato === "ritirato" ? "ritirato" : "errore",
+      // Un ritiro fallito resta un ritiro; un annuncio già online resta com'era, con l'errore accanto
+      stato: prev.stato === "ritirato" || prev.listingId ? prev.stato : "errore",
       daRiallineare: true,
       errore: esito.errore || "eBay ha rifiutato l'annuncio",
       avvisi: esito.avvisi,
       aggiornatoAt: at,
     };
   }
+  const attivoOra = prev.stato !== "ritirato";
+  const attivoCambiato = inviato.attivo !== undefined && inviato.attivo !== attivoOra;
   return {
-    stato: esito.stato,
-    daRiallineare: false,
+    stato: attivoCambiato ? prev.stato : esito.stato,
+    daRiallineare: attivoCambiato || cambiato,
     listingId: esito.listingId ?? prev.listingId,
     url: esito.url ?? prev.url,
     categoria: esito.categoria ?? prev.categoria,

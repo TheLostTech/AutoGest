@@ -770,21 +770,21 @@ export const useStore = create<State & Actions>()(
           const st0 = get();
           const a = st0.annunci.find((x) => x.id === annuncioId);
           if (!a?.ebay) return;
-          const prevStato = a.ebay.stato;
+          const prevListingId = a.ebay.listingId;
           const prevErrore = a.ebay.errore;
           const cambiato =
             quantityOf(a, st0.parts) !== inviato.quantita ||
             onlinePrice(a.price) !== inviato.prezzo ||
             (inviato.attivo !== undefined && inviato.attivo !== (a.ebay.stato !== "ritirato")) ||
             (inviato.titolo !== undefined && inviato.titolo !== a.titolo);
-          const next = applyEsito(a, esito, inviato, now());
-          const ebay = cambiato && esito.stato !== "errore" ? { ...next, daRiallineare: true } : next;
+          const ebay = applyEsito(a, esito, inviato, now(), cambiato);
           set((st) => ({ annunci: st.annunci.map((x) => (x.id === annuncioId ? { ...x, ebay } : x)) }));
           if (esito.stato === "errore") {
             if (prevErrore !== ebay.errore) push(annuncioEvent(annuncioId, "Errore eBay", ebay.errore, EBAY_ACTOR));
-          } else if (prevStato !== ebay.stato) {
-            if (ebay.stato === "ritirato") push(annuncioEvent(annuncioId, "Ritirato da eBay", undefined, EBAY_ACTOR));
-            else if (prevStato === "in pubblicazione" || prevStato === "errore") push(annuncioEvent(annuncioId, "Pubblicato su eBay", ebay.listingId, EBAY_ACTOR));
+          } else if (inviato.attivo === false && esito.stato === "ritirato" && !ebay.daRiallineare) {
+            push(annuncioEvent(annuncioId, "Ritirato da eBay", undefined, EBAY_ACTOR));
+          } else if (!prevListingId && ebay.listingId && esito.stato !== "ritirato") {
+            push(annuncioEvent(annuncioId, "Pubblicato su eBay", ebay.listingId, EBAY_ACTOR));
           }
         },
 
