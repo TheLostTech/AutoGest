@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { buildSeed, pad } from "./seed";
+import { STORE_SCHEMA } from "./schema";
 import { locToString, originLabel, WAREHOUSES, type Warehouse } from "./warehouse";
 import { eerByCode, movesForBonifica, movesForIntake, stockByEer } from "./ambiente";
 import { differenzaPesata } from "./stime";
@@ -154,7 +155,7 @@ const now = () => new Date().toISOString();
 const EBAY_ACTOR: Actor = { user: "Connettore eBay", role: "sistema", device: "Ponte eBay" };
 
 // Chiave dei dati salvati: cambia quando cambia la struttura dei dati demo
-export const STORE_SCHEMA = "gestionale-demolizione-demo-v12";
+export { STORE_SCHEMA }; // definito in schema.ts, usato anche dal server
 
 function initial(): State {
   const s = buildSeed();

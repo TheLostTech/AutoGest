@@ -2,6 +2,7 @@
 // Il ritorno arriva su /api/ebay/ritorno, l'indirizzo collegato al RuName nel portale eBay Developers
 // (deve essere l'indirizzo HTTPS del tunnel del prototipo: eBay non accetta http né localhost).
 import { connection } from "next/server";
+import { accessoDaRichiesta } from "@/lib/accesso/server";
 import { altroSito } from "@/lib/collegamenti-server";
 import { avviaCollegamento, scollega } from "@/lib/ebay/sandbox";
 import type { CodiceCollegamento } from "@/lib/ebay/codici";
@@ -14,8 +15,10 @@ const errore = (codice: CodiceCollegamento) => vaiA(`/impostazioni/collegamenti?
 
 export async function GET(req: Request) {
   await connection();
+  const a = await accessoDaRichiesta(req);
+  if (a instanceof Response) return a;
   if (altroSito(req)) return json({ error: "Richiesta da un altro sito" }, 403);
-  const cred = await credenzialiSandbox();
+  const cred = await credenzialiSandbox(a.azienda.id);
   if (!cred) return errore("chiavi");
   try {
     return vaiA(await avviaCollegamento(cred));
@@ -27,6 +30,8 @@ export async function GET(req: Request) {
 
 export async function DELETE(req: Request) {
   await connection();
+  const a = await accessoDaRichiesta(req);
+  if (a instanceof Response) return a;
   if (altroSito(req)) return json({ error: "Richiesta da un altro sito" }, 403);
   await scollega();
   return json({ ok: true });

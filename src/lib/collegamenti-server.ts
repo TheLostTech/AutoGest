@@ -2,10 +2,10 @@
 // Lo usano la route /api/collegamenti e il ponte eBay (le route Next non possono esportare altro che gli handler).
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DATA_DIR } from "@/lib/server-data";
+import { cartellaAzienda } from "@/lib/server-data";
 import { decifra } from "@/lib/cifratura";
 
-const FILE = path.join(DATA_DIR, "collegamenti.json");
+const file = (aziendaId: string) => path.join(cartellaAzienda(aziendaId), "collegamenti.json");
 export const MAX_TEXT = 4000;
 
 export interface Salvato {
@@ -16,22 +16,22 @@ export interface Salvato {
 }
 export type Archivio = Record<string, Salvato>;
 
-export async function load(): Promise<Archivio> {
+export async function load(aziendaId: string): Promise<Archivio> {
   try {
-    return JSON.parse(await readFile(FILE, "utf8")) as Archivio;
+    return JSON.parse(await readFile(file(aziendaId), "utf8")) as Archivio;
   } catch {
     return {};
   }
 }
 
-export async function save(a: Archivio) {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(FILE, JSON.stringify(a), { mode: 0o600 });
+export async function save(aziendaId: string, a: Archivio) {
+  await mkdir(cartellaAzienda(aziendaId), { recursive: true });
+  await writeFile(file(aziendaId), JSON.stringify(a), { mode: 0o600 });
 }
 
 /** Valori salvati di un servizio più i segreti decifrati. Mai da mandare al browser. */
-export async function leggiValori(id: string): Promise<Record<string, string | string[]>> {
-  const s = (await load())[id];
+export async function leggiValori(aziendaId: string, id: string): Promise<Record<string, string | string[]>> {
+  const s = (await load(aziendaId))[id];
   const out: Record<string, string | string[]> = { ...(s?.valori ?? {}) };
   for (const [k, v] of Object.entries(s?.segreti ?? {})) {
     try {
@@ -43,9 +43,8 @@ export async function leggiValori(id: string): Promise<Record<string, string | s
   return out;
 }
 
-// Nessun login vero nel prototipo: chiunque raggiunga il server può chiamare questa API.
-// Intanto si bloccano le richieste partite da pagine di altri siti (il browser manda sempre Origin
-// su PUT e DELETE). Prima della produzione: login con ruolo responsabile verificato qui sul server.
+// Il login e il ruolo si controllano nelle route (accessoDaRichiesta). In più si bloccano le richieste partite da pagine di altri siti (il browser manda sempre Origin
+// su PUT e DELETE).
 export function altroSito(req: Request) {
   const origin = req.headers.get("origin");
   if (!origin) return false;

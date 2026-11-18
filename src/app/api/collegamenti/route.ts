@@ -4,6 +4,7 @@
 // Chiave: variabile CHIAVE_COLLEGAMENTI (64 caratteri esadecimali) o, se manca, un file generato nella
 // cartella dati. Nel prodotto vero la chiave va in un archivio di segreti, non accanto ai dati.
 import { connection } from "next/server";
+import { accessoDaRichiesta, soloRuoli } from "@/lib/accesso/server";
 import { servizioById, type StatoServizio } from "@/lib/collegamenti";
 import { cifra } from "@/lib/cifratura";
 import { altroSito, load, save, MAX_TEXT, type Salvato } from "@/lib/collegamenti-server";
@@ -25,9 +26,11 @@ const json = (body: unknown, status = 200) => Response.json(body, { status, head
 // così nessuno può dirottarla verso un altro indirizzo senza conoscerla
 const INDIRIZZI = ["endpoint"];
 
-export async function GET() {
+export async function GET(req: Request) {
   await connection();
-  const a = await load();
+  const acc = await accessoDaRichiesta(req);
+  if (acc instanceof Response) return acc;
+  const a = await load(acc.azienda.id);
   return json(Object.fromEntries(Object.entries(a).map(([id, s]) => [id, pubblico(s)])));
 }
 
@@ -39,17 +42,32 @@ interface Modifica {
   togli?: string[]; // segreti o file da cancellare
 }
 
-let lock: Promise<unknown> = Promise.resolve();
+// Un blocco per azienda: le modifiche della stessa azienda vanno in fila
+const blocchi = new Map<string, Promise<unknown>>();
+function inFila<T>(aziendaId: string, fn: () => Promise<T>): Promise<T> {
+  const run = (blocchi.get(aziendaId) ?? Promise.resolve()).then(fn);
+  blocchi.set(aziendaId, run.catch(() => undefined));
+  return run;
+}
+
+async function soloResponsabile(req: Request) {
+  const acc = await accessoDaRichiesta(req);
+  if (acc instanceof Response) return acc;
+  return soloRuoli(acc, "responsabile") ?? acc;
+}
 
 export async function PUT(req: Request) {
+  const acc = await soloResponsabile(req);
+  if (acc instanceof Response) return acc;
   if (altroSito(req)) return json({ error: "Richiesta da un altro sito" }, 403);
   const body = (await req.json().catch(() => null)) as Modifica | null;
   const serv = body && servizioById(String(body.id));
   if (!body || !serv) return json({ error: "Servizio sconosciuto" }, 400);
   const campo = (k: string) => serv.campi.find((c) => c.key === k);
 
-  const run = lock.then(async () => {
-    const a = await load();
+  const aid = acc.azienda.id;
+  const run = inFila(aid, async () => {
+    const a = await load(aid);
     const s: Salvato = a[serv.id] ?? { valori: {}, segreti: {}, file: {} };
 
     const nuoviSegreti = Object.values(body.segreti ?? {}).some((v) => typeof v === "string" && v);
@@ -87,10 +105,9 @@ export async function PUT(req: Request) {
     }
     s.aggiornato = new Date().toISOString();
     a[serv.id] = s;
-    await save(a);
+    await save(aid, a);
     return pubblico(s);
   });
-  lock = run.catch(() => undefined);
   try {
     return json(await run);
   } catch (e) {
@@ -100,15 +117,16 @@ export async function PUT(req: Request) {
 
 // Scollega: cancella tutti i dati salvati del servizio
 export async function DELETE(req: Request) {
+  const acc = await soloResponsabile(req);
+  if (acc instanceof Response) return acc;
   if (altroSito(req)) return json({ error: "Richiesta da un altro sito" }, 403);
   const id = new URL(req.url).searchParams.get("id") ?? "";
   if (!servizioById(id)) return json({ error: "Servizio sconosciuto" }, 400);
-  const run = lock.then(async () => {
-    const a = await load();
+  const aid = acc.azienda.id;
+  await inFila(aid, async () => {
+    const a = await load(aid);
     delete a[id];
-    await save(a);
+    await save(aid, a);
   });
-  lock = run.catch(() => undefined);
-  await run;
   return json({ ok: true });
 }
