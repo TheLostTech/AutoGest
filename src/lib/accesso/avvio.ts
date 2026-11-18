@@ -71,8 +71,11 @@ async function copiaDatiStorici(aziendaId: string): Promise<boolean> {
     const da = path.join(DATA_DIR, f);
     if ((await esiste(da)) && !(await esiste(path.join(dest, f)))) await copyFile(da, path.join(dest, f));
   }
-  const foto = path.join(DATA_DIR, "foto");
-  if (await esiste(foto)) await cp(foto, path.join(dest, "foto"), { recursive: true, force: false, errorOnExist: false });
+  // Foto e PDF delle visure PRA (questi ultimi dalla visura vera arrivata prima del login)
+  for (const d of ["foto", "visure"]) {
+    const da = path.join(DATA_DIR, d);
+    if (await esiste(da)) await cp(da, path.join(dest, d), { recursive: true, force: false, errorOnExist: false });
+  }
   await writeFile(path.join(dest, MARCATORE), new Date().toISOString());
   return copiato;
 }

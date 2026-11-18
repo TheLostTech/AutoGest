@@ -98,7 +98,7 @@ export function buildAgenda(
         id: `pratica-${v.id}`,
         kind: "pratica",
         title: `Completa la presa in carico di ${v.id}`,
-        detail: `${name(v)} · ${!v.conferente ? "chi consegna e documenti da registrare" : !v.visura ? "visura PRA da fare" : !identOk(v) ? "manca il telaio verificato" : "CRD da generare"}`,
+        detail: `${name(v)} · ${!v.conferente ? "chi consegna e documenti da registrare" : !v.visura ? (v.visuraRichiesta ? (v.visuraRichiesta.pdf ? "visura PRA arrivata: esito da registrare" : "visura PRA richiesta, in attesa del PDF") : "visura PRA da fare") : !identOk(v) ? "manca il telaio verificato" : "CRD da generare"}`,
         action: "Apri pratica",
         href: `/veicoli/${v.id}#pratica`,
         due: addDays(v.intakeAt, TERMS.registraPratica),

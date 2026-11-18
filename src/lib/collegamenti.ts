@@ -1,7 +1,7 @@
 // Impostazioni → Collegamenti: i servizi esterni del gestionale e cosa serve per collegarli.
 // Usato sia dalla pagina sia dal server (che accetta solo i campi elencati qui).
-// Costi e fonti: docs/INTEGRAZIONI.md, sezione 0. Nel prototipo nessun collegamento è attivo:
-// si salvano i dati, le chiamate vere arrivano con l'integrazione di ogni servizio.
+// Costi e fonti: docs/INTEGRAZIONI.md, sezione 0. Nel prototipo è attiva solo la visura PRA di Openapi (visura-server.ts):
+// per gli altri si salvano i dati, le chiamate vere arrivano con l'integrazione di ogni servizio.
 
 export type CampoTipo = "testo" | "segreto" | "file" | "scelta" | "multipla";
 
@@ -185,7 +185,7 @@ export const SERVIZI: Servizio[] = [
     accesso: "registrazione",
     modo: "api",
     link: { label: "Console Openapi", href: "https://console.openapi.com" },
-    nota: "Un solo account per tutti i servizi. Il token si crea nella console; la prova (sandbox) è gratuita.",
+    nota: "Un solo account per tutti i servizi. Il token si crea nella console; la prova (sandbox) è gratuita. La visura PRA è già collegata: con \"Visura PRA\" tra i servizi si richiede dal passo 2 della pratica.",
     campi: [
       { key: "email", label: "Email dell'account", tipo: "testo" },
       { key: "token", label: "Token API", tipo: "segreto" },

@@ -18,7 +18,7 @@ export interface Warehouse {
 export const WAREHOUSES: Warehouse[] = [
   { id: "1", name: "Magazzino 1", desc: "Elettrico, elettronica, interni", categories: ["Elettrico", "Interni", "Climatizzazione"], corsie: 6, scaffali: 8, ripiani: "ABCDE", contenitori: 4, perSlot: 2 },
   { id: "2", name: "Magazzino 2", desc: "Ottiche e specchietti", categories: ["Ottica", "Carrozzeria"], corsie: 5, scaffali: 8, ripiani: "ABCD", contenitori: 3, perSlot: 1 },
-  { id: "3", name: "Magazzino 3", desc: "Meccanica: freni, sospensioni, ruote, raffreddamento", categories: ["Freni", "Sospensioni", "Ruote", "Raffreddamento"], corsie: 8, scaffali: 10, ripiani: "ABCDE", contenitori: 3, perSlot: 2 },
+  { id: "3", name: "Magazzino 3", desc: "Meccanica: freni, sospensioni, sterzo, ruote, raffreddamento, scarico", categories: ["Freni", "Sospensioni", "Sterzo", "Ruote", "Raffreddamento", "Scarico", "Alimentazione"], corsie: 8, scaffali: 10, ripiani: "ABCDE", contenitori: 3, perSlot: 2 },
   { id: "4", name: "Magazzino 4", desc: "Motori e cambi su pallet", categories: ["Motore", "Trasmissione"], corsie: 3, scaffali: 6, ripiani: "AB", contenitori: 0, perSlot: 1 },
   { id: "P", name: "Piazzale coperto", desc: "Lamierati: porte, cofani, paraurti", categories: ["Lamierati"], corsie: 4, scaffali: 10, ripiani: "AB", contenitori: 0, perSlot: 3 },
 ];

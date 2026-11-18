@@ -49,3 +49,6 @@ next-env.d.ts
 
 # lettore codici (copiato da node_modules a ogni npm install)
 /public/zxing/
+
+# Cache Python degli script Blender
+__pycache__/
