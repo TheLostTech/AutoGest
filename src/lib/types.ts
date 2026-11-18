@@ -137,6 +137,7 @@ export interface Fir {
   inizioTrasportoAt?: string;
   rinfusa?: boolean;
   svuota?: boolean; // il carico è tutta la giacenza di quel codice: la pesata corregge le stime
+  foto?: string[]; // foto della copia del formulario lasciata da chi ritira
   annotazioni?: string;
   esito?: "accettato" | "parziale" | "respinto";
   kgAccettati?: number;

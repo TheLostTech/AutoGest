@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { FilePlus2 } from "lucide-react";
+import { Camera, FilePlus2, X } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { eerByCode, fmtKg, stockByEer } from "@/lib/ambiente";
 import { firNumberLooksValid, kgText, parseKg } from "@/lib/periodo";
+import { savePhoto } from "@/lib/services";
 import { dateIt } from "@/lib/logic";
 import { Button, Field, Notice, PageTitle, Panel } from "@/components/ui";
 import type { Fir, FirStatus, Soggetto } from "@/lib/types";
@@ -36,7 +37,7 @@ export default function Page() {
 // I formulari li compila e li vidima la ditta che ritira: qui si registrano, si firmano e si segna l'esito
 function Formulari() {
   const sp = useSearchParams();
-  const { firs, wasteMoves, soggetti, receiveFir, signFir, setFirOutcome } = useStore();
+  const { firs, wasteMoves, soggetti, receiveFir, signFir, setFirOutcome, setFirPhotos } = useStore();
   const [open, setOpen] = useState(!!sp.get("eer"));
   const [msg, setMsg] = useState<{ tone: "ok" | "danger"; text: string } | null>(null);
   const [outcomeFor, setOutcomeFor] = useState<string | null>(null);
@@ -125,6 +126,7 @@ function Formulari() {
                   )}
                 </div>
               </div>
+              <FotoFormulario foto={f.foto ?? []} onChange={(foto) => setFirPhotos(f.id, foto)} compact />
               {outcomeFor === f.id && (
                 <EsitoForm
                   fir={f}
@@ -180,6 +182,7 @@ function NuovoFormulario({
   const [conducente, setConducente] = useState("");
   const [partenza, setPartenza] = useState(nowLocal());
   const [note, setNote] = useState("");
+  const [foto, setFoto] = useState<string[]>([]);
   const cur = inStock.find((s) => s.code === eer);
   const kgNum = parseKg(kg);
   const tooMuch = !svuota && !!(cur && kgNum && kgNum > cur.kg);
@@ -190,6 +193,9 @@ function NuovoFormulario({
   return (
     <Panel title="Formulario ricevuto" className="mb-6">
       <div className="grid gap-4 p-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <FotoFormulario foto={foto} onChange={setFoto} />
+        </div>
         <Field label="Numero del formulario" hint="Quello stampato in alto, es. JNMPC 00262 JC" error={oddNumber ? "Formato insolito: controlla, ma puoi salvarlo" : undefined}>
           <input className="field code text-[18px] font-bold uppercase" value={numero} onChange={(e) => setNumero(e.target.value.toUpperCase())} />
         </Field>
@@ -268,6 +274,7 @@ function NuovoFormulario({
                 rinfusa,
                 svuota,
                 annotazioni: note.trim() || undefined,
+                foto: foto.length ? foto : undefined,
               })
             }
           >
@@ -304,6 +311,70 @@ function EsitoForm({ fir, onSave, onCancel }: { fir: Fir; onSave: (esito: NonNul
         <Button size="sm" disabled={esito === "parziale" && !kgNum} onClick={() => onSave(esito, kgNum ?? 0, new Date(arrivo).toISOString())}>Salva esito</Button>
         <Button size="sm" variant="quiet" onClick={onCancel}>Annulla</Button>
       </div>
+    </div>
+  );
+}
+
+// Foto della copia cartacea del formulario lasciata da chi ritira: si scatta col telefono, si legge a tutta risoluzione
+function FotoFormulario({ foto, onChange, compact = false }: { foto: string[]; onChange: (foto: string[]) => void; compact?: boolean }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(0);
+  const [err, setErr] = useState("");
+  return (
+    <div className={compact ? "mt-3 border-t border-hair-soft pt-3" : ""}>
+      <div className="flex flex-wrap items-center gap-2">
+        {foto.map((src, i) => (
+          <span key={`${src}-${i}`} className="relative">
+            <a href={src} target="_blank" rel="noreferrer" className="block" aria-label={`Apri la foto ${i + 1} del formulario`}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={src} alt={`Foto ${i + 1} del formulario`} className={`${compact ? "h-16 w-12" : "h-24 w-[72px]"} rounded border border-hair object-cover`} />
+            </a>
+            <button
+              onClick={() => confirm("Togliere questa foto del formulario?") && onChange(foto.filter((_, j) => j !== i))}
+              className="absolute -right-2 -top-2 grid size-7 place-items-center rounded-full bg-ink text-white"
+              aria-label={`Togli la foto ${i + 1}`}
+            >
+              <X className="size-3.5" aria-hidden />
+            </button>
+          </span>
+        ))}
+        <button
+          onClick={() => ref.current?.click()}
+          disabled={busy > 0}
+          className={`inline-flex items-center gap-2 rounded-md border-2 border-dashed font-semibold disabled:opacity-60 ${
+            foto.length || compact ? "min-h-11 border-hair px-3 text-band" : "min-h-14 w-full justify-center border-band bg-band-tint px-4 text-band"
+          }`}
+        >
+          <Camera className="size-5" aria-hidden />
+          {busy ? "Carico la foto…" : foto.length ? "Altra foto" : compact ? "Foto del formulario" : "Fotografa il formulario"}
+        </button>
+      </div>
+      {!compact && foto.length === 0 && <p className="mt-1.5 text-sm text-ink-3">La copia che lascia chi ritira: resta allegata al formulario e allo scarico nel registro.</p>}
+      {err && <p className="mt-1 text-sm font-semibold text-danger">{err}</p>}
+      <input
+        ref={ref}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        multiple
+        className="hidden"
+        onChange={async (e) => {
+          const files = Array.from(e.target.files ?? []);
+          e.target.value = "";
+          if (!files.length) return;
+          setErr("");
+          setBusy(files.length);
+          try {
+            // Più grande delle foto dei ricambi: il testo del formulario deve restare leggibile
+            const urls = await Promise.all(files.map((f) => savePhoto(f, 1800)));
+            onChange([...foto, ...urls]);
+          } catch {
+            setErr("Non sono riuscito a leggere la foto: riprova.");
+          } finally {
+            setBusy(0);
+          }
+        }}
+      />
     </div>
   );
 }

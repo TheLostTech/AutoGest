@@ -107,7 +107,8 @@ interface Actions {
   cancelMove: (id: string, motivo: string) => Result<string>;
   transmitPeriod: (key: string) => Result<string>;
   // Formulari ricevuti dalla ditta che ritira
-  receiveFir: (f: Pick<Fir, "numero" | "emessoAt" | "eer" | "kg" | "destinatarioId" | "trasportatoreId" | "intermediarioId" | "targa" | "conducente" | "inizioTrasportoAt" | "rinfusa" | "svuota" | "annotazioni">) => Result<string>;
+  receiveFir: (f: Pick<Fir, "numero" | "emessoAt" | "eer" | "kg" | "destinatarioId" | "trasportatoreId" | "intermediarioId" | "targa" | "conducente" | "inizioTrasportoAt" | "rinfusa" | "svuota" | "annotazioni" | "foto">) => Result<string>;
+  setFirPhotos: (id: string, foto: string[]) => void;
   signFir: (id: string) => Result;
   confirmMove: (id: string) => void;
   setFirOutcome: (id: string, esito: NonNullable<Fir["esito"]>, kgAccettati: number, arrivoAt: string) => Result;
@@ -622,6 +623,14 @@ export const useStore = create<State & Actions>()(
           ]);
           push(event({ entity: "sistema", entityId: id, action: "Formulario firmato", detail: `${f.numero ?? ""} · ${f.eer} · ${f.kg} kg${diff ? ` · differenza di pesata ${diff > 0 ? "+" : ""}${diff} kg` : ""}` }));
           return { ok: true, value: undefined };
+        },
+
+        setFirPhotos: (id, foto) => {
+          const f = get().firs.find((x) => x.id === id);
+          if (!f) return;
+          const before = f.foto?.length ?? 0;
+          set((s) => ({ firs: s.firs.map((x) => (x.id === id ? { ...x, foto } : x)) }));
+          push(event({ entity: "sistema", entityId: id, action: foto.length > before ? "Foto del formulario aggiunta" : "Foto del formulario rimossa", detail: `${f.numero ?? id} · ${foto.length} foto` }));
         },
 
         confirmMove: (id) => {
