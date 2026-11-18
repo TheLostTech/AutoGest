@@ -7,7 +7,7 @@ import { connection } from "next/server";
 import { accessoDaRichiesta, soloRuoli } from "@/lib/accesso/server";
 import { servizioById, type StatoServizio } from "@/lib/collegamenti";
 import { cifra } from "@/lib/cifratura";
-import { altroSito, load, save, MAX_TEXT, type Salvato } from "@/lib/collegamenti-server";
+import { altroSito, inFilaCollegamenti, load, save, MAX_TEXT, type Salvato } from "@/lib/collegamenti-server";
 
 const MAX_FILE = 64 * 1024; // un certificato .p12 pesa pochi KB
 
@@ -30,8 +30,13 @@ export async function GET(req: Request) {
   await connection();
   const acc = await accessoDaRichiesta(req);
   if (acc instanceof Response) return acc;
-  const a = await load(acc.azienda.id);
-  return json(Object.fromEntries(Object.entries(a).map(([id, s]) => [id, pubblico(s)])));
+  try {
+    const a = await load(acc.azienda.id);
+    return json(Object.fromEntries(Object.entries(a).map(([id, s]) => [id, pubblico(s)])));
+  } catch (e) {
+    console.error("Collegamenti non leggibili", e);
+    return json({ error: "Il file dei collegamenti non si legge: non è stato modificato. Avvisa l'assistenza." }, 500);
+  }
 }
 
 interface Modifica {
@@ -42,13 +47,8 @@ interface Modifica {
   togli?: string[]; // segreti o file da cancellare
 }
 
-// Un blocco per azienda: le modifiche della stessa azienda vanno in fila
-const blocchi = new Map<string, Promise<unknown>>();
-function inFila<T>(aziendaId: string, fn: () => Promise<T>): Promise<T> {
-  const run = (blocchi.get(aziendaId) ?? Promise.resolve()).then(fn);
-  blocchi.set(aziendaId, run.catch(() => undefined));
-  return run;
-}
+// Un blocco per azienda: le modifiche della stessa azienda vanno in fila (coda condivisa da tutte le route)
+const inFila = inFilaCollegamenti;
 
 async function soloResponsabile(req: Request) {
   const acc = await accessoDaRichiesta(req);
@@ -127,10 +127,15 @@ export async function DELETE(req: Request) {
   const id = new URL(req.url).searchParams.get("id") ?? "";
   if (!servizioById(id)) return json({ error: "Servizio sconosciuto" }, 400);
   const aid = acc.azienda.id;
-  await inFila(aid, async () => {
-    const a = await load(aid);
-    delete a[id];
-    await save(aid, a);
-  });
+  try {
+    await inFila(aid, async () => {
+      const a = await load(aid);
+      delete a[id];
+      await save(aid, a);
+    });
+  } catch (e) {
+    console.error("Collegamenti non leggibili", e);
+    return json({ error: "Il file dei collegamenti non si legge: non è stato modificato. Avvisa l'assistenza." }, 500);
+  }
   return json({ ok: true });
 }

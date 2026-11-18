@@ -4,6 +4,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { cartellaAzienda } from "@/lib/server-data";
+import { inFilaPer } from "@/lib/fila";
 import type { SpedizioneEbay } from "./contratto";
 
 const fileDi = (aziendaId: string) => path.join(cartellaAzienda(aziendaId), "ebay.json");
@@ -54,21 +55,12 @@ async function scrivi(aziendaId: string, a: ArchivioEbay) {
   await rename(tmp, file);
 }
 
-// Una coda per azienda: le modifiche di un'azienda non aspettano quelle di un'altra
-const lock = new Map<string, Promise<unknown>>();
-
-/** Legge, modifica e riscrive l'archivio, una modifica alla volta. */
+/** Legge, modifica e riscrive l'archivio, una modifica alla volta (una coda per azienda, sulla globalThis: vedi fila.ts). */
 export function aggiornaArchivio<T>(aziendaId: string, fn: (a: ArchivioEbay) => T | Promise<T>): Promise<T> {
-  const run = (lock.get(aziendaId) ?? Promise.resolve()).then(async () => {
+  return inFilaPer("ebay", aziendaId, async () => {
     const a = await leggiArchivio(aziendaId);
     const out = await fn(a);
     await scrivi(aziendaId, a);
     return out;
   });
-  const coda = run.catch(() => undefined);
-  lock.set(aziendaId, coda);
-  void coda.then(() => {
-    if (lock.get(aziendaId) === coda) lock.delete(aziendaId);
-  });
-  return run;
 }

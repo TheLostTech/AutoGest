@@ -32,7 +32,10 @@ interface Cred {
 
 /** Credenziali da Impostazioni → Collegamenti → Openapi. Senza token o senza "Visura PRA" tra i servizi: simulata. */
 export async function credenziali(aziendaId: string): Promise<Cred | undefined> {
-  const v = await leggiValori(aziendaId, "openapi");
+  // File dei collegamenti danneggiato: errore, non "Simulato" (si vedrebbe una visura finta al posto di quella vera)
+  const v = await leggiValori(aziendaId, "openapi").catch(() => {
+    throw new ErroreVisura("Il file dei collegamenti non si legge: avvisa l'assistenza.", 500);
+  });
   const token = typeof v.token === "string" ? v.token.trim() : "";
   const servizi = Array.isArray(v.servizi) ? v.servizi : [];
   if (!token || !servizi.includes("Visura PRA")) return undefined;

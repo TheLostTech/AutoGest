@@ -13,9 +13,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (acc instanceof Response) return acc;
   const { id } = await ctx.params;
   if (!idValido(id)) return json({ error: "Richiesta sconosciuta" }, 400);
-  const c = await credenziali(acc.azienda.id);
-  if (!c) return json({ error: "Openapi non è configurato per la visura PRA" }, 409);
   try {
+    const c = await credenziali(acc.azienda.id);
+    if (!c) return json({ error: "Openapi non è configurato per la visura PRA" }, 409);
     return json(await statoVisura(c, acc.azienda.id, id));
   } catch (e) {
     return json({ error: e instanceof ErroreVisura ? e.message : "Controllo non riuscito" }, e instanceof ErroreVisura ? e.status : 500);

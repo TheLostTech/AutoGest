@@ -12,7 +12,11 @@ export async function GET(req: Request) {
   if (altroSito(req)) return json({ error: "Richiesta da un altro sito" }, 403);
   const acc = await accessoDaRichiesta(req);
   if (acc instanceof Response) return acc;
-  return json({ modo: (await credenziali(acc.azienda.id))?.modo ?? "Simulato" });
+  try {
+    return json({ modo: (await credenziali(acc.azienda.id))?.modo ?? "Simulato" });
+  } catch (e) {
+    return json({ error: e instanceof ErroreVisura ? e.message : "Controllo non riuscito" }, e instanceof ErroreVisura ? e.status : 500);
+  }
 }
 
 export async function POST(req: Request) {
@@ -28,9 +32,9 @@ export async function POST(req: Request) {
   const tipo = String(body?.tipo ?? "AUTOVEICOLO") as TipoVeicolo;
   if (!/^[A-Z0-9]{5,8}$/.test(targa)) return json({ error: "Targa non valida" }, 400);
   if (!TIPI_VEICOLO.includes(tipo)) return json({ error: "Tipo di veicolo non valido" }, 400);
-  const c = await credenziali(acc.azienda.id);
-  if (!c) return json({ error: "Openapi non è configurato per la visura PRA" }, 409);
   try {
+    const c = await credenziali(acc.azienda.id);
+    if (!c) return json({ error: "Openapi non è configurato per la visura PRA" }, 409);
     const r = await richiediVisura(c, targa, tipo);
     return json({ ...r, modo: c.modo });
   } catch (e) {

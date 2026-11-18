@@ -1,6 +1,7 @@
 // Dispositivi dell'azienda dalla scheda azienda: elenco, revoca, sblocco. Solo super admin.
 import { connection } from "next/server";
 import { superadminDaRichiesta } from "@/lib/accesso/server";
+import { inFilaPin } from "@/lib/auth/pin-dispositivo";
 import { AVVISO_REGISTRO, aziendaEsiste, contesto, daAltroSito, errore, leggiJson, ok, registra } from "@/lib/piattaforma/server";
 
 type Riga = { id: string; organizationId: string; nome: string; creato: unknown; revocato?: unknown; bloccato?: unknown };
@@ -41,7 +42,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   if (corpo?.azione === "sblocca") {
     if (d.revocato) return errore(400, "Il dispositivo è revocato: va registrato di nuovo.");
-    await c.adapter.update({ model: "dispositivo", where: [{ field: "id", value: d.id }], update: { bloccato: false, erroriPin: "[]" } });
+    // Nella stessa fila dei tentativi di PIN dell'azienda (come lo sblocco dal responsabile): mai a metà di un tentativo
+    await inFilaPin(azienda.id, () => c.adapter.update({ model: "dispositivo", where: [{ field: "id", value: d.id }], update: { bloccato: false, erroriPin: "[]" } }));
     avviso = !(await registra(azienda.id, g.utente.nome, { entity: "sistema", entityId: d.id, action: "Dispositivo sbloccato", detail: d.nome }));
     return esito();
   }
