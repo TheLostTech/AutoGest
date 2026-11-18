@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useState } from "react";
-import { CircleAlert, Check, Loader2, Printer } from "lucide-react";
+import { Fragment, useCallback, useEffect, useState } from "react";
+import { CircleAlert, Check, FileText, Loader2, Printer, RefreshCw } from "lucide-react";
 import { ROLE_USER, useStore } from "@/lib/store";
 import { ATTESTAZIONE, cfOk, identOk, CONFERENTI, docsFor, nextCertNumber, praticaSteps, RADIAZIONE, simulateVisura, type StepState } from "@/lib/pratica";
 import { dateIt } from "@/lib/logic";
@@ -22,7 +22,6 @@ export function PraticaPanel({ v }: { v: Vehicle }) {
   const [nome, setNome] = useState(v.conferente?.nome ?? "");
   const [cf, setCf] = useState(v.conferente?.cf ?? "");
   const [docId, setDocId] = useState(v.conferente?.documento ?? "");
-  const [checking, setChecking] = useState(false);
   const [canale, setCanale] = useState<"rvfu" | "agenzia">("rvfu");
   const consegna = v.presaInCarico?.at ?? v.intakeAt;
   const deadline = new Date(new Date(consegna).getTime() + RADIAZIONE.terminiGiorni * 864e5).toISOString();
@@ -102,36 +101,38 @@ export function PraticaPanel({ v }: { v: Vehicle }) {
           n={2}
           state={steps.visura}
           title="Visura al PRA"
-          summary={v.visura ? `${v.visura.fermo ? "Fermo amministrativo presente" : "Nessun fermo"} · intestatario ${v.visura.intestatario} · ${dateIt(v.visura.at)}` : "Intestatario, fermi e ipoteche"}
+          summary={
+            v.visura
+              ? `${v.visura.fermo ? "Fermo amministrativo presente" : "Nessun fermo"} · intestatario ${v.visura.intestatario} · ${dateIt(v.visura.at)}${v.visura.fonte === "simulata" ? " · simulata" : ""}`
+              : v.visuraRichiesta
+                ? `Richiesta a Openapi il ${dateIt(v.visuraRichiesta.at)} · ${v.visuraRichiesta.pdf ? "PDF arrivato, esito da registrare" : "in attesa del PDF"}`
+                : "Intestatario, fermi e ipoteche"
+          }
           note={
-            v.visura?.fermo && (
-              <span className="block space-y-2 rounded-md bg-warn-bg px-3 py-2 text-sm text-warn">
-                <span className="flex items-start gap-2">
-                  <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
-                  <span>Dal 20/02/2026 il fermo non impedisce la radiazione per demolizione, se c&apos;è l&apos;attestazione di inutilizzabilità del veicolo (art. 5 c. 8-bis D.Lgs. 209/2003). Il proprietario perde eventuali incentivi.</span>
-                </span>
-                <label className="flex min-h-10 items-center gap-2.5 font-semibold">
-                  <input type="checkbox" className="size-5 shrink-0 accent-band" disabled={!canEdit || !!v.presaInCarico} checked={!!v.documenti?.includes(ATTESTAZIONE.key)} onChange={(e) => toggleDoc(ATTESTAZIONE.key, e.target.checked)} />
-                  {ATTESTAZIONE.label}
-                </label>
+            (v.visura?.pdf || v.visura?.fermo) && (
+              <span className="block space-y-2">
+                {v.visura.pdf && (
+                  <a className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-band underline-offset-2 hover:underline" href={v.visura.pdf} target="_blank" rel="noreferrer">
+                    <FileText className="size-4" aria-hidden /> Apri il PDF della visura
+                  </a>
+                )}
+                {v.visura.fermo && (
+                  <span className="block space-y-2 rounded-md bg-warn-bg px-3 py-2 text-sm text-warn">
+                    <span className="flex items-start gap-2">
+                      <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                      <span>Dal 20/02/2026 il fermo non impedisce la radiazione per demolizione, se c&apos;è l&apos;attestazione di inutilizzabilità del veicolo (art. 5 c. 8-bis D.Lgs. 209/2003). Il proprietario perde eventuali incentivi.</span>
+                    </span>
+                    <label className="flex min-h-10 items-center gap-2.5 font-semibold">
+                      <input type="checkbox" className="size-5 shrink-0 accent-band" disabled={!canEdit || !!v.presaInCarico} checked={!!v.documenti?.includes(ATTESTAZIONE.key)} onChange={(e) => toggleDoc(ATTESTAZIONE.key, e.target.checked)} />
+                      {ATTESTAZIONE.label}
+                    </label>
+                  </span>
+                )}
               </span>
             )
           }
         >
-          {steps.visura === "attuale" && (
-            <Button
-              size="sm"
-              disabled={checking}
-              onClick={async () => {
-                setChecking(true);
-                const r = await simulateVisura(v);
-                setChecking(false);
-                updateVehicle(v.id, { visura: r }, "Visura PRA eseguita", r.fermo ? "fermo amministrativo presente" : "nessun fermo amministrativo");
-              }}
-            >
-              {checking ? <><Loader2 className="size-4 animate-spin" aria-hidden /> Visura in corso…</> : "Esegui la visura"}
-            </Button>
-          )}
+          {steps.visura === "attuale" && <VisuraPra v={v} />}
         </Step>
 
         {/* 3 · Presa in carico nel RVFU e CRD */}
@@ -248,9 +249,173 @@ export function PraticaPanel({ v }: { v: Vehicle }) {
         </Step>
       </ol>
       <p className="border-t border-hair-soft px-4 py-2.5 text-[13px] text-ink-3">
-        {!canEdit && "La pratica la gestisce l'ufficio. "}Flusso RVFU, obbligatorio dal 7/6/2024. Visura, RVFU e radiazione sono simulati nel prototipo; fonti e costi in docs/INTEGRAZIONI.md.
+        {!canEdit && "La pratica la gestisce l'ufficio. "}Flusso RVFU, obbligatorio dal 7/6/2024. RVFU e radiazione sono simulati nel prototipo; la visura PRA è vera se Openapi è collegato in Impostazioni → Collegamenti. Fonti e costi in docs/INTEGRAZIONI.md.
       </p>
     </Panel>
+  );
+}
+
+// Passo 2: visura PRA. Con Openapi configurato (Impostazioni → Collegamenti) la visura è vera e asincrona:
+// si chiede, il PDF arriva entro 24 ore lavorative, l'ufficio lo legge e registra intestatario e fermo.
+// Senza Openapi resta la visura simulata del prototipo.
+const TIPI_PRA = [
+  { value: "AUTOVEICOLO", label: "Autoveicolo" },
+  { value: "MOTOVEICOLO", label: "Motoveicolo" },
+  { value: "RIMORCHIO", label: "Rimorchio" },
+];
+
+const leggi = async (res: Response) => {
+  const d = (await res.json().catch(() => ({}))) as { error?: string } & Record<string, unknown>;
+  if (!res.ok) throw new Error(d.error || `Errore ${res.status}`);
+  return d;
+};
+
+function VisuraPra({ v }: { v: Vehicle }) {
+  const { updateVehicle } = useStore();
+  const rq = v.visuraRichiesta;
+  const [modo, setModo] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const [errore, setErrore] = useState("");
+  const [avviso, setAvviso] = useState("");
+  const [tipo, setTipo] = useState("AUTOVEICOLO");
+  const [intestatario, setIntestatario] = useState(v.conferente?.nome ?? "");
+  const [fermo, setFermo] = useState(false);
+
+
+  const controlla = useCallback(async () => {
+    if (!rq) return;
+    setBusy(true);
+    setErrore("");
+    setAvviso("");
+    try {
+      const d = (await leggi(await fetch(`/api/visura/${rq.id}`, { cache: "no-store" }))) as { stato: string; pdf?: string; messaggio?: string };
+      if (d.messaggio) setAvviso(d.messaggio);
+      else if (!d.pdf) setAvviso("Visura non ancora pronta: Openapi la evade entro 24 ore lavorative.");
+      if (d.stato !== rq.stato || d.pdf !== rq.pdf)
+        updateVehicle(v.id, { visuraRichiesta: { ...rq, stato: d.stato, pdf: d.pdf } }, d.pdf ? "Visura PRA arrivata" : "Stato visura PRA aggiornato", d.pdf ? "PDF da leggere" : d.stato);
+    } catch (e) {
+      setErrore((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, [rq, v.id, updateVehicle]);
+
+  // All'apertura della pratica: come lavora la visura e, se ce n'è una in attesa, se il PDF è arrivato
+  useEffect(() => {
+    fetch("/api/visura", { cache: "no-store" })
+      .then(leggi)
+      .then((d) => {
+        const m = String(d.modo);
+        setModo(m);
+        if (m !== "Simulato" && rq && !rq.pdf) void controlla();
+      })
+      .catch(() => setModo("Simulato"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- una volta sola, all'apertura
+  }, []);
+
+  if (!modo) return <p className="flex items-center gap-2 text-sm text-ink-3"><Loader2 className="size-4 animate-spin" aria-hidden /> Controllo del collegamento…</p>;
+
+  const msg = (
+    <>
+      {errore && <p className="text-sm font-semibold text-danger" role="alert">{errore}</p>}
+      {avviso && <p className="text-sm text-ink-2">{avviso}</p>}
+    </>
+  );
+
+  if (modo === "Simulato" && !rq)
+    return (
+      <div className="space-y-2">
+        <Button
+          size="sm"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            const r = await simulateVisura(v);
+            setBusy(false);
+            updateVehicle(v.id, { visura: { ...r, fonte: "simulata" } }, "Visura PRA eseguita", `simulata · ${r.fermo ? "fermo amministrativo presente" : "nessun fermo amministrativo"}`);
+          }}
+        >
+          {busy ? <><Loader2 className="size-4 animate-spin" aria-hidden /> Visura in corso…</> : "Esegui la visura (simulata)"}
+        </Button>
+        <p className="text-xs text-ink-3">Per la visura vera collega Openapi in Impostazioni → Collegamenti e scegli &quot;Visura PRA&quot;.</p>
+      </div>
+    );
+
+  if (!rq)
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <select className="field h-11" value={tipo} onChange={(e) => setTipo(e.target.value)} aria-label="Tipo di veicolo al PRA">
+            {TIPI_PRA.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setErrore("");
+              try {
+                const d = await leggi(await fetch("/api/visura", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targa: v.plate, tipo }) }));
+                updateVehicle(
+                  v.id,
+                  { visuraRichiesta: { id: String(d.id), at: new Date().toISOString(), stato: String(d.stato), modo: String(d.modo) } },
+                  "Visura PRA richiesta",
+                  `Openapi ${d.modo} · targa ${v.plate}`,
+                );
+              } catch (e) {
+                setErrore((e as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? <><Loader2 className="size-4 animate-spin" aria-hidden /> Invio…</> : `Richiedi la visura di ${v.plate}`}
+          </Button>
+        </div>
+        <p className="text-xs text-ink-3">
+          Openapi {modo === "Sandbox" ? "· ambiente di prova, nessun addebito" : "· a pagamento (10,90–16,70 €, da confermare)"}. Il PDF arriva entro 24 ore lavorative.
+        </p>
+        {msg}
+      </div>
+    );
+
+  if (!rq.pdf)
+    return (
+      <div className="space-y-2">
+        <Button size="sm" variant="secondary" disabled={busy} onClick={() => void controlla()}>
+          {busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <RefreshCw className="size-4" aria-hidden />} Controlla se è arrivata
+        </Button>
+        <p className="text-xs text-ink-3">Richiesta n. <span className="code">{rq.id}</span> · Openapi {rq.modo}</p>
+        {msg}
+      </div>
+    );
+
+  return (
+    <div className="space-y-3">
+      <a className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-band underline-offset-2 hover:underline" href={rq.pdf} target="_blank" rel="noreferrer">
+        <FileText className="size-4" aria-hidden /> Apri il PDF della visura
+      </a>
+      <p className="text-sm text-ink-2">Leggi la visura e registra cosa riporta.</p>
+      <input className="field h-11 w-full" value={intestatario} onChange={(e) => setIntestatario(e.target.value)} placeholder="Intestatario come da visura" aria-label="Intestatario come da visura" />
+      <label className="flex min-h-10 items-center gap-2.5 text-sm font-semibold">
+        <input type="checkbox" className="size-5 shrink-0 accent-band" checked={fermo} onChange={(e) => setFermo(e.target.checked)} />
+        La visura riporta un fermo amministrativo
+      </label>
+      <Button
+        size="sm"
+        disabled={!intestatario.trim()}
+        onClick={() =>
+          updateVehicle(
+            v.id,
+            { visura: { at: new Date().toISOString(), fermo, intestatario: intestatario.trim(), pdf: rq.pdf, fonte: "openapi" }, visuraRichiesta: undefined },
+            "Visura PRA registrata",
+            fermo ? "fermo amministrativo presente" : "nessun fermo amministrativo",
+          )
+        }
+      >
+        Registra l&apos;esito
+      </Button>
+    </div>
   );
 }
 

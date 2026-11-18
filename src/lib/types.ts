@@ -39,7 +39,10 @@ export interface Vehicle {
   // Pratica: conferimento → documenti → visura → presa in carico → radiazione
   conferente?: { tipo: ConferenteTipo; nome: string; cf?: string; documento?: string }; // cf = codice fiscale o partita IVA
   documenti?: string[]; // chiavi dei documenti ricevuti (vedi pratica.ts)
-  visura?: { at: string; fermo: boolean; intestatario: string };
+  // Esito della visura: con Openapi lo registra l'ufficio leggendo il PDF (pdf = indirizzo del file sul server)
+  visura?: { at: string; fermo: boolean; intestatario: string; pdf?: string; fonte?: "simulata" | "openapi" };
+  // Visura chiesta a Openapi e non ancora registrata: il PDF arriva entro 24 ore lavorative
+  visuraRichiesta?: { id: string; at: string; stato: string; modo: string; pdf?: string };
   presaInCarico?: { at: string; by: string };
   radiazione?: { stato: "da richiedere" | "richiesta" | "completata"; richiestaAt?: string; completataAt?: string; estremi?: string; canale?: "rvfu" | "agenzia" };
 }
