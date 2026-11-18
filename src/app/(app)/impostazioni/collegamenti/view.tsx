@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ChevronDown, ExternalLink, FileKey, Loader2 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { ACCESSO, completo, MODO, SERVIZI, type Campo, type Servizio, type StatoServizio } from "@/lib/collegamenti";
+import type { StatoPonte } from "@/lib/ebay/contratto";
 import { Button, Notice, PageTitle, Panel } from "@/components/ui";
 
 type Stati = Record<string, StatoServizio>;
@@ -17,7 +18,9 @@ export default function Collegamenti() {
   const role = useStore((s) => s.role);
   const [stati, setStati] = useState<Stati | null>(null);
   const [errore, setErrore] = useState("");
-  const [aperto, setAperto] = useState<string | null>(null);
+  // Di ritorno da eBay (?ebay=ok|errore) si apre la voce eBay. La lista compare solo dopo il caricamento, quindi
+  // leggere l'indirizzo qui non cambia il primo disegno fatto dal server.
+  const [aperto, setAperto] = useState<string | null>(() => (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("ebay") ? "ebay" : null));
 
   useEffect(() => {
     fetch("/api/collegamenti", { cache: "no-store" })
@@ -46,7 +49,7 @@ export default function Collegamenti() {
       />
       <div className="mb-6 space-y-3">
         <Notice tone="info">
-          <b>Prototipo:</b> i dati si salvano ma nessun collegamento è ancora attivo. Visura, RVFU, RENTRI e gli altri servizi restano simulati finché non li integriamo uno per uno.
+          <b>Prototipo:</b> i dati si salvano ma l’unico collegamento attivo è eBay, e solo con l’eBay di prova (Sandbox). Visura, RVFU, RENTRI e gli altri servizi restano simulati finché non li integriamo uno per uno.
         </Notice>
         {stati && (
           <p className="code text-[13px] font-semibold uppercase tracking-[0.12em] text-ink-3">
@@ -141,9 +144,196 @@ function ServizioRiga({ s, st, open, onToggle, onSaved }: { s: Servizio; st?: St
           ) : (
             <p className="text-[14px] font-semibold text-ink-2">Niente da salvare qui: si usa dal portale.</p>
           )}
+          {s.id === "ebay" && <EbayCollegamento aggiornato={st?.aggiornato} />}
         </div>
       )}
     </li>
+  );
+}
+
+// ── eBay: collegamento del conto (Sandbox), politiche e magazzino ──
+interface OpzioneEbay { id: string; nome: string; ritiro?: boolean }
+interface PoliticheEbay {
+  opzioni: { pagamento: OpzioneEbay[]; reso: OpzioneEbay[]; spedizione: OpzioneEbay[]; magazzini: OpzioneEbay[] };
+  scelte: Partial<Record<RuoloEbay, { id: string; nome: string }>>;
+  magazzino?: { id: string; nome: string };
+}
+type RuoloEbay = "pagamento" | "reso" | "corriere" | "voluminoso" | "ritiro";
+const RUOLI_EBAY: { key: RuoloEbay | "magazzino"; label: string; lista: keyof PoliticheEbay["opzioni"] }[] = [
+  { key: "corriere", label: "Spedizione con corriere", lista: "spedizione" },
+  { key: "voluminoso", label: "Spedizione voluminosa (motori, porte…)", lista: "spedizione" },
+  { key: "ritiro", label: "Solo ritiro in sede", lista: "spedizione" },
+  { key: "pagamento", label: "Pagamento", lista: "pagamento" },
+  { key: "reso", label: "Reso", lista: "reso" },
+  { key: "magazzino", label: "Magazzino", lista: "magazzini" },
+];
+
+const scelteDa = (d: PoliticheEbay): Record<string, string> => ({
+  ...Object.fromEntries(Object.entries(d.scelte).map(([k, v]) => [k, v?.id ?? ""])),
+  magazzino: d.magazzino?.id ?? "",
+});
+
+function leggiEsitoEbay():{ tone: "ok" | "danger"; text: string } | null {
+  if (typeof window === "undefined") return null;
+  const q = new URLSearchParams(window.location.search);
+  if (q.get("ebay") === "ok") return { tone: "ok", text: "Conto eBay collegato. «Esaurito» è attivo e le politiche sono pronte." };
+  if (q.get("ebay") === "errore") return { tone: "danger", text: (q.get("msg") ?? "Il collegamento con eBay non è riuscito.").slice(0, 400) };
+  return null;
+}
+
+function EbayCollegamento({ aggiornato }: { aggiornato?: string }) {
+  const [stato, setStato] = useState<StatoPonte | null>(null);
+  const [esito, setEsito] = useState(leggiEsitoEbay);
+  const [pol, setPol] = useState<PoliticheEbay | null>(null);
+  const [polErrore, setPolErrore] = useState("");
+  const [scelte, setScelte] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  // Si mostra solo nel browser (la voce si apre dopo il caricamento): serve per il RuName su eBay
+  const [ritorno] = useState(() => (typeof window !== "undefined" ? `${window.location.origin}/api/ebay/ritorno` : "/api/ebay/ritorno"));
+
+  useEffect(() => {
+    // Toglie ?ebay=… dall'indirizzo: ricaricando la pagina il messaggio non torna
+    if (new URLSearchParams(window.location.search).has("ebay")) window.history.replaceState(null, "", window.location.pathname);
+  }, []);
+
+  useEffect(() => {
+    let vivo = true;
+    fetch("/api/ebay/stato", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error())))
+      .then(async (s: StatoPonte) => {
+        if (!vivo) return;
+        setStato(s);
+        if (s.modo !== "Sandbox" || !s.collegato) return;
+        const r = await fetch("/api/ebay/politiche", { cache: "no-store" });
+        const d = await r.json();
+        if (!vivo) return;
+        if (!r.ok) return setPolErrore(d.error || "Non riesco a leggere le politiche da eBay.");
+        setPol(d as PoliticheEbay);
+        setScelte(scelteDa(d as PoliticheEbay));
+      })
+      .catch(() => vivo && setStato({ modo: "Simulato", collegato: false, errore: "Non riesco a leggere lo stato di eBay dal server." }));
+    return () => {
+      vivo = false;
+    };
+  }, [aggiornato]);
+
+  const mostra = (d: PoliticheEbay) => {
+    setPol(d);
+    setPolErrore("");
+    setScelte(scelteDa(d));
+  };
+
+  const salvaScelte = async () => {
+    setBusy(true);
+    setEsito(null);
+    try {
+      const r = await fetch("/api/ebay/politiche", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(scelte) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      mostra(d as PoliticheEbay);
+      setEsito({ tone: "ok", text: "Scelte salvate: i prossimi annunci useranno queste politiche." });
+    } catch (e) {
+      setEsito({ tone: "danger", text: e instanceof Error && e.message ? e.message : "Salvataggio non riuscito." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const scollega = async () => {
+    if (!confirm("Scollegare il conto eBay? Gli annunci già su eBay restano dove sono.")) return;
+    setBusy(true);
+    const r = await fetch("/api/ebay/collega", { method: "DELETE" });
+    setBusy(false);
+    if (!r.ok) return setEsito({ tone: "danger", text: "Non riesco a scollegare il conto." });
+    setStato((s) => (s ? { ...s, collegato: false, esauritoAttivo: undefined } : s));
+    setPol(null);
+    setEsito({ tone: "ok", text: "Conto eBay scollegato." });
+  };
+
+  const sandbox = stato?.modo === "Sandbox";
+  const collegato = sandbox && !!stato?.collegato; // il ponte simulato risponde sempre "collegato"
+  return (
+    <div className="space-y-3 border-t border-hair-soft pt-4">
+      <h3 className="text-[17px] font-bold text-ink">Conto eBay</h3>
+      {esito && <Notice tone={esito.tone}>{esito.text}</Notice>}
+      {!stato ? (
+        <p className="flex items-center gap-2 text-[14px] text-ink-2">
+          <Loader2 className="size-4 animate-spin" aria-hidden /> Controllo il collegamento…
+        </p>
+      ) : !sandbox ? (
+        <p className="max-w-[70ch] text-[14px] text-ink-2">
+          Modo <b>Simulato</b>: gli annunci vanno su un eBay finto e non c’è un conto da collegare. Per provare l’eBay di prova scegli l’ambiente Sandbox, inserisci App ID, Cert ID e RuName e salva.
+        </p>
+      ) : (
+        <dl className="grid gap-x-4 gap-y-1 text-[14px] sm:grid-cols-[110px_1fr]">
+          <dt className="font-semibold text-ink-3">Stato</dt>
+          <dd className={stato.collegato ? "font-semibold text-ok" : "font-semibold text-warn"}>{stato.collegato ? "Collegato (eBay di prova)" : "Non collegato"}</dd>
+          {stato.collegato && (
+            <>
+              <dt className="font-semibold text-ink-3">Esaurito</dt>
+              <dd className={stato.esauritoAttivo ? "text-ink" : "font-semibold text-warn"}>
+                {stato.esauritoAttivo ? "Attivo: a zero pezzi l'annuncio resta su eBay, nascosto, e torna in vendita da solo." : "Non attivo: tocca «Collega account eBay» per attivarlo."}
+              </dd>
+            </>
+          )}
+        </dl>
+      )}
+      {stato?.errore && <Notice tone="danger">{stato.errore}</Notice>}
+      {/* Un form GET verso il server, che rimanda alla pagina di consenso di eBay */}
+      <form action="/api/ebay/collega" method="get" className="flex flex-wrap items-center gap-2">
+        <Button type="submit" variant={collegato ? "secondary" : "primary"} disabled={!sandbox || busy}>
+          <ExternalLink className="size-5" aria-hidden /> {collegato ? "Ricollega account eBay" : "Collega account eBay"}
+        </Button>
+        {collegato && (
+          <Button type="button" variant="danger" disabled={busy} onClick={() => void scollega()}>
+            Scollega
+          </Button>
+        )}
+      </form>
+      <p className="max-w-[70ch] text-[13px] text-ink-3">
+        {sandbox ? "" : "Si attiva con l’ambiente Sandbox e le chiavi salvate. "}
+        Nel portale eBay Developers il RuName deve rimandare a <span className="code break-all text-ink-2">{ritorno}</span>: eBay accetta solo indirizzi https, quindi serve l’indirizzo del tunnel del prototipo, non localhost.
+      </p>
+
+      {collegato && (
+        <div className="space-y-3">
+          <h4 className="text-[15px] font-bold text-ink">Politiche e magazzino</h4>
+          {polErrore && <Notice tone="danger">{polErrore}</Notice>}
+          {!pol && !polErrore && (
+            <p className="flex items-center gap-2 text-[14px] text-ink-2">
+              <Loader2 className="size-4 animate-spin" aria-hidden /> Leggo le politiche da eBay…
+            </p>
+          )}
+          {pol && (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {RUOLI_EBAY.map((r) => {
+                  const id = `ebay-${r.key}`;
+                  const lista = pol.opzioni[r.lista];
+                  return (
+                    <div key={r.key}>
+                      <label htmlFor={id} className="mb-1.5 block text-sm font-semibold text-ink">{r.label}</label>
+                      <select id={id} className="field" value={scelte[r.key] ?? ""} onChange={(e) => setScelte((x) => ({ ...x, [r.key]: e.target.value }))}>
+                        <option value="">{lista.length ? "Scegli…" : "Nessuna su eBay"}</option>
+                        {lista.map((o) => (
+                          <option key={o.id} value={o.id}>{o.nome}{o.ritiro ? " · ritiro" : ""}</option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="max-w-[70ch] text-[13px] text-ink-3">
+                Se il conto di prova non ne aveva, il gestionale ha creato «Corriere», «Corriere voluminoso», «Solo ritiro in sede», un reso di 14 giorni e il magazzino «Sede», con costi e indirizzo di esempio: cambiali su eBay.
+              </p>
+              <Button type="button" disabled={busy} onClick={() => void salvaScelte()}>
+                {busy ? <Loader2 className="size-5 animate-spin" aria-hidden /> : null} Salva scelte
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
