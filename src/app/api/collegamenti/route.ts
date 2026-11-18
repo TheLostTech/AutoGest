@@ -52,7 +52,11 @@ export async function PUT(req: Request) {
     const a = await load();
     const s: Salvato = a[serv.id] ?? { valori: {}, segreti: {}, file: {} };
 
-    const nuoviSegreti = Object.values(body.segreti ?? {}).some((v) => typeof v === "string" && v);
+    // Valgono solo le password già salvate e reinserite tutte in questa richiesta
+    const nuoviSegreti = Object.keys(s.segreti).every((k) => {
+      const v = body.segreti?.[k];
+      return typeof v === "string" && !!v;
+    });
     const cambiaIndirizzo = INDIRIZZI.some((k) => {
       const v = body.valori?.[k];
       return typeof v === "string" && v.trim() !== (s.valori[k] ?? "");
