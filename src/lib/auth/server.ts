@@ -48,7 +48,7 @@ export const auth = betterAuth({
     organization({ ac: acAzienda, roles: ruoliAzienda, allowUserToCreateOrganization: false }),
     admin({ ac: acPiattaforma, roles: ruoliPiattaforma, adminRoles: ["superadmin"], defaultRole: "user" }),
     // Blocco per account sul codice dal telefono: 10 codici sbagliati di fila → 15 minuti (scritto qui, non solo di serie)
-    twoFactor({ issuer: "Autodemolizione 4.0", accountLockout: { enabled: true, maxFailedAttempts: 10, durationSeconds: 900 } }),
+    twoFactor({ issuer: "AutoLost", accountLockout: { enabled: true, maxFailedAttempts: 10, durationSeconds: 900 } }),
     tentativiAccount,
     assistenzaPlugin,
     pinDispositivo(),
