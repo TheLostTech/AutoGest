@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  aspettiPerEbay, compatibilityBody, conditionFor, controllaAspetti, ErroreEbay, fileFoto, inventoryItemBody, nomiCompat,
+  aspettiPerEbay, compatibilityBody, conditionFor, controllaAspetti, daCreare, ErroreEbay, fileFoto, inventoryItemBody, nomiCompat, nonAderente,
   offerBody, politicaPagamentoBody, politicaResoBody, politicaSpedizioneBody, posizionamento, rinominaCompat, statoDaOfferta,
   traduciErrore, urlConsenso, venditeDaOrdini,
 } from "./payload.ts";
@@ -215,4 +215,38 @@ test("errori di eBay in italiano semplice, senza il testo grezzo", () => {
   assert.ok(traduciErrore(503, "").messaggio.includes("riprova"));
   const ignoto = traduciErrore(400, { errors: [{ errorId: 99999, message: "boh" }] });
   assert.ok(ignoto.messaggio.includes("99999") && !ignoto.messaggio.includes("boh"));
+});
+
+test("errori con corpo vuoto: niente eccezioni, messaggio giusto", () => {
+  assert.ok(traduciErrore(500, undefined).messaggio.includes("riprova"));
+  assert.ok(traduciErrore(401, undefined).messaggio.includes("Collega account eBay"));
+  assert.ok(traduciErrore(404, undefined).messaggio.includes("Cosa fare"));
+  assert.ok(traduciErrore(405, null).log.includes("405"));
+});
+
+test("ErroreEbay porta stato e codici di eBay (solo per il server)", () => {
+  const e = new ErroreEbay("x", "log", 400, { errors: [{ errorId: 25713 }, { errorId: 25702 }] });
+  assert.equal(e.status, 400);
+  assert.deepEqual(e.codici, [25713, 25702]);
+  assert.deepEqual(new ErroreEbay("y").codici, []);
+});
+
+test("conto non aderente alle politiche: solo l'errore giusto", () => {
+  assert.equal(nonAderente({ errors: [{ errorId: 20403, message: "User is not eligible for Business Policy." }] }), true);
+  assert.equal(nonAderente({ errors: [{ errorId: 20403, longMessage: "The seller is not BP opted in." }] }), true);
+  assert.equal(nonAderente({ errors: [{ errorId: 20403, message: "Please select a valid shipping service." }] }), false);
+  assert.equal(nonAderente({ errors: [{ errorId: 25001, message: "System error" }] }), false);
+  assert.equal(nonAderente(undefined), false);
+});
+
+test("politiche da creare: solo quelle che mancano", () => {
+  const vuoto = { pagamento: [], reso: [], spedizione: [], magazzini: [] };
+  assert.deepEqual(daCreare(vuoto, {}), { pagamento: true, reso: true, spedizione: ["corriere", "voluminoso", "ritiro"], magazzino: true });
+  const conCorriere = { pagamento: [{ id: "P", nome: "Paga" }], reso: [{ id: "R", nome: "Reso" }], spedizione: [{ id: "S", nome: "Spedizione standard" }], magazzini: [{ id: "m", nome: "M" }] };
+  assert.deepEqual(daCreare(conCorriere, {}), { pagamento: false, reso: false, spedizione: ["voluminoso", "ritiro"], magazzino: false });
+  const completo = { ...conCorriere, spedizione: [...conCorriere.spedizione, { id: "V", nome: "Corriere voluminoso" }, { id: "T", nome: "Ritiro", ritiro: true }] };
+  assert.deepEqual(daCreare(completo, {}).spedizione, []);
+  // Un voluminoso scelto a mano (con un altro nome) vale: non se ne crea un altro
+  const scelto = { ...conCorriere, spedizione: [...conCorriere.spedizione, { id: "X", nome: "Pallet" }, { id: "T", nome: "Ritiro", ritiro: true }] };
+  assert.deepEqual(daCreare(scelto, { voluminoso: { id: "X", nome: "Pallet" } }).spedizione, []);
 });

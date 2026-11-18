@@ -5,6 +5,7 @@ import { ChevronDown, ExternalLink, FileKey, Loader2 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { ACCESSO, completo, MODO, SERVIZI, type Campo, type Servizio, type StatoServizio } from "@/lib/collegamenti";
 import type { StatoPonte } from "@/lib/ebay/contratto";
+import { testoErroreCollegamento } from "@/lib/ebay/codici";
 import { Button, Notice, PageTitle, Panel } from "@/components/ui";
 
 type Stati = Record<string, StatoServizio>;
@@ -177,7 +178,8 @@ function leggiEsitoEbay():{ tone: "ok" | "danger"; text: string } | null {
   if (typeof window === "undefined") return null;
   const q = new URLSearchParams(window.location.search);
   if (q.get("ebay") === "ok") return { tone: "ok", text: "Conto eBay collegato. «Esaurito» è attivo e le politiche sono pronte." };
-  if (q.get("ebay") === "errore") return { tone: "danger", text: (q.get("msg") ?? "Il collegamento con eBay non è riuscito.").slice(0, 400) };
+  // Solo codici fissi dall'indirizzo, mai testo libero: il dettaglio arriva da /api/ebay/stato (errore)
+  if (q.get("ebay") === "errore") return { tone: "danger", text: testoErroreCollegamento(q.get("codice")) };
   return null;
 }
 

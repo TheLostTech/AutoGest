@@ -15,11 +15,12 @@ import { cifra, decifra } from "@/lib/cifratura";
 import { PHOTO_DIR } from "@/lib/server-data";
 import type { EsitoAllinea, Ponte, RichiestaAllinea, SpedizioneEbay, StatoPonte, VenditaEbay } from "./contratto";
 import {
-  ALBERO_CATEGORIE, aspettiPerEbay, controllaAspetti, ErroreEbay, fileFoto, inventoryItemBody, LINGUA, magazzinoBody, MARKETPLACE,
-  NOMI_POLITICHE, nomiCompat, offerBody, offerUpdateBody, politicaPagamentoBody, politicaResoBody, politicaSpedizioneBody,
+  ALBERO_CATEGORIE, aspettiPerEbay, controllaAspetti, daCreare, ErroreEbay, fileFoto, inventoryItemBody, LINGUA, magazzinoBody, MARKETPLACE,
+  NOMI_POLITICHE, nomiCompat, nonAderente, offerBody, offerUpdateBody, politicaPagamentoBody, politicaResoBody, politicaSpedizioneBody,
   rinominaCompat, statoDaOfferta, traduciErrore, urlConsenso, veicoliEbay, venditeDaOrdini,
-  type MetaAspetti, type NomiCompat, type OffertaEbay, type OrdineEbay, type VeicoloEbay,
+  type MetaAspetti, type NomiCompat, type OffertaEbay, type Opzione, type OpzioniEbay, type OrdineEbay, type VeicoloEbay,
 } from "./payload";
+import type { CodiceCollegamento } from "./codici";
 import { aggiornaArchivio, leggiArchivio, type ArchivioEbay, type RuoloPolitica } from "./archivio";
 
 export interface CredSandbox { appId: string; certId: string; ruName: string }
@@ -44,7 +45,8 @@ const MARGINE_TOKEN = 5 * 60_000; // si rinnova quando mancano meno di 5 minuti
 const DURATA_STATE = 10 * 60_000;
 
 const NON_COLLEGATO = "Il conto eBay non è collegato. Cosa fare: in Impostazioni → Collegamenti tocca «Collega account eBay».";
-const IMPREVISTO = "Errore imprevisto nel collegamento con eBay. Cosa fare: niente, il gestionale riprova da solo tra poco.";
+const RICOLLEGA = "Il collegamento salvato con eBay non si può più leggere sul server. Cosa fare: collega di nuovo l'account eBay (Impostazioni → Collegamenti, «Collega account eBay»).";
+const IMPREVISTO ="Errore imprevisto nel collegamento con eBay. Cosa fare: niente, il gestionale riprova da solo tra poco.";
 
 // ── HTTP ──
 interface Risposta { status: number; corpo: unknown; headers: Headers }
@@ -69,7 +71,7 @@ async function http(url: string, init: RequestInit, cosa: string, ammessi: numbe
   if (!res.ok && !ammessi.includes(res.status)) {
     const t = traduciErrore(res.status, corpo);
     console.error(`[ebay] ${cosa}: ${t.log}`);
-    throw new ErroreEbay(t.messaggio, t.log);
+    throw new ErroreEbay(t.messaggio, t.log, res.status, corpo);
   }
   const avvisi = (corpo as { warnings?: unknown[] } | undefined)?.warnings;
   if (Array.isArray(avvisi) && avvisi.length) console.warn(`[ebay] ${cosa}: avvisi di eBay ${JSON.stringify(avvisi).slice(0, 800)}`);
@@ -99,7 +101,13 @@ async function rinnova(c: CredSandbox): Promise<string> {
   if (Date.parse(a.token.refreshScade) <= Date.now()) {
     throw new ErroreEbay("Il collegamento con eBay è scaduto (dura circa 18 mesi). Cosa fare: in Impostazioni → Collegamenti tocca «Collega account eBay».");
   }
-  const refresh = (await decifra(a.token.refresh)).toString("utf8");
+  let refresh: string;
+  try {
+    refresh = (await decifra(a.token.refresh)).toString("utf8");
+  } catch {
+    // Chiave di cifratura cambiata: il permesso salvato non si legge più
+    throw new ErroreEbay(RICOLLEGA, "refresh token illeggibile (chiave cambiata)");
+  }
   const t = await chiediToken(c, { grant_type: "refresh_token", refresh_token: refresh, scope: SCOPE_UTENTE.join(" ") }, "rinnovo del token");
   const access = await cifra(Buffer.from(t.access_token!, "utf8"));
   await aggiornaArchivio((x) => {
@@ -153,7 +161,7 @@ async function sell(c: CredSandbox, metodo: string, percorso: string, cosa: stri
   if (r.status === 401) {
     const t = traduciErrore(401, r.corpo);
     console.error(`[ebay] ${cosa}: ${t.log}`);
-    throw new ErroreEbay(t.messaggio, t.log);
+    throw new ErroreEbay(t.messaggio, t.log, 401, r.corpo);
   }
   return r;
 }
@@ -168,16 +176,13 @@ async function tassonomia(c: CredSandbox, percorso: string, cosa: string): Promi
 const enc = encodeURIComponent;
 
 // ── Politiche e magazzino ──
-interface Opzione { id: string; nome: string; ritiro?: boolean }
-export interface OpzioniEbay { pagamento: Opzione[]; reso: Opzione[]; spedizione: Opzione[]; magazzini: Opzione[] }
-
 async function leggiOpzioni(c: CredSandbox, tollera = false): Promise<OpzioniEbay> {
   const leggi = async <T>(percorso: string, cosa: string, prendi: (x: unknown) => T[]): Promise<T[]> => {
     try {
       return prendi((await sell(c, "GET", percorso, cosa)).corpo);
     } catch (e) {
-      // Un conto di prova senza adesione alle politiche risponde con errore: vale come "nessuna politica"
-      if (tollera && e instanceof ErroreEbay) return [];
+      // Solo il conto senza adesione alle politiche vale come "nessuna politica"; gli altri errori (5xx, 401…) restano errori
+      if (tollera && e instanceof ErroreEbay && nonAderente(e.corpo)) return [];
       throw e;
     }
   };
@@ -197,25 +202,33 @@ async function leggiOpzioni(c: CredSandbox, tollera = false): Promise<OpzioniEba
   return { spedizione, pagamento, reso, magazzini };
 }
 
+/** POST di creazione; "esiste già" (nome politica 20418, magazzino 25803) non è un errore. */
+async function crea(c: CredSandbox, percorso: string, cosa: string, corpo: object): Promise<void> {
+  try {
+    await sell(c, "POST", percorso, cosa, { corpo });
+  } catch (e) {
+    if (e instanceof ErroreEbay && (e.codici.includes(20418) || e.codici.includes(25803))) return;
+    throw e;
+  }
+}
+
 /**
- * Solo Sandbox: crea politiche e magazzino di base se il conto di prova non ne ha. Questo ponte gira solo
- * con l'ambiente Sandbox (scegliPonte in server.ts); un futuro ponte di produzione non deve chiamarla.
+ * Solo Sandbox: crea quello che manca sul conto di prova, una voce per volta (pagamento, reso, ognuna delle
+ * tre spedizioni, magazzino). Questo ponte gira solo con l'ambiente Sandbox (scegliPonte in server.ts);
+ * un futuro ponte di produzione non deve chiamarla.
  */
-async function creaPredefiniti(c: CredSandbox, o: OpzioniEbay): Promise<boolean> {
-  const mancaPolitica = !o.pagamento.length || !o.reso.length || !o.spedizione.length;
-  if (!mancaPolitica && o.magazzini.length) return false;
-  if (mancaPolitica) {
-    // Da verificare in sandbox: l'adesione alle politiche (SELLING_POLICY_MANAGEMENT) può richiedere qualche minuto
+async function creaPredefiniti(c: CredSandbox, o: OpzioniEbay, a: ArchivioEbay): Promise<boolean> {
+  const m = daCreare(o, { ...a.politiche, magazzino: a.magazzino });
+  const politiche = m.pagamento || m.reso || m.spedizione.length > 0;
+  if (!politiche && !m.magazzino) return false;
+  if (politiche) {
+    // Da verificare in sandbox: l'adesione (SELLING_POLICY_MANAGEMENT) può richiedere qualche minuto; 400 e 409 = già aderito
     await sell(c, "POST", "/sell/account/v1/program/opt_in", "adesione alle politiche", { corpo: { programType: "SELLING_POLICY_MANAGEMENT" }, ammessi: [400, 409] });
   }
-  if (!o.pagamento.length) await sell(c, "POST", "/sell/account/v1/payment_policy", "politica di pagamento", { corpo: politicaPagamentoBody() });
-  if (!o.reso.length) await sell(c, "POST", "/sell/account/v1/return_policy", "politica di reso", { corpo: politicaResoBody() });
-  if (!o.spedizione.length) {
-    for (const t of ["corriere", "voluminoso", "ritiro"] as const) {
-      await sell(c, "POST", "/sell/account/v1/fulfillment_policy", `politica «${NOMI_POLITICHE[t]}»`, { corpo: politicaSpedizioneBody(t) });
-    }
-  }
-  if (!o.magazzini.length) await sell(c, "POST", "/sell/inventory/v1/location/sede", "magazzino", { corpo: magazzinoBody() });
+  if (m.pagamento) await crea(c, "/sell/account/v1/payment_policy", "politica di pagamento", politicaPagamentoBody());
+  if (m.reso) await crea(c, "/sell/account/v1/return_policy", "politica di reso", politicaResoBody());
+  for (const t of m.spedizione) await crea(c, "/sell/account/v1/fulfillment_policy", `politica «${NOMI_POLITICHE[t]}»`, politicaSpedizioneBody(t));
+  if (m.magazzino) await crea(c, "/sell/inventory/v1/location/sede", "magazzino", magazzinoBody());
   return true;
 }
 
@@ -239,8 +252,8 @@ function scegli(o: OpzioniEbay, a: ArchivioEbay): Pick<ArchivioEbay, "politiche"
 /** Legge politiche e magazzini; se mancano li crea (Sandbox) e sceglie quelli di serie dove non c'è una scelta. */
 async function prepara(c: CredSandbox): Promise<void> {
   let o = await leggiOpzioni(c, true);
-  if (await creaPredefiniti(c, o)) o = await leggiOpzioni(c);
   const a = await leggiArchivio();
+  if (await creaPredefiniti(c, o, a)) o = await leggiOpzioni(c);
   const s = scegli(o, a);
   await aggiornaArchivio((x) => {
     x.politiche = s.politiche;
@@ -295,17 +308,17 @@ const uguali = (a: string, b: string) => {
  * Ritorno dal consenso: controlla lo state, scambia il codice, salva i token cifrati, attiva "esaurito",
  * legge (o crea, in Sandbox) politiche e magazzino. Restituisce un messaggio in italiano se qualcosa non va.
  */
-export async function completaCollegamento(c: CredSandbox, code: string, state: string): Promise<{ ok: true } | { ok: false; messaggio: string }> {
+export async function completaCollegamento(c: CredSandbox, code: string, state: string): Promise<{ ok: true } | { ok: false; codice: CodiceCollegamento }> {
   const atteso = await aggiornaArchivio((x) => {
     const s = x.state;
     delete x.state; // un solo uso
     return s;
   });
   // Senza codice (consenso rifiutato su eBay) non si scambia niente: basta dirlo
-  if (!code) return { ok: false, messaggio: "Il collegamento su eBay non è stato autorizzato. Cosa fare: tocca di nuovo «Collega account eBay» e acconsenti." };
-  if (!atteso || Date.parse(atteso.scade) < Date.now() || !state || !uguali(atteso.valore, state)) {
-    return { ok: false, messaggio: "Il ritorno da eBay non corrisponde a una richiesta partita da qui. Cosa fare: tocca di nuovo «Collega account eBay»." };
-  }
+  if (!code) return { ok: false, codice: "rifiutato" };
+  if (!atteso || Date.parse(atteso.scade) < Date.now() || !state || !uguali(atteso.valore, state)) return { ok: false, codice: "stato" };
+  // Il codice nell'indirizzo dice solo a che passo si è fermato; il dettaglio va in archivio.errore (StatoPonte.errore)
+  let passo: CodiceCollegamento = "token";
   try {
     const t = await chiediToken(c, { grant_type: "authorization_code", code, redirect_uri: c.ruName }, "scambio del codice");
     if (!t.refresh_token) throw new ErroreEbay("eBay non ha dato il permesso di rinnovo. Cosa fare: tocca di nuovo «Collega account eBay».", "risposta senza refresh_token");
@@ -317,16 +330,18 @@ export async function completaCollegamento(c: CredSandbox, code: string, state: 
       x.esauritoAttivo = false;
       delete x.errore;
     });
+    passo = "esaurito";
     await attivaEsaurito(c);
+    passo = "politiche";
     await prepara(c);
     return { ok: true };
   } catch (e) {
-    const messaggio = e instanceof ErroreEbay ? e.message : IMPREVISTO;
-    if (!(e instanceof ErroreEbay)) console.error("[ebay] collegamento", e);
+    const noto = e instanceof ErroreEbay;
+    if (!noto) console.error("[ebay] collegamento", e);
     await aggiornaArchivio((x) => {
-      x.errore = messaggio;
+      x.errore = noto ? e.message : IMPREVISTO;
     });
-    return { ok: false, messaggio };
+    return { ok: false, codice: noto ? passo : "imprevisto" };
   }
 }
 
@@ -380,8 +395,15 @@ export async function salvaScelte(c: CredSandbox, b: unknown): Promise<{ ok: tru
 
 // ── Allineamento di un annuncio ──
 async function offertaPer(c: CredSandbox, sku: string): Promise<OffertaEbay & { format?: string; marketplaceId?: string } | undefined> {
-  // Senza offerte eBay risponde 404 (errore 25713): vale come "nessuna offerta"
-  const r = await sell(c, "GET", `/sell/inventory/v1/offer?sku=${enc(sku)}`, "lettura dell'offerta", { ammessi: [404] });
+  // Senza offerte eBay risponde 404, oppure con gli errori 25713 (offerta non disponibile) o 25702 (SKU sconosciuto):
+  // tutti valgono come "nessuna offerta". Da verificare in sandbox: con quale stato HTTP arrivano 25713 e 25702.
+  let r: Risposta;
+  try {
+    r = await sell(c, "GET", `/sell/inventory/v1/offer?sku=${enc(sku)}`, "lettura dell'offerta", { ammessi: [404] });
+  } catch (e) {
+    if (e instanceof ErroreEbay && (e.codici.includes(25713) || e.codici.includes(25702))) return undefined;
+    throw e;
+  }
   if (r.status === 404) return undefined;
   const offerte = ((r.corpo as { offers?: (OffertaEbay & { format?: string; marketplaceId?: string })[] })?.offers ?? []);
   return offerte.find((x) => x.format === "FIXED_PRICE" && x.marketplaceId === MARKETPLACE) ?? offerte.find((x) => x.format === "FIXED_PRICE");
@@ -455,7 +477,11 @@ async function caricaUna(c: CredSandbox, dati: Buffer, tipo: string, nome: strin
   };
   let r = await prova(await tokenUtente(c));
   if (r.status === 401) r = await prova(await tokenUtente(c, true));
-  if (r.status === 401) throw new ErroreEbay(traduciErrore(401, r.corpo).messaggio);
+  if (r.status === 401) {
+    const t = traduciErrore(401, r.corpo);
+    console.error(`[ebay] caricamento di una foto: ${t.log}`);
+    throw new ErroreEbay(t.messaggio, t.log, 401, r.corpo);
+  }
   let img = r.corpo as { imageUrl?: string; expirationDate?: string } | undefined;
   if (!img?.imageUrl) {
     // Da verificare in sandbox: se il corpo è vuoto, l'URL si legge con getImage dall'id nell'header Location
@@ -466,6 +492,7 @@ async function caricaUna(c: CredSandbox, dati: Buffer, tipo: string, nome: strin
   return { url: img.imageUrl, scade: img.expirationDate };
 }
 
+const MAX_VEICOLI = 100; // ogni veicolo costa fino a 4 chiamate alla Taxonomy API
 const norm = (s: string) => s.toLowerCase().replace(/[\s._-]+/g, "");
 const cacheValori = new Map<string, { valori: string[]; at: number }>();
 
@@ -485,8 +512,10 @@ async function valoriCompat(c: CredSandbox, categoria: string, prop: string, fil
  * esistere; il motore, se eBay non lo riconosce, si toglie. I veicoli non trovati diventano avvisi.
  */
 async function mandaCompatibilita(c: CredSandbox, r: RichiestaAllinea, categoria: string, avvisi: string[]): Promise<void> {
-  const veicoli = veicoliEbay(r.compatibilita).slice(0, 100);
+  const tutti = veicoliEbay(r.compatibilita);
+  const veicoli = tutti.slice(0, MAX_VEICOLI);
   if (!veicoli.length) return;
+  if (tutti.length > MAX_VEICOLI) avvisi.push(`Compatibilità ridotta a ${MAX_VEICOLI} veicoli su ${tutti.length}.`);
   const props = (await tassonomia(c, `/get_compatibility_properties?category_id=${enc(categoria)}`, "proprietà dei veicoli").catch(() => undefined)) as { compatibilityProperties?: { name?: string; localizedName?: string }[] } | undefined;
   const nomi: NomiCompat | undefined = nomiCompat(props?.compatibilityProperties ?? []);
   if (!nomi) {
@@ -594,9 +623,16 @@ async function allineaSandbox(c: CredSandbox, r: RichiestaAllinea): Promise<Esit
   if (statoOff !== "pubblicata" && r.quantita > 0) {
     // Da verificare in sandbox: publishOffer su un annuncio finito (ENDED) lo rimette online con un nuovo numero
     listingId = ((await sell(c, "POST", `/sell/inventory/v1/offer/${enc(offerId)}/publish`, "pubblicazione dell'annuncio")).corpo as { listingId?: string })?.listingId;
+    if (!listingId) {
+      console.error(`[ebay] pubblicazione di ${r.sku}: risposta senza listingId`);
+      throw new ErroreEbay("eBay non ha restituito il numero dell'annuncio pubblicato. Cosa fare: niente, il gestionale riprova da solo tra poco.");
+    }
   }
+  // "Ritirato da noi" si toglie solo con l'annuncio di nuovo online: riattivato a zero pezzi resta ritirato,
+  // così al giro dopo non sembra chiuso da eBay
   await aggiornaArchivio((x) => {
-    if (listingId) x.pubblicati[r.sku] = listingId;
+    if (!listingId) return;
+    x.pubblicati[r.sku] = listingId;
     delete x.ritirati[r.sku];
   });
   if (r.quantita === 0 && listingId && !a.esauritoAttivo) {

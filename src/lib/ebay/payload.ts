@@ -13,13 +13,33 @@ const MAX_TITOLO = 80;
 const MAX_FOTO = 24;
 
 /** Errore già tradotto in italiano semplice: il messaggio si può mostrare all'operatore. */
+// `status`, `codici` (errorId di eBay) e `corpo` servono solo al server per decidere: al browser va solo il messaggio.
 export class ErroreEbay extends Error {
   readonly log: string;
-  constructor(messaggio: string, log = "") {
+  readonly status?: number;
+  readonly codici: number[];
+  readonly corpo?: unknown;
+  constructor(messaggio: string, log = "", status?: number, corpo?: unknown) {
     super(messaggio);
     this.name = "ErroreEbay";
     this.log = log;
+    this.status = status;
+    this.corpo = corpo;
+    this.codici = erroriDi(corpo).flatMap((e) => (typeof e.errorId === "number" ? [e.errorId] : []));
   }
+}
+
+const erroriDi = (corpo: unknown): ErroreRest[] => {
+  const e = typeof corpo === "object" && corpo !== null ? (corpo as { errors?: unknown }).errors : undefined;
+  return Array.isArray(e) ? (e as ErroreRest[]) : [];
+};
+
+/**
+ * Il conto non ha aderito alle politiche di vendita (business policies). eBay usa 20403 anche per altri errori,
+ * quindi conta anche il testo. Da verificare in sandbox: testo visto sui forum di eBay, non nella documentazione.
+ */
+export function nonAderente(corpo: unknown): boolean {
+  return erroriDi(corpo).some((e) => e.errorId === 20403 && /not eligible for business polic|not bp opted in|opted in/i.test(`${e.message ?? ""} ${e.longMessage ?? ""}`));
 }
 
 // ── Condizione ──
@@ -302,6 +322,30 @@ const euro = (v: number) => ({ value: v.toFixed(2), currency: VALUTA });
 
 export const NOMI_POLITICHE: Record<SpedizioneEbay, string> = { corriere: "Corriere", voluminoso: "Corriere voluminoso", ritiro: "Solo ritiro in sede" };
 
+export interface Opzione { id: string; nome: string; ritiro?: boolean }
+export interface OpzioniEbay { pagamento: Opzione[]; reso: Opzione[]; spedizione: Opzione[]; magazzini: Opzione[] }
+type Scelte = Partial<Record<"pagamento" | "reso" | SpedizioneEbay | "magazzino", { id: string }>>;
+
+/**
+ * Cosa manca sul conto, una voce per volta: pagamento, reso, ognuna delle tre spedizioni, magazzino.
+ * Una scelta già salvata e ancora esistente vale come presente.
+ */
+export function daCreare(o: OpzioniEbay, scelte: Scelte): { pagamento: boolean; reso: boolean; spedizione: SpedizioneEbay[]; magazzino: boolean } {
+  const scelta = (k: keyof Scelte, lista: Opzione[]) => !!scelte[k] && lista.some((x) => x.id === scelte[k]!.id);
+  const perNome = (n: string) => o.spedizione.some((x) => x.nome.trim().toLowerCase() === n.toLowerCase());
+  const c = {
+    corriere: scelta("corriere", o.spedizione) || o.spedizione.some((x) => !x.ritiro),
+    voluminoso: scelta("voluminoso", o.spedizione) || perNome(NOMI_POLITICHE.voluminoso),
+    ritiro: scelta("ritiro", o.spedizione) || perNome(NOMI_POLITICHE.ritiro) || o.spedizione.some((x) => x.ritiro),
+  };
+  return {
+    pagamento: !o.pagamento.length,
+    reso: !o.reso.length,
+    spedizione: (["corriere", "voluminoso", "ritiro"] as const).filter((t) => !c[t]),
+    magazzino: !o.magazzini.length,
+  };
+}
+
 /** Corpo di POST /sell/account/v1/fulfillment_policy. Costi di esempio: si cambiano poi su eBay. */
 export function politicaSpedizioneBody(tipo: SpedizioneEbay): object {
   const comune = { name: NOMI_POLITICHE[tipo], marketplaceId: MARKETPLACE, categoryTypes: CATEGORIE_NORMALI, handlingTime: { value: 2, unit: "DAY" } };
@@ -392,9 +436,11 @@ const nomeSicuro = (v?: string) => (v && /^[\p{L}\p{N} .,'()/-]{1,60}$/u.test(v)
 
 /** Risposta di errore di eBay → frase in italiano con "Cosa fare"; il testo grezzo resta in `log` (solo per il server). */
 export function traduciErrore(status: number, corpo: unknown): { messaggio: string; log: string } {
-  const c = (typeof corpo === "object" && corpo !== null ? corpo : {}) as { errors?: ErroreRest[]; error?: string; error_description?: string };
-  const errori = Array.isArray(c.errors) ? c.errors : [];
-  const log = `HTTP ${status} ${errori.length ? errori.map((e) => `[${e.errorId}] ${e.message ?? ""} ${e.longMessage ?? ""}`).join(" | ") : JSON.stringify(corpo).slice(0, 500)}`;
+  const c = (typeof corpo === "object" && corpo !== null ? corpo : {}) as { error?: string; error_description?: string };
+  const errori = erroriDi(corpo);
+  // Corpo vuoto (gateway, 404 o 405 senza testo): JSON.stringify(undefined) non è una stringa
+  const grezzo = typeof corpo === "string" ? corpo : JSON.stringify(corpo ?? "") ?? "";
+  const log = `HTTP ${status} ${errori.length ? errori.map((e) => `[${e.errorId}] ${e.message ?? ""} ${e.longMessage ?? ""}`).join(" | ") : grezzo.slice(0, 500)}`;
   const frase = (cosa: string, extra: keyof typeof COSA) => ({ messaggio: `${cosa} Cosa fare: ${COSA[extra]}`, log });
   if (status === 401 || c.error === "invalid_grant" || c.error === "invalid_token") return frase("eBay non riconosce più il collegamento con il conto.", "ricollega");
   if (status === 403) return frase("eBay non permette questa operazione al conto collegato.", "ricollega");
