@@ -4,7 +4,9 @@ import assert from "node:assert/strict";
 import {
   groupKey,
   isWithdrawn,
+  alignedPrice,
   listingOf,
+  listingFieldsChanged,
   membershipAfter,
   missingNote,
   nextToShip,
@@ -17,7 +19,7 @@ import {
   refreshAnnuncio,
   shopPicks,
 } from "./annunci.ts";
-import type { Annuncio, Part } from "./types.ts";
+import type { Annuncio, Part, Vehicle } from "./types.ts";
 
 let n = 0;
 function part(over: Partial<Part> = {}): Part {
@@ -261,4 +263,29 @@ test("refreshAnnuncio: riscrive il testo solo se non è stato modificato", () =>
   assert.equal(r.descrizione, "2 pezzi");
   const scritto = refreshAnnuncio({ ...a, testoModificato: true, titolo: "Mio" }, parts, at, regen);
   assert.equal(scritto.titolo, "Mio");
+});
+
+test("vendita annullata dopo un cambio di prezzo: il pezzo rientra al prezzo dell'annuncio", () => {
+  // Venduto a 90; intanto l'annuncio è passato a 80 (i venduti non cambiano prezzo); poi l'ordine si annulla
+  const a = annuncio({ price: 80 });
+  const tornato = part({ annuncioId: a.id, price: 90, status: "disponibile" });
+  assert.equal(membershipAfter(tornato, true), a.id);
+  assert.equal(alignedPrice(tornato, a), 80);
+  // reso approvato: stesso allineamento
+  assert.equal(alignedPrice({ ...tornato, price: 70 }, a), 80);
+  // già allineato, non disponibile o senza annuncio: niente da fare
+  assert.equal(alignedPrice(part({ annuncioId: a.id, price: 80 }), a), undefined);
+  assert.equal(alignedPrice(part({ annuncioId: a.id, price: 90, status: "venduto" }), a), undefined);
+  assert.equal(alignedPrice(part({ annuncioId: a.id, price: 90, status: "bozza" }), a), undefined);
+  assert.equal(alignedPrice(part({ annuncioId: "A-000009", price: 90 }), a), undefined);
+  assert.equal(alignedPrice(tornato, undefined), undefined);
+});
+
+test("veicolo cambiato: testo e GPSR degli annunci solo se cambiano i dati che li usano", () => {
+  const v = { make: "Alfa Romeo", model: "Giulietta", version: "1.6", year: 2012, km: 100000, notes: "" } as unknown as Vehicle;
+  assert.deepEqual(listingFieldsChanged(v, { ...v, notes: "pratica ok" }), { text: false, gpsr: false });
+  assert.deepEqual(listingFieldsChanged(v, { ...v, model: "Giulia" }), { text: true, gpsr: false });
+  assert.deepEqual(listingFieldsChanged(v, { ...v, km: 120000 }), { text: true, gpsr: false });
+  assert.deepEqual(listingFieldsChanged(v, { ...v, year: 2025 }), { text: true, gpsr: true });
+  assert.deepEqual(listingFieldsChanged(v, { ...v, make: "Fiat" }), { text: true, gpsr: true });
 });

@@ -1,5 +1,5 @@
 // Annunci con più pezzi: raggruppamento, quantità, stato. Modulo puro.
-import type { Annuncio, ListingStatus, Part, StatoNegozio } from "./types";
+import type { Annuncio, ListingStatus, Part, StatoNegozio, Vehicle } from "./types";
 
 /** Codice originale in forma confrontabile: maiuscolo, senza spazi, punti e trattini. */
 export function normalizeOem(oem: string): string {
@@ -85,6 +85,25 @@ export function membershipAfter(p: Part, checksPass: boolean): string | undefine
   if (p.status === "scartato" || p.status === "invendibile") return undefined;
   if (p.status === "disponibile" && !checksPass) return undefined;
   return p.annuncioId;
+}
+
+/**
+ * Prezzo da dare a un pezzo che resta o rientra disponibile nel suo annuncio: quello dell'annuncio,
+ * se è diverso (es. vendita annullata o reso approvato dopo un cambio di prezzo). Un prezzo solo per annuncio.
+ */
+export function alignedPrice(p: Part, a: Annuncio | undefined): number | undefined {
+  if (!a || p.annuncioId !== a.id || p.status !== "disponibile") return undefined;
+  return p.price === a.price ? undefined : a.price;
+}
+
+/** Quali dati degli annunci cambiano con il veicolo d'origine: il testo (marca, modello, versione, anno, km) e il GPSR (marca, anno). */
+export function listingFieldsChanged(
+  prev: Pick<Vehicle, "make" | "model" | "version" | "year" | "km">,
+  next: Pick<Vehicle, "make" | "model" | "version" | "year" | "km">,
+): { text: boolean; gpsr: boolean } {
+  const gpsr = prev.make !== next.make || prev.year !== next.year;
+  const text = gpsr || prev.model !== next.model || prev.version !== next.version || prev.km !== next.km;
+  return { text, gpsr };
 }
 
 /**

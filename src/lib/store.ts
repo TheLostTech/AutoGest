@@ -9,8 +9,8 @@ import { eerByCode, movesForBonifica, movesForIntake, stockByEer } from "./ambie
 import { differenzaPesata } from "./stime";
 import { DEFAULT_LISTINI, onlinePrice, type Listino } from "./pricing";
 import { typeById } from "./catalog";
-import { groupKey, listingOf, membershipAfter, missingNote, partsOf, pickForSale, placementFor, quantityOf, refreshAnnuncio, shopPicks } from "./annunci";
-import { buildAnnuncio, fieldsFromPart, textFor, type BozzaAnnuncio } from "./annuncio-build";
+import { alignedPrice, groupKey, listingFieldsChanged, listingOf, membershipAfter, missingNote, partsOf, pickForSale, placementFor, quantityOf, refreshAnnuncio, shopPicks } from "./annunci";
+import { buildAnnuncio, fieldsFromPart, gpsrOf, textFor, type BozzaAnnuncio } from "./annuncio-build";
 import { isShippable } from "./spedizione";
 import type { VenditaEbay } from "./ebay/contratto";
 import type {
@@ -325,7 +325,16 @@ export const useStore = create<State & Actions>()(
           const p = get().parts.find((x) => x.id === id);
           if (!p?.annuncioId) continue;
           touched.add(p.annuncioId);
-          if (membershipAfter(p, checksPass(p)) === p.annuncioId) continue;
+          if (membershipAfter(p, checksPass(p)) === p.annuncioId) {
+            // Resta o rientra disponibile: prende il prezzo dell'annuncio (un prezzo solo per i pezzi uguali)
+            const a = get().annunci.find((x) => x.id === p.annuncioId);
+            const price = alignedPrice(p, a);
+            if (price !== undefined) {
+              set((st) => ({ parts: st.parts.map((x) => (x.id === id ? { ...x, price } : x)) }));
+              push(event({ entity: "ricambio", entityId: id, action: `Prezzo allineato all'annuncio ${p.annuncioId}: ${euro(p.price)} → ${euro(price)}` }));
+            }
+            continue;
+          }
           setAnnuncioOf(id, undefined);
           push(
             annuncioEvent(
@@ -356,8 +365,25 @@ export const useStore = create<State & Actions>()(
         },
 
         updateVehicle: (id, patch, action, detail) => {
+          const prev = get().vehicles.find((v) => v.id === id);
           set((s) => ({ vehicles: s.vehicles.map((v) => (v.id === id ? { ...v, ...patch } : v)) }));
           push(event({ entity: "veicolo", entityId: id, action, detail }));
+          // Marca, modello, versione, anno o km cambiati: gli annunci dei suoi pezzi riscrivono il testo
+          // (se non modificato) e si riallineano su eBay; con marca o anno cambiati si ricalcola anche il GPSR
+          const next = get().vehicles.find((v) => v.id === id);
+          if (!prev || !next) return;
+          const changed = listingFieldsChanged(prev, next);
+          if (!changed.text) return;
+          const aids = [...new Set(get().parts.filter((p) => p.vehicleId === id && p.annuncioId).map((p) => p.annuncioId!))];
+          if (changed.gpsr)
+            set((st) => ({
+              annunci: st.annunci.map((a) => {
+                if (!aids.includes(a.id)) return a;
+                const gpsr = gpsrOf(a, st.parts, st.vehicles, id);
+                return gpsr ? { ...a, gpsr } : a;
+              }),
+            }));
+          aids.forEach(touchAnnuncio);
         },
 
         addPart: (p) => {
@@ -398,8 +424,9 @@ export const useStore = create<State & Actions>()(
               set((s) => ({ annunci: s.annunci.map((x) => (x.id === a.id ? { ...x, ...f, caratteristiche: { ...kept, ...f.caratteristiche } } : x)) }));
               push(annuncioEvent(a.id, "Dati dell'annuncio aggiornati", `da ${id}`));
             }
-            // Prezzo: i pezzi uguali hanno un prezzo solo, quindi cambia quello dell'annuncio
-            const still = get().parts.find((x) => x.id === id)?.annuncioId === a.id;
+            // Prezzo: i pezzi uguali hanno un prezzo solo, quindi cambia quello dell'annuncio.
+            // Un pezzo venduto cambia solo il suo prezzo
+            const still = next.status !== "venduto" && get().parts.find((x) => x.id === id)?.annuncioId === a.id;
             if (still && typeof patch.price === "number" && patch.price > 0 && patch.price !== a.price) get().setAnnuncioPrice(a.id, patch.price);
           }
           settle([id]);

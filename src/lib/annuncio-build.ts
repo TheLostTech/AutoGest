@@ -69,6 +69,17 @@ export function textFor(a: Annuncio, parts: Part[], vehicles: Vehicle[], quanti:
   return textOf(base, pick, vehicles, a.spedibile, quanti);
 }
 
+/**
+ * GPSR ricalcolato dal veicolo d'origine del primo pezzo, quando quel veicolo è `vehicleId`
+ * (il GPSR viene dal primo pezzo, come il testo). Altrimenti undefined: resta quello di prima.
+ */
+export function gpsrOf(a: Annuncio, parts: Part[], vehicles: Vehicle[], vehicleId: string): Gpsr | undefined {
+  const first = partsOf(a, parts).sort((x, y) => x.createdAt.localeCompare(y.createdAt) || x.id.localeCompare(y.id))[0];
+  if (!first || first.vehicleId !== vehicleId) return undefined;
+  const v = vehicles.find((x) => x.id === vehicleId);
+  return gpsrFor(v?.year, v?.make);
+}
+
 /** Campi dell'annuncio che dipendono dal pezzo, per un annuncio con un pezzo solo che cambia dati. */
 export function fieldsFromPart(p: Part, vehicles: Vehicle[]): Pick<Annuncio, "chiave" | "typeId" | "side" | "condition" | "oem" | "spedibile" | "caratteristiche"> {
   const t = typeById(p.typeId);
