@@ -300,6 +300,8 @@ export interface Order {
   status: OrderStatus;
   customer: string;
   paymentRef?: string;
+  ebayOrderId?: string; // ordine arrivato da eBay (canale "marketplace")
+  daGestire?: string; // es. "mancano 2 pezzi": venduti su eBay ma non più disponibili
   createdAt: string;
   history: { at: string; status: OrderStatus; note?: string }[];
 }
@@ -310,7 +312,7 @@ export interface AuditEvent {
   user: string;
   role: Role | "sistema" | "cliente";
   device: string;
-  entity: "veicolo" | "ricambio" | "ordine" | "regola" | "sistema";
+  entity: "veicolo" | "ricambio" | "annuncio" | "ordine" | "regola" | "sistema";
   entityId: string;
   action: string;
   detail?: string;

@@ -5,11 +5,21 @@ import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { publishChecks, euro } from "@/lib/logic";
 import { listingOf } from "@/lib/annunci";
+import { bozzaFor } from "@/lib/annuncio-build";
+import type { Part } from "@/lib/types";
 import { Button, Empty, Notice, PageTitle, Panel, PartImage, StatusChip } from "@/components/ui";
 
 export default function Pubblicazione() {
   const s = useStore();
   const [msg, setMsg] = useState("");
+  // Un pezzo con l'annuncio ritirato lo ripubblica; altrimenti nasce l'annuncio con il testo generato, sul negozio
+  const publish = (p: Part) => {
+    if (p.annuncioId) {
+      s.republishAnnuncio(p.annuncioId, { negozio: true, ebay: false });
+      return { ok: true as const, value: p.annuncioId };
+    }
+    return s.publishAnnuncio(p.id, bozzaFor(p, s.vehicles));
+  };
   const vById = new Map(s.vehicles.map((v) => [v.id, v]));
   const queue = s.parts
     .filter((p) => (p.status === "bozza" || p.status === "disponibile") && listingOf(p, s.annunci) !== "pubblicato")
@@ -25,7 +35,18 @@ export default function Pubblicazione() {
         sub="Un ricambio va online solo con foto, prezzo, dati minimi validati e provenienza certa. Le schede incomplete restano in bozza."
         actions={
           ready.length > 0 && (
-            <Button onClick={() => { ready.forEach((x) => s.publish(x.p.id)); setMsg(`${ready.length} ricambi pubblicati sul negozio`); }}>
+            <Button
+              onClick={() => {
+                // Un pezzo alla volta dallo stato aggiornato: i pezzi uguali entrano nell'annuncio appena creato
+                const errors = ready.flatMap((x) => {
+                  const p = useStore.getState().parts.find((y) => y.id === x.p.id);
+                  if (!p || p.annuncioId) return [];
+                  const r = publish(p);
+                  return r.ok ? [] : [`${p.id}: ${r.error}`];
+                });
+                setMsg(errors.length ? `Pubblicati ${ready.length - errors.length} ricambi. Non pubblicati: ${errors.join(" · ")}` : `${ready.length} ricambi pubblicati sul negozio`);
+              }}
+            >
               Pubblica i {ready.length} pronti
             </Button>
           )
@@ -60,7 +81,7 @@ export default function Pubblicazione() {
                 <div className="col-span-2 flex flex-wrap gap-2 md:col-span-1 md:justify-end">
                   {p.status === "bozza" && <Button size="sm" variant="secondary" onClick={() => s.setPartStatus(p.id, "disponibile", "Scheda approvata dal responsabile")}>Approva scheda</Button>}
                   {missing.length === 0 ? (
-                    <Button size="sm" onClick={() => s.publish(p.id)}>Pubblica</Button>
+                    <Button size="sm" onClick={() => { const r = publish(p); setMsg(r.ok ? `${p.id} pubblicato nell'annuncio ${r.value}` : `${p.id}: ${r.error}`); }}>Pubblica</Button>
                   ) : (
                     <Link href={`/ricambi/${p.id}`} className="inline-flex min-h-9 items-center rounded-md px-3 text-sm font-semibold text-band hover:bg-band-tint">Completa scheda</Link>
                   )}

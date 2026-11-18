@@ -5,12 +5,17 @@ import {
   groupKey,
   isWithdrawn,
   listingOf,
+  membershipAfter,
+  missingNote,
   nextToShip,
   negozioStato,
   normalizeOem,
   partsOf,
+  pickForSale,
   placementFor,
   quantityOf,
+  refreshAnnuncio,
+  shopPicks,
 } from "./annunci.ts";
 import type { Annuncio, Part } from "./types.ts";
 
@@ -163,4 +168,97 @@ test("nextToShip: a parità di data parte l'id più basso", () => {
   const p2 = part({ id: "R-000002", annuncioId: a.id, createdAt: t });
   const p1 = part({ id: "R-000001", annuncioId: a.id, createdAt: t });
   assert.deepEqual(nextToShip(a, [p2, p1]).map((p) => p.id), ["R-000001"]);
+});
+
+test("una vendita eBay prende i pezzi entrati per primi", () => {
+  const a = annuncio();
+  const p1 = part({ annuncioId: a.id, createdAt: "2026-03-01T00:00:00.000Z" });
+  const p2 = part({ annuncioId: a.id, createdAt: "2026-01-01T00:00:00.000Z" });
+  const p3 = part({ annuncioId: a.id, createdAt: "2026-02-01T00:00:00.000Z" });
+  assert.deepEqual(pickForSale(a, [p1, p2, p3], 2), { partIds: [p2.id, p3.id], mancano: 0 });
+});
+
+test("importa vendita con più pezzi di quelli disponibili", () => {
+  const a = annuncio();
+  const solo = part({ annuncioId: a.id });
+  const riservato = part({ annuncioId: a.id, status: "riservato" });
+  const venduto = part({ annuncioId: a.id, status: "venduto" });
+  assert.deepEqual(pickForSale(a, [solo, riservato, venduto], 3), { partIds: [solo.id], mancano: 2 });
+  assert.deepEqual(pickForSale(a, [venduto], 1), { partIds: [], mancano: 1 });
+});
+
+test("nota da gestire per i pezzi che mancano", () => {
+  assert.equal(missingNote(0), undefined);
+  assert.equal(missingNote(1), "manca 1 pezzo");
+  assert.equal(missingNote(2), "mancano 2 pezzi");
+});
+
+test("un pezzo scartato o invendibile esce dall'annuncio", () => {
+  assert.equal(membershipAfter(part({ annuncioId: "A-000001", status: "scartato" }), true), undefined);
+  assert.equal(membershipAfter(part({ annuncioId: "A-000001", status: "invendibile" }), true), undefined);
+});
+
+test("un pezzo che torna disponibile resta nell'annuncio solo se passa i controlli", () => {
+  assert.equal(membershipAfter(part({ annuncioId: "A-000001" }), true), "A-000001");
+  assert.equal(membershipAfter(part({ annuncioId: "A-000001" }), false), undefined);
+  // reso in bozza: tiene l'annuncio, non conta finché non torna disponibile
+  assert.equal(membershipAfter(part({ annuncioId: "A-000001", status: "bozza" }), false), "A-000001");
+  assert.equal(membershipAfter(part({ annuncioId: "A-000001", status: "venduto" }), false), "A-000001");
+  assert.equal(membershipAfter(part(), true), undefined);
+});
+
+test("negozio: si compra solo un annuncio online sul negozio con pezzi disponibili", () => {
+  const vivo = annuncio({ id: "A-000001" });
+  const soloEbay = annuncio({ id: "A-000002", negozio: { stato: "ritirato" }, ebay: { stato: "online", daRiallineare: false } });
+  const esaurito = annuncio({ id: "A-000003", negozio: { stato: "esaurito" } });
+  const p1 = part({ annuncioId: vivo.id, createdAt: "2026-02-01T00:00:00.000Z" });
+  const p2 = part({ annuncioId: vivo.id, createdAt: "2026-01-01T00:00:00.000Z" });
+  const p3 = part({ annuncioId: soloEbay.id });
+  const parts = [p1, p2, p3];
+  const annunci = [vivo, soloEbay, esaurito];
+  assert.deepEqual(shopPicks([vivo.id], annunci, parts), {
+    picks: [{ annuncioId: vivo.id, partId: p2.id, price: 90 }],
+    conflicts: [],
+  });
+  assert.deepEqual(shopPicks([soloEbay.id], annunci, parts).conflicts, [soloEbay.id]);
+  assert.deepEqual(shopPicks([esaurito.id, "A-999999"], annunci, parts).conflicts, [esaurito.id, "A-999999"]);
+  // lo stesso annuncio due volte vuol dire due pezzi
+  assert.deepEqual(shopPicks([vivo.id, vivo.id], annunci, parts).picks.map((x) => x.partId), [p2.id, p1.id]);
+  assert.deepEqual(shopPicks([vivo.id, vivo.id, vivo.id], annunci, parts).conflicts, [vivo.id]);
+});
+
+test("refreshAnnuncio: esaurito a zero, di nuovo online sopra zero", () => {
+  const a = annuncio();
+  const at = "2026-05-01T00:00:00.000Z";
+  const zero = refreshAnnuncio(a, [part({ annuncioId: a.id, status: "venduto" })], at);
+  assert.equal(zero.negozio?.stato, "esaurito");
+  assert.equal(zero.esauritoDa, at);
+  const ancora = refreshAnnuncio(zero, [], "2026-06-01T00:00:00.000Z");
+  assert.equal(ancora.esauritoDa, at);
+  const torna = refreshAnnuncio(zero, [part({ annuncioId: a.id })], "2026-06-01T00:00:00.000Z");
+  assert.equal(torna.negozio?.stato, "online");
+  assert.equal(torna.esauritoDa, undefined);
+  const ritirato = refreshAnnuncio(annuncio({ negozio: { stato: "ritirato" } }), [part({ annuncioId: a.id })], at);
+  assert.equal(ritirato.negozio?.stato, "ritirato");
+});
+
+test("refreshAnnuncio: eBay da riallineare, tranne se ritirato", () => {
+  const at = "2026-05-01T00:00:00.000Z";
+  const online = annuncio({ ebay: { stato: "online", daRiallineare: false } });
+  assert.equal(refreshAnnuncio(online, [], at).ebay?.daRiallineare, true);
+  const ritirato = annuncio({ ebay: { stato: "ritirato", daRiallineare: false } });
+  assert.equal(refreshAnnuncio(ritirato, [], at).ebay?.daRiallineare, false);
+  assert.equal(refreshAnnuncio(annuncio(), [], at).ebay, undefined);
+});
+
+test("refreshAnnuncio: riscrive il testo solo se non è stato modificato", () => {
+  const at = "2026-05-01T00:00:00.000Z";
+  const a = annuncio();
+  const parts = [part({ annuncioId: a.id }), part({ annuncioId: a.id })];
+  const regen = (q: number) => ({ titolo: `Faro x${q}`, descrizione: `${q} pezzi` });
+  const r = refreshAnnuncio(a, parts, at, regen);
+  assert.equal(r.titolo, "Faro x2");
+  assert.equal(r.descrizione, "2 pezzi");
+  const scritto = refreshAnnuncio({ ...a, testoModificato: true, titolo: "Mio" }, parts, at, regen);
+  assert.equal(scritto.titolo, "Mio");
 });

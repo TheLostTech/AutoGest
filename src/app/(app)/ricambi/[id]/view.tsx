@@ -16,6 +16,7 @@ import { asksShipping, isShippable } from "@/lib/spedizione";
 import { listPrice, ONLINE_FEE_PCT, onlinePrice, suggestUsedPrice } from "@/lib/pricing";
 import { savePhoto } from "@/lib/services";
 import { listingOf } from "@/lib/annunci";
+import { bozzaFor } from "@/lib/annuncio-build";
 import type { Location } from "@/lib/types";
 import { PartLabel } from "@/components/PartLabel";
 import { Lifecycle } from "@/components/Lifecycle";
@@ -308,15 +309,21 @@ export default function SchedaRicambio() {
                 <Button
                   disabled={blocking.length > 0}
                   onClick={() => {
-                    const r = s.publish(p.id);
-                    flash(r.ok ? "ok" : "danger", r.ok ? "Pubblicato sul negozio online" : `Non pubblicabile: ${r.conflicts?.join(", ")}`);
+                    // Annuncio ritirato: si ripubblica; altrimenti nasce l'annuncio con il testo generato, sul negozio
+                    if (p.annuncioId) {
+                      s.republishAnnuncio(p.annuncioId, { negozio: true, ebay: false });
+                      flash("ok", `Annuncio ${p.annuncioId} di nuovo sul negozio online`);
+                      return;
+                    }
+                    const r = s.publishAnnuncio(p.id, bozzaFor(p, s.vehicles));
+                    flash(r.ok ? "ok" : "danger", r.ok ? `Pubblicato sul negozio online · annuncio ${r.value}` : r.error === "Scheda incompleta" ? `Non pubblicabile: ${r.conflicts?.join(", ")}` : r.error);
                   }}
                 >
                   <Upload className="size-5" aria-hidden />
                   {blocking.length ? `Pubblica (${blocking.length} da sistemare)` : "Pubblica sul negozio"}
                 </Button>
               ) : (
-                <Button variant="secondary" onClick={() => { s.unpublish(p.id); flash("ok", "Ritirato dal negozio"); }}>Ritira dal negozio</Button>
+                <Button variant="secondary" onClick={() => { if (p.annuncioId) s.withdrawAnnuncio(p.annuncioId, "tutti"); flash("ok", `Annuncio ${p.annuncioId} ritirato`); }}>Ritira l&apos;annuncio</Button>
               )}
             </div>
           </Panel>

@@ -219,6 +219,20 @@ export function buildSeed() {
     });
   }
 
+  // Due cerchi gemelli del primo cerchio pubblicato con codice verificato (stesso veicolo, condizione e prezzo):
+  // così i dati demo hanno un annuncio con più pezzi uguali
+  const twinOf = published.find((p) => p.typeId === "cerchio" && p.status === "disponibile" && p.oemVerified && !!p.oem);
+  if (twinOf)
+    for (const h of [1, 2]) {
+      const id = `R-${pad(++pn)}`;
+      const at = new Date(new Date(twinOf.createdAt).getTime() + h * 36e5).toISOString();
+      const twin: Part = { ...twinOf, id, createdAt: at, photos: [...twinOf.photos], location: twinOf.location && { ...twinOf.location } };
+      parts.push(twin);
+      published.push(twin);
+      log({ at, user: twin.createdBy, role: "smontatore", device: "Smartphone campo 1", entity: "ricambio", entityId: id, action: "Ricambio catalogato", detail: `${typeById(twin.typeId).name} da ${twin.vehicleId}` });
+      if (twin.location) log({ at, user: "Paolo (magazzino)", role: "magazziniere", device: "Smartphone magazzino", entity: "ricambio", entityId: id, action: "Posizione assegnata", detail: locToString(twin.location) });
+    }
+
   // Annunci sul negozio: i pezzi pubblicati uguali (stessa chiave) stanno nello stesso annuncio
   const groups = new Map<string, Part[]>();
   const order: Part[][] = []; // ogni gruppo, e ogni pezzo senza chiave, diventa un annuncio
@@ -239,7 +253,7 @@ export function buildSeed() {
     const at = sorted[0].createdAt;
     annunci.push(buildAnnuncio(sorted, SEED_VEHICLES, aid, at));
     for (const p of g) p.annuncioId = aid;
-    log({ at, user: "Sara (responsabile)", role: "responsabile", device: "PC ufficio", entity: "ricambio", entityId: aid, action: `Annuncio ${aid} pubblicato sul negozio`, detail: sorted.map((p) => p.id).join(", ") });
+    log({ at, user: "Sara (responsabile)", role: "responsabile", device: "PC ufficio", entity: "annuncio", entityId: aid, action: "Annuncio creato", detail: sorted.map((p) => p.id).join(", ") });
   }
 
   const orders: Order[] = [];

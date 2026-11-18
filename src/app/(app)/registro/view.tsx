@@ -7,7 +7,7 @@ import { dateIt } from "@/lib/logic";
 import { PageTitle, Panel } from "@/components/ui";
 import type { AuditEvent } from "@/lib/types";
 
-const ENT: (AuditEvent["entity"] | "tutti")[] = ["tutti", "veicolo", "ricambio", "ordine", "regola", "sistema"];
+const ENT: (AuditEvent["entity"] | "tutti")[] = ["tutti", "veicolo", "ricambio", "annuncio", "ordine", "regola", "sistema"];
 
 export default function Registro() {
   const audit = useStore((s) => s.audit);
@@ -33,7 +33,7 @@ export default function Registro() {
             <li key={e.id} className="grid gap-x-4 gap-y-0.5 px-4 py-2.5 text-[15px] md:grid-cols-[140px_120px_1fr_220px]">
               <span className="text-ink-3">{dateIt(e.at, true)}</span>
               <Link
-                href={e.entity === "ricambio" ? `/ricambi/${e.entityId}` : e.entity === "veicolo" ? `/veicoli/${e.entityId}` : e.entity === "ordine" ? "/vendite" : "/registro"}
+                href={e.entity === "ricambio" ? `/ricambi/${e.entityId}` : e.entity === "veicolo" ? `/veicoli/${e.entityId}` : e.entity === "annuncio" ? "/pubblicazione" : e.entity === "ordine" ? "/vendite" : "/registro"}
                 className="code font-semibold text-band"
               >
                 {e.entityId}
