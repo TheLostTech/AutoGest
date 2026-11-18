@@ -8,7 +8,11 @@
 //
 // Usa il Chrome installato sul computer (nessun browser da scaricare).
 // Accanto a ogni .png salva un .txt con il testo della pagina, utile per ricontrollare il manuale.
-// Consiglio: prima della cattura premere «Ripristina dati demo», così i dati sono quelli di riferimento.
+// ATTENZIONE: alcune catture cambiano i dati (scarta un pezzo nei rottami, riempie il carrello, pubblica su eBay simulato).
+// Lanciarle su una copia del gestionale con dati demo puliti, mai sui dati veri:
+//   DATI_DIR=/tmp/dati-manuale npx next build && DATI_DIR=/tmp/dati-manuale npx next start -p 3214
+//   BASE=http://localhost:3214 node cattura.js
+// (cartella DATI_DIR vuota = dati demo di riferimento; next dev non si può avviare due volte nella stessa cartella)
 
 const { chromium } = require("playwright-core");
 const fs = require("fs");
@@ -20,6 +24,8 @@ fs.mkdirSync(OUT, { recursive: true });
 
 const PC = { width: 1440, height: 900 };
 const TELEFONO = { width: 390, height: 844 };
+const MAX_PC = 2400; // altezza massima della cattura, in punti
+const MAX_TELEFONO = 2000;
 
 // [nome, percorso, azione facoltativa prima della cattura]
 const apriRicerca = async (page) => {
@@ -39,24 +45,90 @@ const apriPrimoRipiano = async (page) => {
   await page.waitForTimeout(800);
 };
 const aggiungiAlCarrello = async (page) => {
-  await page.goto(BASE + "/negozio/R-002311", { waitUntil: "networkidle" });
+  await page.goto(BASE + "/negozio/" + ANNUNCIO, { waitUntil: "networkidle" });
   const b = page.getByRole("button", { name: "Aggiungi al carrello" });
   if (await b.count()) await b.click();
   await page.goto(BASE + "/negozio/carrello", { waitUntil: "networkidle" });
 };
+// Scansiona un pezzo scrivendo il codice (la fotocamera non c'è nel browser di cattura)
+const scansionaPezzo = async (page) => {
+  await page.getByPlaceholder(/R-002301/).fill(PEZZO_SCARTO);
+  await page.getByRole("button", { name: "Invia" }).click();
+  await page.waitForTimeout(800);
+};
+const scegliScarto = async (page) => {
+  await scansionaPezzo(page);
+  await page.getByRole("button", { name: /Scarta/ }).first().click();
+  await page.waitForTimeout(400);
+  await page.getByRole("button", { name: "Rotto o danneggiato" }).click();
+  await page.waitForTimeout(400);
+};
+const mettiNeiRottami = async (page) => {
+  await scegliScarto(page);
+  await page.getByRole("button", { name: /Metti nei rottami/ }).click();
+  await page.waitForTimeout(800);
+  await page.goto(BASE + "/rottami", { waitUntil: "networkidle" });
+  await page.waitForTimeout(800);
+};
+const apriFormularioRicevuto = async (page) => {
+  await page.getByRole("button", { name: /Registra formulario ricevuto/ }).click();
+  await page.waitForTimeout(600);
+};
+const apriAnteprimaAnnuncio = async (page) => {
+  await page.getByRole("button", { name: "Pubblica", exact: true }).first().click();
+  await page.waitForTimeout(800);
+};
+const vaiAgliAnnunci = async (page) => {
+  await page.getByText(/^Annunci ·/).first().scrollIntoViewIfNeeded();
+  await page.evaluate(() => window.scrollBy(0, -80));
+  await page.waitForTimeout(400);
+  return { fullPage: false };
+};
+const pubblicaSuEbay = async (page) => {
+  await page.goto(BASE + "/pubblicazione", { waitUntil: "networkidle" });
+  await page.waitForTimeout(800);
+  const b = page.getByRole("button", { name: /^Pubblica su eBay/ }).first();
+  await b.click();
+  await page.waitForTimeout(3000); // il ponte simulato risponde dopo qualche istante
+  await page.goto(BASE + "/ebay-simulato/" + ANNUNCIO_EBAY, { waitUntil: "networkidle" });
+  await page.waitForTimeout(800);
+};
+const apriEbay = async (page) => {
+  const riga = page.getByRole("button", { name: /eBay/ }).first();
+  await riga.click();
+  await page.waitForTimeout(600);
+  await riga.evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 24));
+  await page.waitForTimeout(400);
+  return { fullPage: false }; // solo la scheda eBay aperta
+};
+const scriviTarga = async (page) => {
+  const digita = page.getByRole("button", { name: /Digita la targa/ });
+  if (await digita.count()) await digita.first().click();
+  await page.getByPlaceholder(/AB123CD/).first().fill("GB512XR");
+  const cerca = page.getByRole("button", { name: /Cerca dati veicolo/ });
+  if (await cerca.count()) await cerca.first().click();
+  await page.waitForTimeout(1500);
+};
+
+const PEZZO_SCARTO = process.env.PEZZO_SCARTO || "R-002314"; // un pezzo disponibile a scaffale, non usato nelle altre schermate
+const ANNUNCIO = "A-000005"; // annuncio con 3 pezzi uguali nei dati demo
+const ANNUNCIO_EBAY = "A-000001";
 
 const PIANO = [
   ["comune", PC, "accettazione", [["ricerca", "/", apriRicerca]]],
   ["accettazione", PC, "accettazione", [
     ["01-oggi", "/"],
     ["02-veicoli", "/veicoli"],
-    ["03-nuovo", "/veicoli/nuovo"],
+    ["03-nuovo", "/veicoli/nuovo", scriviTarga],
     ["04-pratica-da-registrare", "/veicoli/V-000115"],
     ["05-pratica-completa", "/veicoli/V-000116"],
     ["07-certificato", "/certificato/V-000116"],
     ["08-ambiente", "/ambiente"],
     ["09-formulari", "/ambiente/formulari"],
     ["10-registro", "/registro"],
+    ["11-periodo", "/ambiente/periodo?mese=2026-10"],
+    ["12-formulario-ricevuto", "/ambiente/formulari", apriFormularioRicevuto],
+    ["13-soggetti", "/ambiente/soggetti"],
   ]],
   ["smontatore", TELEFONO, "smontatore", [
     ["01-oggi", "/"],
@@ -77,6 +149,9 @@ const PIANO = [
     ["06-scansione", "/scansione"],
     ["07-ubicazioni", "/magazzino"],
     ["08-etichette-scaffale", "/etichette-scaffale"],
+    ["09-scansione-pezzo", "/scansione", scansionaPezzo],
+    ["10-scarta", "/scansione", scegliScarto],
+    ["11-rottami", "/scansione", mettiNeiRottami],
   ]],
   ["vendite", PC, "vendite", [
     ["01-oggi", "/"],
@@ -85,9 +160,10 @@ const PIANO = [
     ["04-scontrino", "/documento/DC-2026-0001"],
     ["05-preventivo", "/documento/P-2026-0001"],
     ["06-negozio", "/negozio"],
-    ["07-negozio-pezzo", "/negozio/R-002311"],
+    ["07-negozio-pezzo", "/negozio/" + ANNUNCIO],
     ["08-carrello", "/negozio/carrello", aggiungiAlCarrello],
     ["09-ricambio", "/ricambi/R-002302"],
+    ["10-esaurito", "/negozio/A-000004"],
   ]],
   ["responsabile", PC, "responsabile", [
     ["01-oggi", "/"],
@@ -97,6 +173,13 @@ const PIANO = [
     ["05-ubicazioni", "/magazzino"],
     ["06-ricambi", "/ricambi"],
     ["07-collegamenti", "/impostazioni/collegamenti"],
+    ["08-anteprima-annuncio", "/pubblicazione", apriAnteprimaAnnuncio],
+    ["09-annunci", "/pubblicazione", vaiAgliAnnunci],
+    ["10-ebay-simulato", "/pubblicazione", pubblicaSuEbay],
+    ["11-collegamenti-ebay", "/impostazioni/collegamenti", apriEbay],
+  ]],
+  ["consulente", PC, "consulente", [
+    ["01-oggi", "/"],
   ]],
 ];
 
@@ -131,7 +214,17 @@ async function scegliRuolo(page, ruolo) {
       const opzioni = (prima && (await prima(page))) || {};
       await page.waitForTimeout(600);
       const file = path.join(OUT, `${prefisso}-${nome}`);
-      await page.screenshot({ path: file + ".png", fullPage: opzioni.fullPage ?? true });
+      // Pagina intera, ma tagliata a un'altezza leggibile: elenchi lunghi (registro, etichette) non diventano strisce.
+      // Si allunga la finestra invece di usare fullPage: così barra laterale e barra in basso restano al loro posto.
+      if (opzioni.fullPage ?? true) {
+        await page.evaluate(() => window.scrollTo(0, 0));
+        const alta = await page.evaluate(() => document.documentElement.scrollHeight);
+        const massimo = telefono ? MAX_TELEFONO : MAX_PC;
+        await page.setViewportSize({ width: vista.width, height: Math.max(vista.height, Math.min(alta, massimo)) });
+        await page.waitForTimeout(500);
+      }
+      await page.screenshot({ path: file + ".png" });
+      await page.setViewportSize(vista);
       const testo = await page.evaluate(() => (document.querySelector("main") || document.body).innerText);
       fs.writeFileSync(file + ".txt", testo);
       fatti++;
