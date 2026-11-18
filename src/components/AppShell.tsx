@@ -10,6 +10,7 @@ import { esci, esciDallAssistenza, useSessione } from "@/lib/accesso/client";
 import { useSyncAvviso } from "@/lib/sync";
 import type { Role } from "@/lib/types";
 import { BRAND, DEMO_NOTICE } from "@/lib/config";
+import { Logo } from "@/components/Logo";
 import { GlobalSearch } from "./GlobalSearch";
 import { LostarCredit } from "./Lostar";
 import { inviaInSospeso, resetShared } from "@/lib/sync";
@@ -214,9 +215,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Fascia blu: come la stampa sulla scatola */}
       <aside className="no-print hidden bg-band text-white md:sticky md:top-0 md:flex md:h-dvh md:flex-col">
         <div className="px-5 pb-4 pt-6">
-          <div className="code text-[26px] font-bold uppercase leading-none tracking-wide">
-            {BRAND.azienda.replace(/\s*4\.0$/, "")} <span className="text-[#F4B500]">4.0</span>
-          </div>
+          <Logo className="text-[32px]" />
           <div className="mt-1 text-[13px] font-medium text-white/75">Gestionale autodemolizione</div>
         </div>
         <div className="space-y-2 px-3 pb-4">
@@ -285,9 +284,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Testata mobile */}
         <header className="no-print sticky top-0 z-30 bg-band text-white md:hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-            <Link href="/" className="code min-w-0 text-[17px] font-bold uppercase leading-[1.05] tracking-normal" aria-label={BRAND.azienda}>
-              <span className="block truncate">{BRAND.azienda.replace(/\s*4\.0$/, "")}</span>
-              <span className="block text-[#F4B500]">4.0</span>
+            <Link href="/" className="min-w-0" aria-label={`${BRAND.azienda}, pagina iniziale`}>
+              <Logo className="text-[27px]" />
             </Link>
             <div className="flex shrink-0 items-center gap-2">
               <GlobalSearch variant="icon" />

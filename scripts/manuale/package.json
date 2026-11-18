@@ -1,7 +1,7 @@
 {
   "name": "manuale-screenshot",
   "private": true,
-  "description": "Cattura gli screenshot del manuale operativo di Autodemolizione 4.0",
+  "description": "Cattura gli screenshot del manuale operativo di AutoLost",
   "scripts": {
     "cattura": "node cattura.js"
   },
