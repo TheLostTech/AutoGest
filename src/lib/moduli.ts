@@ -102,6 +102,22 @@ export function filtraAgenda<T extends { kind: string; href: string }>(items: T[
   });
 }
 
+/** Dove si gestisce un ordine: quelli online nel Magazzino, quelli del banco in Vendite */
+export const hrefOrdine = (o: Pick<Order, "channel">) => (o.channel === "banco" ? "/vendite" : "/ordini");
+
+/** "Vendi" dalla scansione: un pezzo di un ordine si preleva sempre; la vendita al banco solo con Vendite */
+export const azioneVendi = (haOrdine: boolean, moduli: Set<Modulo>): "ordine" | "banco" | "bloccato" =>
+  haOrdine ? "ordine" : moduli.has("vendite") ? "banco" : "bloccato";
+
+/**
+ * Ordine al banco ancora in attesa che tiene riservato il pezzo quando il modulo Vendite è spento:
+ * dalla scheda ricambio (base) si può annullare per liberare il pezzo.
+ */
+export function ordineBancoDaLiberare<O extends Pick<Order, "id" | "channel" | "status" | "partIds">>(partId: string, orders: O[], moduli: Set<Modulo>): O | undefined {
+  if (moduli.has("vendite")) return undefined;
+  return orders.find((o) => o.channel === "banco" && o.status === "in attesa di pagamento" && o.partIds.includes(partId));
+}
+
 /** Moduli attivi: senza stato salvato (o modulo non elencato) è attivo; il Magazzino sempre */
 export function moduliAttivi(stato: StatoModulo[] | undefined): Set<Modulo> {
   const spenti = new Set((stato ?? []).filter((x) => !x.attivo).map((x) => x.id));

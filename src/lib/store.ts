@@ -39,7 +39,7 @@ import type {
 import { euro, publishChecks } from "./logic";
 import { canTransmit, firNumberTaken, isDraft, missingFields, monthLabel, nextRegisterNumber, periodsOf } from "./periodo";
 import { MODULI, ORDINE_MODULI, type Modulo, type StatoModulo } from "./moduli";
-import { datiRegistroErrori, normCf, type DatiRegistro } from "./dati-registro";
+import { bonificaRegistrabile, datiRegistroErrori, normCf, statoDatiRegistro, type DatiRegistro } from "./dati-registro";
 
 export const ROLE_USER: Record<Role, { user: string; device: string; label: string }> = {
   accettazione: { user: "Giulia (accettazione)", device: "PC ufficio", label: "Accettazione" },
@@ -391,6 +391,8 @@ export const useStore = create<State & Actions>()(
           if (errori.length) return { ok: false, error: errori.join(" · ") };
           const v = get().vehicles.find((x) => x.id === vehicleId);
           if (!v) return { ok: false, error: "Veicolo non trovato" };
+          // Carico già numerato: produttore e certificato del registro non cambierebbero, si corregge con una rettifica
+          if (statoDatiRegistro(v, get().wasteMoves) === "completo") return { ok: false, error: "Il carico è già registrato: si corregge con una rettifica nel registro" };
           const nome = d.nome.trim();
           const cf = normCf(d.cf);
           const numero = d.numero.trim();
@@ -1006,7 +1008,8 @@ export const useStore = create<State & Actions>()(
 
         saveBonifica: (vehicleId, items, weightKg) => {
           const v0 = get().vehicles.find((x) => x.id === vehicleId);
-          if (!v0 || v0.bonifica) return 0;
+          // Una bonifica segnata senza il modulo Ambiente (nessun materiale) si completa qui con i materiali tolti
+          if (!v0 || !bonificaRegistrabile(v0.bonifica)) return 0;
           const at = now();
           let carico = get().wasteMoves.find((m) => m.origin === vehicleId && m.causale === "*T");
           const intake = carico ? [] : movesForIntake({ ...v0, weightKg: v0.weightKg ?? (weightKg || undefined) }, v0.intakeAt);

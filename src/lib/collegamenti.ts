@@ -152,7 +152,8 @@ export const SERVIZI: Servizio[] = [
   },
   {
     id: "firma",
-    modulo: "accettazione",
+    // Serve a più moduli (RVFU dell'Accettazione, formulari e MUD dell'Ambiente): sta nella base
+    modulo: "magazzino",
     nome: "Firma digitale qualificata",
     gruppo: "legge",
     uso: "RVFU, MUD e formulari",
@@ -189,8 +190,8 @@ export const SERVIZI: Servizio[] = [
   {
     id: "openapi",
     modulo: "magazzino",
-    // Un account per più usi: la visura PRA e la firma sono dell'Accettazione
-    opzioniModulo: { "Visura PRA": "accettazione", "Firma elettronica": "accettazione" },
+    // Un account per più usi: la visura PRA è dell'Accettazione
+    opzioniModulo: { "Visura PRA": "accettazione" },
     nome: "Openapi",
     gruppo: "consumo",
     uso: "Dati da targa, visura PRA, fattura elettronica, firma",

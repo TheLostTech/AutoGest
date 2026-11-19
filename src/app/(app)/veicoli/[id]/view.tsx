@@ -111,7 +111,14 @@ export default function SchedaVeicolo() {
           <div id="bonifica">
           <Panel
             title="Bonifica"
-            action={v.bonifica && !v.bonifica.semplice && moduli.has("ambiente") && <Link href={`/veicoli/${v.id}/bonifica`} className="text-sm font-semibold text-band">Dettaglio</Link>}
+            action={
+              v.bonifica &&
+              moduli.has("ambiente") && (
+                <Link href={`/veicoli/${v.id}/bonifica`} className="text-sm font-semibold text-band">
+                  {v.bonifica.semplice ? "Registra i materiali" : "Dettaglio"}
+                </Link>
+              )
+            }
           >
             {v.bonifica ? (
               <dl className="grid grid-cols-[130px_1fr] gap-x-4 gap-y-2.5 p-4 text-[15px]">

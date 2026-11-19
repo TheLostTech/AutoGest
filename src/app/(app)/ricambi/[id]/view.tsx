@@ -20,12 +20,15 @@ import type { Location } from "@/lib/types";
 import { PartLabel } from "@/components/PartLabel";
 import { Lifecycle } from "@/components/Lifecycle";
 import { Bloccato } from "@/components/ModuloBloccato";
+import { hrefOrdine, ordineBancoDaLiberare } from "@/lib/moduli";
+import { useModuli } from "@/lib/use-moduli";
 import { Button, Empty, ListingChip, Notice, Panel, PartImage, Plate, StatusChip } from "@/components/ui";
 
 export default function SchedaRicambio() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const s = useStore();
+  const moduli = useModuli();
   const p = s.parts.find((x) => x.id === id);
   const v = p ? s.vehicles.find((x) => x.id === p.vehicleId) : undefined;
   const [loc, setLoc] = useState<Location | undefined>(p?.location);
@@ -302,7 +305,22 @@ export default function SchedaRicambio() {
               {order && (
                 <>
                   <dt className="text-ink-3">Ordine</dt>
-                  <dd><Link href={order.channel === "banco" ? "/vendite" : "/ordini"} className="code font-semibold text-band underline">{order.id}</Link> · {order.channel} · {order.status}</dd>
+                  <dd>
+                    <Link href={hrefOrdine(order)} className="code font-semibold text-band underline">{order.id}</Link> · {order.channel} · {order.status}
+                    {/* Senza Vendite l'ordine al banco non si gestisce più: dalla base si annulla per liberare il pezzo */}
+                    {ordineBancoDaLiberare(p.id, s.orders, moduli) && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="mt-2 block"
+                        onClick={() => {
+                          if (confirm(`Annullare l'ordine al banco ${order.id}? I suoi pezzi tornano disponibili.`)) s.cancelOrder(order.id, "Annullato dalla scheda ricambio (modulo Vendite non attivo)");
+                        }}
+                      >
+                        Libera dall&apos;ordine al banco
+                      </Button>
+                    )}
+                  </dd>
                 </>
               )}
             </dl>

@@ -11,6 +11,7 @@ import { typeById } from "@/lib/catalog";
 import { Button, Field, Notice, PartImage } from "@/components/ui";
 import { isShippable } from "@/lib/spedizione";
 import { nextToShip, partsOf, quantityOf } from "@/lib/annunci";
+import { hrefOrdine } from "@/lib/moduli";
 
 type Step = "carrello" | "pagamento" | "esito";
 
@@ -91,7 +92,7 @@ export default function Carrello() {
         <p className="text-ink-2">{ok ? (order.delivery === "ritiro" ? "Ti avvisiamo quando i pezzi sono pronti per il ritiro in sede." : "Riceverai il tracking quando il pacco parte.") + " Ogni pezzo è identificato dal suo codice univoco." : "Puoi riprovare dal carrello."}</p>
         <div className="mt-5 flex gap-2">
           {ok ? <Link href="/negozio" className="font-semibold text-band">Torna al catalogo</Link> : <Button onClick={() => { setStep("carrello"); setOrderId(undefined); }}>Torna al carrello</Button>}
-          <Link href="/vendite" className="ml-auto text-sm font-semibold text-ink-3 underline">Vedi l&apos;ordine nel gestionale</Link>
+          <Link href={hrefOrdine(order)} className="ml-auto text-sm font-semibold text-ink-3 underline">Vedi l&apos;ordine nel gestionale</Link>
         </div>
       </div>
     );

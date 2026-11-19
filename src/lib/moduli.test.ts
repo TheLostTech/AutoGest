@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import { SERVIZI } from "./collegamenti.ts";
-import { filtraAgenda, linkAttivazione, moduliAttivi, moduliDaArchivio, moduloDi, moduloDoc, ORDINE_MODULI, tabsAttive } from "./moduli.ts";
+import { azioneVendi, filtraAgenda, hrefOrdine, linkAttivazione, ordineBancoDaLiberare, moduliAttivi, moduliDaArchivio, moduloDi, moduloDoc, ORDINE_MODULI, tabsAttive } from "./moduli.ts";
 
 test("moduloDi: ogni percorso al suo modulo", () => {
   assert.equal(moduloDi("/ambiente/periodo?mese=2026-10"), "ambiente");
@@ -117,6 +117,38 @@ test("ogni servizio ha un modulo", () => {
   assert.equal(openapi.opzioniModulo?.["Visura PRA"], "accettazione");
   assert.equal(SERVIZI.find((s) => s.id === "rvfu")?.modulo, "accettazione");
   assert.equal(SERVIZI.find((s) => s.id === "platerecognizer")?.modulo, "magazzino");
+});
+
+// Revisione finale: collegamenti agli ordini, vendita dalla scansione, pezzi riservati dal banco
+test("hrefOrdine: ordini online in Ordini online, quelli del banco in Vendite", () => {
+  assert.equal(hrefOrdine({ channel: "negozio" }), "/ordini");
+  assert.equal(hrefOrdine({ channel: "marketplace" }), "/ordini");
+  assert.equal(hrefOrdine({ channel: "banco" }), "/vendite");
+});
+
+test("azioneVendi: senza Vendite il banco è bloccato, l'ordine online no", () => {
+  const senzaVendite = moduliAttivi([{ id: "vendite", attivo: false }]);
+  assert.equal(azioneVendi(true, senzaVendite), "ordine");
+  assert.equal(azioneVendi(false, senzaVendite), "bloccato");
+  assert.equal(azioneVendi(false, moduliAttivi(undefined)), "banco");
+});
+
+test("ordineBancoDaLiberare: solo senza Vendite e solo ordini al banco in attesa", () => {
+  const orders = [
+    { id: "O-1", channel: "banco" as const, status: "in attesa di pagamento" as const, partIds: ["R-1"] },
+    { id: "O-2", channel: "negozio" as const, status: "in attesa di pagamento" as const, partIds: ["R-2"] },
+    { id: "O-3", channel: "banco" as const, status: "pagato" as const, partIds: ["R-3"] },
+  ];
+  const senzaVendite = moduliAttivi([{ id: "vendite", attivo: false }]);
+  assert.equal(ordineBancoDaLiberare("R-1", orders, senzaVendite)?.id, "O-1");
+  assert.equal(ordineBancoDaLiberare("R-1", orders, moduliAttivi(undefined)), undefined);
+  assert.equal(ordineBancoDaLiberare("R-2", orders, senzaVendite), undefined);
+  assert.equal(ordineBancoDaLiberare("R-3", orders, senzaVendite), undefined);
+});
+
+test("firma digitale: servizio della base, serve anche ai formulari dell'Ambiente", () => {
+  assert.equal(SERVIZI.find((s) => s.id === "firma")?.modulo, "magazzino");
+  assert.equal(SERVIZI.find((s) => s.id === "openapi")?.opzioniModulo?.["Firma elettronica"], undefined);
 });
 
 // Barra inferiore del telefono: mai schede bloccate, mai doppie
