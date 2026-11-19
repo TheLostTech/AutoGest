@@ -86,6 +86,28 @@ export function moduliAttivi(stato: StatoModulo[] | undefined): Set<Modulo> {
 
 export const attivo = (moduli: Set<Modulo>, m: Modulo) => moduli.has(m);
 
+/**
+ * Schede della barra inferiore: restano quelle aperte; al posto di una chiusa entra la prima di `ricambi`
+ * aperta e non già presente, altrimenti la scheda sparisce. Chi lavora sul campo non ha lucchetti sotto il pollice.
+ */
+export function tabsAttive<T extends { area?: string; href?: string }>(tabs: T[], ricambi: T[], aperta: (t: T) => boolean): T[] {
+  const chiave = (t: T) => t.area ?? t.href ?? "";
+  const presenti = new Set(tabs.filter(aperta).map(chiave));
+  const out: T[] = [];
+  for (const t of tabs) {
+    if (aperta(t)) {
+      out.push(t);
+      continue;
+    }
+    const sost = ricambi.find((r) => aperta(r) && !presenti.has(chiave(r)));
+    if (sost) {
+      presenti.add(chiave(sost));
+      out.push(sost);
+    }
+  }
+  return out;
+}
+
 // Numero a cui arrivano le richieste d'attivazione: da sostituire con quello vero di Alessandro
 export const WHATSAPP_ATTIVAZIONE = "390000000000";
 

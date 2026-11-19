@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 import path from "node:path";
-import { linkAttivazione, moduliAttivi, moduliDaArchivio, moduloDi, ORDINE_MODULI } from "./moduli.ts";
+import { linkAttivazione, moduliAttivi, moduliDaArchivio, moduloDi, ORDINE_MODULI, tabsAttive } from "./moduli.ts";
 
 test("moduloDi: ogni percorso al suo modulo", () => {
   assert.equal(moduloDi("/ambiente/periodo?mese=2026-10"), "ambiente");
@@ -71,4 +71,26 @@ test("ogni pagina ha un modulo", () => {
   assert.equal(moduloDi("/certificato/X"), "accettazione");
   assert.ok(pagine.includes("/veicoli/X/bonifica"));
   assert.equal(moduloDi("/veicoli/X/bonifica"), "ambiente");
+});
+
+// Barra inferiore del telefono: mai schede bloccate, mai doppie
+type T = { area?: string; href?: string };
+const aperta = (chiuse: string[]) => (t: T) => !chiuse.includes(t.area ?? t.href ?? "");
+
+test("tabsAttive: la scheda chiusa lascia il posto alla prima area aperta", () => {
+  const tabs: T[] = [{ area: "oggi" }, { area: "veicoli" }, { area: "ambiente" }, { area: "ufficio" }];
+  const ricambi: T[] = [{ area: "oggi" }, { area: "veicoli" }, { area: "ricambi" }, { area: "ufficio" }];
+  assert.deepEqual(tabsAttive(tabs, ricambi, aperta(["ambiente"])), [{ area: "oggi" }, { area: "veicoli" }, { area: "ricambi" }, { area: "ufficio" }]);
+});
+
+test("tabsAttive: non duplica una scheda già presente", () => {
+  const tabs: T[] = [{ area: "oggi" }, { area: "vendite" }, { area: "ricambi" }, { href: "/scansione" }];
+  const ricambi: T[] = [{ area: "oggi" }, { area: "ricambi" }];
+  assert.deepEqual(tabsAttive(tabs, ricambi, aperta(["vendite"])), [{ area: "oggi" }, { area: "ricambi" }, { href: "/scansione" }]);
+});
+
+test("tabsAttive: consulente senza ambiente", () => {
+  const tabs: T[] = [{ area: "oggi" }, { href: "/ambiente/periodo" }, { href: "/ambiente" }, { href: "/ambiente/formulari" }];
+  const r = tabsAttive(tabs, [{ area: "oggi" }], aperta(["/ambiente/periodo", "/ambiente", "/ambiente/formulari"]));
+  assert.deepEqual(r, [{ area: "oggi" }]);
 });

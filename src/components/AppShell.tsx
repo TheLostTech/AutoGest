@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Boxes, Briefcase, CarFront, ClipboardList, LayoutGrid, Leaf, Menu, ScanLine, Send, Settings, ShoppingCart, Wrench, X, type LucideIcon } from "lucide-react";
+import { Boxes, Briefcase, CarFront, ClipboardList, LayoutGrid, Leaf, Lock, Menu, ScanLine, Send, Settings, ShoppingCart, Wrench, X, type LucideIcon } from "lucide-react";
+import { attivo, moduloDi, tabsAttive } from "@/lib/moduli";
+import { useModuli } from "@/lib/use-moduli";
 import { ROLE_USER, useDeviceStorageFull, useStore } from "@/lib/store";
 import type { Role } from "@/lib/types";
 import { BRAND, DEMO_NOTICE } from "@/lib/config";
@@ -14,7 +16,7 @@ import { resetShared } from "@/lib/sync";
 import { useEbaySync } from "@/lib/ebay-sync";
 
 // Navigazione per aree di lavoro: poche voci, le sottosezioni compaiono solo dentro l'area aperta.
-// Un'area senza sottosezioni visibili per il ruolo (o un modulo non attivo) non compare.
+// Un'area senza sottosezioni visibili per il ruolo non compare; quelle di un modulo non attivo compaiono bloccate, in fondo.
 const ALL_ROLES: Role[] = ["accettazione", "smontatore", "magazziniere", "responsabile", "vendite"];
 
 interface Sub {
@@ -51,6 +53,8 @@ const AREAS: Area[] = [
       { href: "/inventario", label: "Inventario", roles: ["magazziniere", "responsabile"] },
       { href: "/rottami", label: "Area rottami", roles: ["smontatore", "magazziniere", "responsabile"] },
       { href: "/pubblicazione", label: "Pubblicazione", roles: ["responsabile"] },
+      { href: "/ordini", label: "Ordini online", roles: ["magazziniere", "responsabile", "vendite"] },
+      { href: "/negozio", label: "Negozio online", roles: ["vendite", "responsabile"] },
       { href: "/regole", label: "Scorte minime", roles: ["responsabile"] },
     ],
   },
@@ -61,7 +65,6 @@ const AREAS: Area[] = [
     subs: [
       { href: "/vendite", label: "Banco e ordini", roles: ["vendite", "responsabile"] },
       { href: "/vendite/documenti", label: "Documenti", roles: ["vendite", "responsabile"] },
-      { href: "/negozio", label: "Negozio online", roles: ["vendite", "responsabile"] },
     ],
   },
   {
@@ -88,7 +91,10 @@ const AREAS: Area[] = [
     id: "impostazioni",
     label: "Impostazioni",
     icon: Settings,
-    subs: [{ href: "/impostazioni/collegamenti", label: "Collegamenti", roles: ["responsabile"] }],
+    subs: [
+      { href: "/impostazioni/collegamenti", label: "Collegamenti", roles: ["responsabile"] },
+      { href: "/impostazioni/moduli", label: "Moduli", roles: ["responsabile"] },
+    ],
   },
 ];
 
@@ -161,9 +167,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const setRole = useStore((s) => s.setRole);
   const storageFull = useDeviceStorageFull();
   useEbaySync();
-  const areas = visibleAreas(role);
+  const moduli = useModuli();
+  const subAperta = (s: { href: string }) => attivo(moduli, moduloDi(s.href));
+  // Aree con almeno una sottosezione aperta prima, poi quelle dei moduli non attivi
+  const tutte = visibleAreas(role);
+  const areaAperta = (a: Area) => a.subs.some(subAperta);
+  const areas = [...tutte.filter(areaAperta), ...tutte.filter((a) => !areaAperta(a))];
   const cur = currentSub(path, areas);
-  const tabs = MOBILE_TABS[role];
+  const tabAperta = (t: Tab) => ("href" in t ? subAperta(t) : areas.some((a) => a.id === t.area && areaAperta(a)));
+  const tabs = tabsAttive<Tab>(
+    MOBILE_TABS[role],
+    areas.filter(areaAperta).map((a) => ({ area: a.id, label: a.label, icon: a.icon })),
+    tabAperta,
+  );
   const hasScanTab = tabs.some((t) => "href" in t && t.href === "/scansione");
   // Aree che non stanno nella barra inferiore: finiscono sotto "Altro"
   const tabAreas = new Set(tabs.flatMap((t) => ("area" in t ? [t.area] : [])));
@@ -204,17 +220,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-2" aria-label="Aree">
           {areas.map((a) => {
             const open = cur?.areaId === a.id;
+            const chiusa = !areaAperta(a);
             return (
               <div key={a.id}>
                 <Link
-                  href={a.subs[0].href}
+                  href={(a.subs.find(subAperta) ?? a.subs[0]).href}
                   className={`flex min-h-11 items-center gap-3 rounded px-3 text-[15px] font-semibold transition-colors ${
-                    open ? (a.subs.length > 1 ? "text-white" : "bg-white text-band") : "text-white/85 hover:bg-white/12"
+                    open ? (a.subs.length > 1 ? "text-white" : "bg-white text-band") : chiusa ? "text-white/50 hover:bg-white/12" : "text-white/85 hover:bg-white/12"
                   }`}
                   aria-current={open && a.subs.length === 1 ? "page" : undefined}
                 >
                   <a.icon className="size-[18px]" strokeWidth={2} aria-hidden />
                   {a.label}
+                  {chiusa && <Lock className="ml-auto size-4" aria-label="modulo non attivo" />}
                 </Link>
                 {open && a.subs.length > 1 && (
                   <ul className="mb-2 ml-[22px] space-y-0.5 border-l border-white/25 pl-2">
@@ -224,10 +242,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         <li key={s.href}>
                           <Link
                             href={s.href}
-                            className={`flex min-h-10 items-center rounded px-3 text-[15px] transition-colors ${on ? "bg-white font-semibold text-band" : "text-white/85 hover:bg-white/12"}`}
+                            className={`flex min-h-10 items-center gap-2 rounded px-3 text-[15px] transition-colors ${on ? "bg-white font-semibold text-band" : subAperta(s) ? "text-white/85 hover:bg-white/12" : "text-white/50 hover:bg-white/12"}`}
                             aria-current={on ? "page" : undefined}
                           >
                             {s.label}
+                            {!subAperta(s) && <Lock className="ml-auto size-3.5" aria-label="modulo non attivo" />}
                           </Link>
                         </li>
                       );
@@ -283,10 +302,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <Link
                     key={s.href}
                     href={s.href}
-                    className={`flex h-9 shrink-0 items-center rounded-full px-3.5 text-[14px] font-semibold ${on ? "bg-white text-band" : "text-white/85 hover:bg-white/12"}`}
+                    className={`flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[14px] font-semibold ${on ? "bg-white text-band" : subAperta(s) ? "text-white/85 hover:bg-white/12" : "text-white/50 hover:bg-white/12"}`}
                     aria-current={on ? "page" : undefined}
                   >
                     {s.label}
+                    {!subAperta(s) && <Lock className="size-3.5" aria-label="modulo non attivo" />}
                   </Link>
                 );
               })}
@@ -354,16 +374,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <ul className="px-2 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
             {moreAreas.map((a) => (
               <li key={a.id} className="mb-2">
-                <p className="flex items-center gap-2 px-2 py-1 font-semibold"><a.icon className="size-5 text-ink-3" aria-hidden /> {a.label}</p>
+                <p className={`flex items-center gap-2 px-2 py-1 font-semibold ${areaAperta(a) ? "" : "text-ink-3"}`}>
+                  <a.icon className="size-5 text-ink-3" aria-hidden /> {a.label}
+                  {!areaAperta(a) && <Lock className="size-4" aria-label="modulo non attivo" />}
+                </p>
                 <ul className="grid grid-cols-2 gap-1.5 px-2">
                   {a.subs.map((sub) => (
                     <li key={sub.href}>
                       <Link
                         href={sub.href}
                         onClick={() => setMore(false)}
-                        className={`flex min-h-12 items-center rounded-md border px-3 text-[15px] font-semibold ${cur?.subHref === sub.href ? "border-band bg-band-tint text-band" : "border-hair text-ink"}`}
+                        className={`flex min-h-12 items-center gap-2 rounded-md border px-3 text-[15px] font-semibold ${cur?.subHref === sub.href ? "border-band bg-band-tint text-band" : subAperta(sub) ? "border-hair text-ink" : "border-hair text-ink-3"}`}
                       >
                         {sub.label}
+                        {!subAperta(sub) && <Lock className="ml-auto size-4 shrink-0" aria-label="modulo non attivo" />}
                       </Link>
                     </li>
                   ))}
