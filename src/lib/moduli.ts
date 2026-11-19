@@ -89,6 +89,19 @@ export function moduloDoc(d: Pick<SalesDoc, "type" | "orderId">, orders: Pick<Or
   return o && o.channel !== "banco" ? "magazzino" : "vendite";
 }
 
+/**
+ * Coda "Oggi" senza le voci dei moduli spenti. Le voci della pratica sono dell'Accettazione anche se portano
+ * alla scheda veicolo; la bonifica senza Ambiente resta (scadenza di legge) e porta alla scheda, dove si segna.
+ */
+export function filtraAgenda<T extends { kind: string; href: string }>(items: T[], moduli: Set<Modulo>): T[] {
+  return items.flatMap((it) => {
+    const m: Modulo = it.kind === "pratica" ? "accettazione" : moduloDi(it.href);
+    if (moduli.has(m)) return [it];
+    const bonifica = it.href.match(/^\/veicoli\/([^/?#]+)\/bonifica/);
+    return bonifica ? [{ ...it, href: `/veicoli/${bonifica[1]}#bonifica` }] : [];
+  });
+}
+
 /** Moduli attivi: senza stato salvato (o modulo non elencato) è attivo; il Magazzino sempre */
 export function moduliAttivi(stato: StatoModulo[] | undefined): Set<Modulo> {
   const spenti = new Set((stato ?? []).filter((x) => !x.attivo).map((x) => x.id));

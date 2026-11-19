@@ -224,8 +224,9 @@ export function buildAgenda(
       roles: ["responsabile"],
     });
 
-  // Ordini
+  // Ordini: quelli online si gestiscono in "Ordini online" (Magazzino), quelli del banco in Vendite
   for (const o of orders) {
+    const ordHref = o.channel === "banco" ? "/vendite" : "/ordini";
     // Venduto su eBay ma senza abbastanza pezzi (partiti nel frattempo da un altro canale)
     if (o.daGestire && o.status !== "annullato")
       items.push({
@@ -234,7 +235,7 @@ export function buildAgenda(
         title: `Ordine eBay ${o.id} da gestire: ${o.daGestire}`,
         detail: `${o.customer}${o.ebayOrderId ? ` · ordine eBay ${o.ebayOrderId}` : ""} · contatta l'acquirente o rimborsa`,
         action: "Apri",
-        href: "/vendite",
+        href: ordHref,
         due: o.createdAt,
         roles: ["vendite", "responsabile"],
       });
@@ -248,7 +249,7 @@ export function buildAgenda(
             : `Incassa l'ordine ${o.id}`,
         detail: `${o.customer} · ${o.partIds.length} ${o.partIds.length === 1 ? "pezzo riservato" : "pezzi riservati"} · ${o.channel}`,
         action: "Apri",
-        href: "/vendite",
+        href: ordHref,
         due: addDays(o.createdAt, TERMS.pagamento),
         roles: ["vendite", "responsabile"],
       });
@@ -259,7 +260,7 @@ export function buildAgenda(
         title: o.channel === "banco" ? `Consegna l'ordine ${o.id}` : o.delivery === "ritiro" ? `Prepara ${o.id} per il ritiro in sede` : `Prepara e spedisci ${o.id}`,
         detail: `${o.customer} · ${o.partIds.map((pid) => { const l = parts.find((p) => p.id === pid)?.location; return l ? `${pid} in ${locToString(l)}` : `${pid} prelevato`; }).join(", ")}`,
         action: o.channel === "banco" || o.delivery === "ritiro" ? "Consegna" : "Spedisci",
-        href: "/vendite",
+        href: ordHref,
         due: addDays(o.createdAt, TERMS.spedizione),
         roles: ["vendite", "responsabile"],
       });

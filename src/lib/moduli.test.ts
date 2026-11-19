@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 import path from "node:path";
-import { linkAttivazione, moduliAttivi, moduliDaArchivio, moduloDi, moduloDoc, ORDINE_MODULI, tabsAttive } from "./moduli.ts";
+import { filtraAgenda, linkAttivazione, moduliAttivi, moduliDaArchivio, moduloDi, moduloDoc, ORDINE_MODULI, tabsAttive } from "./moduli.ts";
 
 test("moduloDi: ogni percorso al suo modulo", () => {
   assert.equal(moduloDi("/ambiente/periodo?mese=2026-10"), "ambiente");
@@ -86,6 +86,24 @@ test("moduloDoc: documento al suo modulo", () => {
   assert.equal(moduloDoc({ type: "nota di credito", orderId: "O-3" }, orders), "magazzino");
   assert.equal(moduloDoc({ type: "documento commerciale" }, orders), "vendite");
   assert.equal(moduloDoc({ type: "fattura", orderId: "O-9" }, orders), "vendite");
+});
+
+// Coda "Oggi": niente voci dei moduli spenti, tranne la bonifica che senza Ambiente si segna dalla scheda
+test("filtraAgenda: voci dei moduli spenti tolte, bonifica verso la scheda", () => {
+  const voci = [
+    { id: "a", kind: "pratica" as const, href: "/veicoli/V-1#pratica" },
+    { id: "b", kind: "ambiente" as const, href: "/ambiente/periodo?mese=2026-10" },
+    { id: "c", kind: "ambiente" as const, href: "/veicoli/V-1/bonifica" },
+    { id: "d", kind: "ordine" as const, href: "/ordini" },
+    { id: "e", kind: "ordine" as const, href: "/vendite" },
+    { id: "f", kind: "veicolo" as const, href: "/campo/V-1" },
+  ];
+  const soloBase = filtraAgenda(voci, moduliAttivi([{ id: "accettazione", attivo: false }, { id: "ambiente", attivo: false }, { id: "vendite", attivo: false }]));
+  assert.deepEqual(
+    soloBase.map((v) => `${v.id} ${v.href}`),
+    ["c /veicoli/V-1#bonifica", "d /ordini", "f /campo/V-1"],
+  );
+  assert.deepEqual(filtraAgenda(voci, moduliAttivi(undefined)), voci);
 });
 
 // Barra inferiore del telefono: mai schede bloccate, mai doppie

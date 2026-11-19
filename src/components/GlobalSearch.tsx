@@ -7,6 +7,8 @@ import { useStore } from "@/lib/store";
 import { eerByCode, fmtKg } from "@/lib/ambiente";
 import { euro } from "@/lib/logic";
 import { DOC_LABEL } from "@/lib/docs";
+import { moduloDi, moduloDoc } from "@/lib/moduli";
+import { useModuli } from "@/lib/use-moduli";
 
 interface Hit {
   group: string;
@@ -76,6 +78,7 @@ export function GlobalSearch({ variant }: { variant: "sidebar" | "icon" }) {
 function SearchBox({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const { vehicles, parts, orders, firs, docs } = useStore();
+  const moduli = useModuli();
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const query = norm(q.trim());
@@ -103,16 +106,19 @@ function SearchBox({ onClose }: { onClose: () => void }) {
     orders
       .filter((o) => has(o.id, o.customer, ...o.partIds))
       .slice(0, 4)
-      .forEach((o) => hits.push({ group: "Ordini", icon: PackageCheck, id: o.id, title: o.customer, sub: `${o.channel} · ${o.status} · ${euro(o.amount)}`, href: "/vendite" }));
+      .forEach((o) => hits.push({ group: "Ordini", icon: PackageCheck, id: o.id, title: o.customer, sub: `${o.channel} · ${o.status} · ${euro(o.amount)}`, href: o.channel === "banco" ? "/vendite" : "/ordini" }));
     firs
       .filter((f) => has(f.id, f.eer, f.destinatario, eerByCode(f.eer)?.short))
       .slice(0, 4)
       .forEach((f) => hits.push({ group: "Formulari", icon: Leaf, id: f.id, title: `${eerByCode(f.eer)?.short} · ${fmtKg(f.kg)}`, sub: `${f.status} · ${f.destinatario}`, href: "/ambiente/formulari" }));
     docs
-      .filter((d) => has(d.id, d.customer.name, d.customer.taxId, d.orderId))
+      .filter((d) => moduli.has(moduloDoc(d, orders)) && has(d.id, d.customer.name, d.customer.taxId, d.orderId))
       .slice(0, 4)
       .forEach((d) => hits.push({ group: "Documenti", icon: FileText, id: d.id, title: `${DOC_LABEL[d.type]} · ${d.customer.name}`, sub: `${euro(d.total)} · ${d.status}`, href: `/documento/${d.id}` }));
   }
+  // Niente risultati che portano a un modulo spento (es. formulari senza Ambiente); i documenti si filtrano sopra
+  const visibili = hits.filter((h) => h.href.startsWith("/documento/") || moduli.has(moduloDi(h.href)));
+  hits.splice(0, hits.length, ...visibili);
   const cur = Math.min(sel, Math.max(0, hits.length - 1));
   const go = (h: Hit) => {
     onClose();
