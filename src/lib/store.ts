@@ -39,6 +39,7 @@ import type {
 import { euro, publishChecks } from "./logic";
 import { canTransmit, firNumberTaken, isDraft, missingFields, monthLabel, nextRegisterNumber, periodsOf } from "./periodo";
 import { MODULI, ORDINE_MODULI, type Modulo, type StatoModulo } from "./moduli";
+import { datiRegistroErrori, normCf, type DatiRegistro } from "./dati-registro";
 
 export const ROLE_USER: Record<Role, { user: string; device: string; label: string }> = {
   accettazione: { user: "Giulia (accettazione)", device: "PC ufficio", label: "Accettazione" },
@@ -151,6 +152,10 @@ interface Actions {
   closeCount: (c: Omit<InventoryCount, "id" | "at" | "by">) => string;
   log: (e: Omit<AuditEvent, "id" | "at" | "user" | "role" | "device"> & Partial<Pick<AuditEvent, "user" | "role" | "device">>) => void;
   setModulo: (id: Modulo, attivo: boolean) => void;
+  // Senza Ambiente: bonifica segnata con un tocco (lo smontaggio si sblocca, il registro non si tocca)
+  segnaBonificata: (vehicleId: string, at: string) => void;
+  // Senza Accettazione: chi consegna e certificato ricopiati dalla pratica fatta altrove, per il registro rifiuti
+  setDatiRegistro: (vehicleId: string, d: DatiRegistro) => Result;
   reset: () => void;
 }
 
@@ -373,6 +378,35 @@ export const useStore = create<State & Actions>()(
           const st = { id, attivo, cambiatoAt: now(), cambiatoDa: ROLE_USER[get().role].user };
           set((s) => ({ moduli: [...s.moduli.filter((x) => x.id !== id), st] }));
           push(event({ entity: "sistema", entityId: `modulo-${id}`, action: attivo ? "Modulo attivato" : "Modulo disattivato", detail: MODULI[id].nome }));
+        },
+
+        segnaBonificata: (vehicleId, at) => {
+          const by = ROLE_USER[get().role].user;
+          set((s) => ({ vehicles: s.vehicles.map((v) => (v.id === vehicleId && !v.bonifica ? { ...v, bonifica: { at, by, items: [], residualKg: 0, semplice: true } } : v)) }));
+          push(event({ entity: "veicolo", entityId: vehicleId, action: "Bonifica segnata come fatta", detail: "senza dettaglio dei materiali (modulo Ambiente non attivo)" }));
+        },
+
+        setDatiRegistro: (vehicleId, d) => {
+          const errori = datiRegistroErrori(d);
+          if (errori.length) return { ok: false, error: errori.join(" · ") };
+          const v = get().vehicles.find((x) => x.id === vehicleId);
+          if (!v) return { ok: false, error: "Veicolo non trovato" };
+          const nome = d.nome.trim();
+          const cf = normCf(d.cf);
+          const numero = d.numero.trim();
+          const data = new Date(`${d.data}T12:00:00`).toISOString();
+          set((s) => ({
+            vehicles: s.vehicles.map((x) =>
+              x.id === vehicleId
+                ? { ...x, conferente: { tipo: x.conferente?.tipo ?? "privato", nome, cf, documento: x.conferente?.documento }, dossier: { ...x.dossier, number: numero }, presaInCarico: { at: data, by: ROLE_USER[get().role].user } }
+                : x,
+            ),
+          }));
+          push(event({ entity: "veicolo", entityId: vehicleId, action: "Dati per il registro rifiuti", detail: `${nome} · certificato ${numero}` }));
+          // Il carico d'ingresso in bozza si completa con gli stessi dati (e prende il numero se non manca altro)
+          const carico = get().wasteMoves.find((m) => m.origin === vehicleId && m.causale === "*T" && isDraft(m));
+          if (carico) get().completeDraft(carico.id, { produttoreNome: nome, produttoreCf: cf, certificato: { numero, data } });
+          return { ok: true, value: undefined };
         },
 
         addVehicle: (v) => {

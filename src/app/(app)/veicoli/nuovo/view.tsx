@@ -9,10 +9,12 @@ import { Button, Field, Notice, PageTitle, Panel, Plate } from "@/components/ui"
 import { PLATFORMS } from "@/lib/catalog";
 import { pesoDiverso } from "@/lib/stime";
 import { savePhoto, lookupPlate, OCR_SAMPLES, PLATE_RE, simulateOcr, VIN_RE, type OcrResult } from "@/lib/services";
+import { useModuli } from "@/lib/use-moduli";
 
 export default function NuovoVeicolo() {
   const router = useRouter();
   const { vehicles, addVehicle, log } = useStore();
+  const moduli = useModuli();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [photo, setPhoto] = useState<string>();
@@ -215,7 +217,11 @@ export default function NuovoVeicolo() {
       <Panel title="3 · Note e pratica" className="mt-5">
         <div className="grid gap-4 p-4 sm:grid-cols-2">
           <p className="rounded-md bg-carton px-4 py-3 text-[15px] text-ink-2 sm:col-span-2">
-            La pratica si completa nella scheda del veicolo, dopo il salvataggio: chi consegna e documenti, visura, presa in carico nel RVFU (il numero del certificato lo assegna il registro) e radiazione.
+            {moduli.has("accettazione")
+              ? "La pratica si completa nella scheda del veicolo, dopo il salvataggio: chi consegna e documenti, visura, presa in carico nel RVFU (il numero del certificato lo assegna il registro) e radiazione."
+              : moduli.has("ambiente")
+                ? "Dopo il salvataggio, nella scheda del veicolo si segna la bonifica e si ricopiano chi ha consegnato e il certificato di rottamazione per il registro rifiuti."
+                : "Dopo il salvataggio, nella scheda del veicolo si segna la bonifica e si avvia lo smontaggio."}
           </p>
           <div className="sm:col-span-2">
             <Field label="Note">
