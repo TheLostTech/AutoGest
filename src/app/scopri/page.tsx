@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import { BRAND, PRODUTTORE } from "@/lib/config";
+import { MODULI, ORDINE_MODULI } from "@/lib/moduli";
 import { DEMO, Piede, Testata } from "@/components/sito/Sito";
 import { EtichettaStampata, EtichettaPiccola, Percorso } from "./parti";
 import "./scopri.css";
@@ -154,6 +155,26 @@ export default function ScopriPage() {
               <p className="mt-4 max-w-[54ch] text-[18px] leading-[1.6] text-ink-2">Al banco non aggiungiamo niente.</p>
             </div>
             <Scontrino />
+          </div>
+        </section>
+
+        {/* Come si compra: la base e i moduli che si aggiungono */}
+        <section id="moduli" className="scroll-mt-4 border-t border-hair">
+          <div className="mx-auto max-w-[1240px] px-4 py-20 md:px-8 md:py-28">
+            <h2 className="scopri-h2 max-w-[18ch]">Parti dal magazzino. Aggiungi il resto quando serve.</h2>
+            <p className="mt-5 max-w-[60ch] text-[18px] leading-[1.6] text-ink-2">
+              Il Magazzino è la base e comprende già la pubblicazione online. Accettazione, Ambiente e Vendite si attivano a parte, ognuno da solo: quelli che non hai li vedi nel
+              gestionale, bloccati, e li chiedi con un messaggio.
+            </p>
+            <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {ORDINE_MODULI.map((m) => (
+                <li key={m} className={`rounded-md border p-5 ${m === "magazzino" ? "border-band bg-band-tint" : "border-hair bg-label"}`}>
+                  <p className="code text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-3">{m === "magazzino" ? "La base" : "Si aggiunge"}</p>
+                  <h3 className="mt-1 text-[22px] font-bold">{MODULI[m].nome}</h3>
+                  <p className="mt-2 text-[16px] leading-[1.55] text-ink-2">{MODULI[m].frase}</p>
+                </li>
+              ))}
+            </ul>
           </div>
         </section>
 
