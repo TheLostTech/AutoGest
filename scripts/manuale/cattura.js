@@ -10,9 +10,11 @@
 // Accanto a ogni .png salva un .txt con il testo della pagina, utile per ricontrollare il manuale.
 // ATTENZIONE: alcune catture cambiano i dati (scarta un pezzo nei rottami, riempie il carrello, pubblica su eBay simulato).
 // Lanciarle su una copia del gestionale con dati demo puliti, mai sui dati veri:
-//   DATI_DIR=/tmp/dati-manuale npx next build && DATI_DIR=/tmp/dati-manuale npx next start -p 3214
+//   git archive HEAD | tar -x -C /tmp/copia && cp -cR node_modules /tmp/copia/   (copia pulita dell'ultimo commit)
+//   cd /tmp/copia && DATI_DIR=/tmp/dati-manuale npx next dev -p 3214
 //   BASE=http://localhost:3214 node cattura.js
-// (cartella DATI_DIR vuota = dati demo di riferimento; next dev non si può avviare due volte nella stessa cartella)
+// (cartella DATI_DIR vuota = dati demo di riferimento; controllare che /api/demo-state dia version 0.
+//  next dev non parte due volte nella stessa cartella, per questo si usa una copia; node_modules va copiato, non collegato)
 
 const { chromium } = require("playwright-core");
 const fs = require("fs");
