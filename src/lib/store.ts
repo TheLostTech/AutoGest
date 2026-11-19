@@ -38,6 +38,7 @@ import type {
 } from "./types";
 import { euro, publishChecks } from "./logic";
 import { canTransmit, firNumberTaken, isDraft, missingFields, monthLabel, nextRegisterNumber, periodsOf } from "./periodo";
+import { MODULI, ORDINE_MODULI, type Modulo, type StatoModulo } from "./moduli";
 
 export const ROLE_USER: Record<Role, { user: string; device: string; label: string }> = {
   accettazione: { user: "Giulia (accettazione)", device: "PC ufficio", label: "Accettazione" },
@@ -78,6 +79,8 @@ interface State {
   inventory: InventoryCount[];
   counters: Counters;
   activeVehicleId?: string;
+  // Moduli acquistati dall'azienda (vedi moduli.ts): un modulo spento nasconde le schermate, i dati restano
+  moduli: StatoModulo[];
 }
 
 type Result<T = undefined> = { ok: true; value: T } | { ok: false; error: string; conflicts?: string[] };
@@ -147,6 +150,7 @@ interface Actions {
   addWarehouse: (w: Warehouse) => void;
   closeCount: (c: Omit<InventoryCount, "id" | "at" | "by">) => string;
   log: (e: Omit<AuditEvent, "id" | "at" | "user" | "role" | "device"> & Partial<Pick<AuditEvent, "user" | "role" | "device">>) => void;
+  setModulo: (id: Modulo, attivo: boolean) => void;
   reset: () => void;
 }
 
@@ -175,6 +179,7 @@ function initial(): State {
     inventory: s.inventory,
     counters: s.counters,
     activeVehicleId: "V-000118",
+    moduli: ORDINE_MODULI.map((id) => ({ id, attivo: true })),
   };
 }
 
@@ -362,6 +367,13 @@ export const useStore = create<State & Actions>()(
         setRole: (role) => set({ role }),
         setActiveVehicle: (id) => set({ activeVehicleId: id }),
         log: (e) => push(event(e)),
+
+        setModulo: (id, attivo) => {
+          if (id === "magazzino") return; // la base non si spegne
+          const st = { id, attivo, cambiatoAt: now(), cambiatoDa: ROLE_USER[get().role].user };
+          set((s) => ({ moduli: [...s.moduli.filter((x) => x.id !== id), st] }));
+          push(event({ entity: "sistema", entityId: `modulo-${id}`, action: attivo ? "Modulo attivato" : "Modulo disattivato", detail: MODULI[id].nome }));
+        },
 
         addVehicle: (v) => {
           const n = get().counters.vehicle + 1;
