@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { Boxes, Briefcase, CarFront, ClipboardList, LayoutGrid, Leaf, Lock, Menu, ScanLine, Send, Settings, ShoppingCart, Wrench, X, type LucideIcon } from "lucide-react";
 import { attivo, moduloDi, tabsAttive } from "@/lib/moduli";
 import { useModuli } from "@/lib/use-moduli";
+import { ModuloBloccato } from "./ModuloBloccato";
 import { ROLE_USER, useDeviceStorageFull, useStore } from "@/lib/store";
 import type { Role } from "@/lib/types";
 import { BRAND, DEMO_NOTICE } from "@/lib/config";
@@ -321,7 +322,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <b>Memoria di questo dispositivo piena.</b> Il lavoro si salva sul server dell&apos;azienda: tieni il telefono collegato alla rete.
           </p>
         )}
-        <main className="flex-1 px-4 pb-6 pt-5 md:px-8 md:pb-12 md:pt-7">{children}</main>
+        {/* Pagina di un modulo non attivo, anche aperta a mano dall'indirizzo: si vede cosa fa, non il contenuto */}
+        <main className="flex-1 px-4 pb-6 pt-5 md:px-8 md:pb-12 md:pt-7">{attivo(moduli, moduloDi(path)) ? children : <ModuloBloccato modulo={moduloDi(path)} />}</main>
         <footer className="no-print flex justify-center px-4 pb-28 md:hidden">
           <LostarCredit className="text-ink-3" />
         </footer>
