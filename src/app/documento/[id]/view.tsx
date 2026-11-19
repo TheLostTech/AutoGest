@@ -6,13 +6,26 @@ import { useStore } from "@/lib/store";
 import { BRAND } from "@/lib/config";
 import { DOC_LABEL, splitVat, VAT } from "@/lib/docs";
 import { dateIt, euro } from "@/lib/logic";
+import { moduloDoc } from "@/lib/moduli";
+import { useModuli } from "@/lib/use-moduli";
+import { ModuloBloccato } from "@/components/ModuloBloccato";
 
 const money = (n: number) => n.toLocaleString("it-IT", { style: "currency", currency: "EUR" });
 
 export default function Documento() {
   const { id } = useParams<{ id: string }>();
   const d = useStore((s) => s.docs.find((x) => x.id === id));
+  const orders = useStore((s) => s.orders);
+  const moduli = useModuli();
   if (!d) return <p className="p-8">Documento {id} non trovato.</p>;
+  // Pagina di stampa fuori dall'area dell'app: i documenti del banco sono del modulo Vendite
+  const modulo = moduloDoc(d, orders);
+  if (!moduli.has(modulo))
+    return (
+      <div className="min-h-dvh bg-ground p-4 sm:p-8">
+        <ModuloBloccato modulo={modulo} />
+      </div>
+    );
   const { net, vat } = splitVat(d.total);
   const receipt = d.type === "documento commerciale";
 

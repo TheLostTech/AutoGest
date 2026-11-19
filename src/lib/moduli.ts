@@ -1,5 +1,6 @@
 // Moduli a pagamento: il Magazzino è la base, Accettazione, Ambiente e Vendite si aggiungono.
 // Qui si decide in un punto solo a quale modulo appartiene ogni pagina. Modulo puro: niente import di codice.
+import type { Order, SalesDoc } from "./types";
 
 export type Modulo = "magazzino" | "accettazione" | "ambiente" | "vendite";
 
@@ -76,6 +77,16 @@ export function moduloDi(percorso: string): Modulo {
     if (!best || p.length > best.len) best = { len: p.length, m };
   }
   return best?.m ?? "magazzino";
+}
+
+/**
+ * Modulo di un documento di vendita: quelli degli ordini online (scontrino, fattura, nota di credito del reso)
+ * sono del Magazzino; preventivi, documenti del banco e documenti senza ordine sono di Vendite.
+ */
+export function moduloDoc(d: Pick<SalesDoc, "type" | "orderId">, orders: Pick<Order, "id" | "channel">[]): Modulo {
+  if (d.type === "preventivo" || !d.orderId) return "vendite";
+  const o = orders.find((x) => x.id === d.orderId);
+  return o && o.channel !== "banco" ? "magazzino" : "vendite";
 }
 
 /** Moduli attivi: senza stato salvato (o modulo non elencato) è attivo; il Magazzino sempre */

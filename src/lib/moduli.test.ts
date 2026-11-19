@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 import path from "node:path";
-import { linkAttivazione, moduliAttivi, moduliDaArchivio, moduloDi, ORDINE_MODULI, tabsAttive } from "./moduli.ts";
+import { linkAttivazione, moduliAttivi, moduliDaArchivio, moduloDi, moduloDoc, ORDINE_MODULI, tabsAttive } from "./moduli.ts";
 
 test("moduloDi: ogni percorso al suo modulo", () => {
   assert.equal(moduloDi("/ambiente/periodo?mese=2026-10"), "ambiente");
@@ -71,6 +71,21 @@ test("ogni pagina ha un modulo", () => {
   assert.equal(moduloDi("/certificato/X"), "accettazione");
   assert.ok(pagine.includes("/veicoli/X/bonifica"));
   assert.equal(moduloDi("/veicoli/X/bonifica"), "ambiente");
+});
+
+// Documenti di vendita: quelli degli ordini online sono del Magazzino, quelli del banco di Vendite
+test("moduloDoc: documento al suo modulo", () => {
+  const orders = [
+    { id: "O-1", channel: "banco" as const },
+    { id: "O-2", channel: "negozio" as const },
+    { id: "O-3", channel: "marketplace" as const },
+  ];
+  assert.equal(moduloDoc({ type: "preventivo", orderId: "O-2" }, orders), "vendite");
+  assert.equal(moduloDoc({ type: "fattura", orderId: "O-1" }, orders), "vendite");
+  assert.equal(moduloDoc({ type: "fattura", orderId: "O-2" }, orders), "magazzino");
+  assert.equal(moduloDoc({ type: "nota di credito", orderId: "O-3" }, orders), "magazzino");
+  assert.equal(moduloDoc({ type: "documento commerciale" }, orders), "vendite");
+  assert.equal(moduloDoc({ type: "fattura", orderId: "O-9" }, orders), "vendite");
 });
 
 // Barra inferiore del telefono: mai schede bloccate, mai doppie
