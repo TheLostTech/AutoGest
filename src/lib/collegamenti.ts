@@ -2,6 +2,7 @@
 // Usato sia dalla pagina sia dal server (che accetta solo i campi elencati qui).
 // Costi e fonti: docs/INTEGRAZIONI.md, sezione 0. Nel prototipo è attiva solo la visura PRA di Openapi (visura-server.ts):
 // per gli altri si salvano i dati, le chiamate vere arrivano con l'integrazione di ogni servizio.
+import type { Modulo } from "./moduli";
 
 export type CampoTipo = "testo" | "segreto" | "file" | "scelta" | "multipla";
 
@@ -25,6 +26,8 @@ export interface Servizio {
   id: string;
   nome: string;
   gruppo: "legge" | "consumo";
+  modulo: Modulo; // il modulo che usa il servizio: spento, il servizio compare bloccato
+  opzioniModulo?: Record<string, Modulo>; // opzioni di un servizio condiviso che appartengono a un altro modulo
   uso: string; // dove serve nell'app
   costo: string;
   accesso: Accesso;
@@ -62,6 +65,7 @@ export const SERVIZI: Servizio[] = [
   // ── Obbligatori per legge: l'accesso è con lo SPID del titolare ──
   {
     id: "rvfu",
+    modulo: "accettazione",
     nome: "RVFU · Registro veicoli fuori uso",
     gruppo: "legge",
     uso: "Pratica: presa in carico, certificato di rottamazione, radiazione",
@@ -81,6 +85,7 @@ export const SERVIZI: Servizio[] = [
   },
   {
     id: "rentri",
+    modulo: "ambiente",
     nome: "RENTRI · Registro e formulari",
     gruppo: "legge",
     uso: "Ambiente: registro di carico e scarico, formulari digitali",
@@ -99,6 +104,7 @@ export const SERVIZI: Servizio[] = [
   },
   {
     id: "mud",
+    modulo: "ambiente",
     nome: "MUD · Comunicazione veicoli fuori uso",
     gruppo: "legge",
     uso: "Ambiente: dichiarazione annuale",
@@ -114,6 +120,7 @@ export const SERVIZI: Servizio[] = [
   },
   {
     id: "agenzia-entrate",
+    modulo: "vendite",
     nome: "Agenzia Entrate · Fatture e Corrispettivi",
     gruppo: "legge",
     uso: "Vendite: ricezione fatture e conservazione",
@@ -130,6 +137,7 @@ export const SERVIZI: Servizio[] = [
   },
   {
     id: "orso",
+    modulo: "ambiente",
     nome: "O.R.S.O. · Osservatorio rifiuti regionale",
     gruppo: "legge",
     uso: "Ambiente: dichiarazione regionale",
@@ -144,6 +152,7 @@ export const SERVIZI: Servizio[] = [
   },
   {
     id: "firma",
+    modulo: "accettazione",
     nome: "Firma digitale qualificata",
     gruppo: "legge",
     uso: "RVFU, MUD e formulari",
@@ -161,6 +170,7 @@ export const SERVIZI: Servizio[] = [
   },
   {
     id: "rt",
+    modulo: "vendite",
     nome: "Registratore telematico",
     gruppo: "legge",
     uso: "Vendite: scontrino al banco",
@@ -178,6 +188,9 @@ export const SERVIZI: Servizio[] = [
   // ── A consumo, con registrazione normale ──
   {
     id: "openapi",
+    modulo: "magazzino",
+    // Un account per più usi: la visura PRA e la firma sono dell'Accettazione
+    opzioniModulo: { "Visura PRA": "accettazione", "Firma elettronica": "accettazione" },
     nome: "Openapi",
     gruppo: "consumo",
     uso: "Dati da targa, visura PRA, fattura elettronica, firma",
@@ -195,9 +208,10 @@ export const SERVIZI: Servizio[] = [
   },
   {
     id: "platerecognizer",
+    modulo: "magazzino",
     nome: "Plate Recognizer",
     gruppo: "consumo",
-    uso: "Accettazione: lettura della targa dalla foto",
+    uso: "Ingresso veicolo: lettura della targa dalla foto",
     costo: "Gratis fino a 2.500 al mese in prova, poi da 50 $/mese",
     accesso: "registrazione",
     modo: "api",
@@ -207,6 +221,7 @@ export const SERVIZI: Servizio[] = [
   },
   {
     id: "ia",
+    modulo: "magazzino",
     nome: "IA per riconoscere i pezzi",
     gruppo: "consumo",
     uso: "Smontaggio e inventario: pezzo riconosciuto dalla foto",
@@ -222,9 +237,10 @@ export const SERVIZI: Servizio[] = [
   },
   {
     id: "sendcloud",
+    modulo: "magazzino",
     nome: "Sendcloud",
     gruppo: "consumo",
-    uso: "Vendite: etichette di spedizione",
+    uso: "Ordini online: etichette di spedizione",
     costo: "28 €/mese + 0,10 € a etichetta",
     accesso: "registrazione",
     modo: "api",
@@ -237,9 +253,10 @@ export const SERVIZI: Servizio[] = [
   },
   {
     id: "ebay",
+    modulo: "magazzino",
     nome: "eBay",
     gruppo: "consumo",
-    uso: "Vendite: annunci su eBay Italia",
+    uso: "Pubblicazione: annunci su eBay Italia",
     costo: "Il Developers Program è gratuito; su eBay si pagano le commissioni di vendita",
     accesso: "registrazione",
     modo: "api",
@@ -254,6 +271,7 @@ export const SERVIZI: Servizio[] = [
   },
   {
     id: "whatsapp",
+    modulo: "magazzino",
     nome: "WhatsApp Business",
     gruppo: "consumo",
     uso: "Avvisi ai clienti (ritiro, spedizione)",
@@ -271,6 +289,7 @@ export const SERVIZI: Servizio[] = [
   },
   {
     id: "visurenet",
+    modulo: "accettazione",
     nome: "ACI Visurenet",
     gruppo: "consumo",
     uso: "Pratica: visura PRA fatta a mano",

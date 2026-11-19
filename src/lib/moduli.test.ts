@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 import path from "node:path";
+import { SERVIZI } from "./collegamenti.ts";
 import { filtraAgenda, linkAttivazione, moduliAttivi, moduliDaArchivio, moduloDi, moduloDoc, ORDINE_MODULI, tabsAttive } from "./moduli.ts";
 
 test("moduloDi: ogni percorso al suo modulo", () => {
@@ -104,6 +105,18 @@ test("filtraAgenda: voci dei moduli spenti tolte, bonifica verso la scheda", () 
     ["c /veicoli/V-1#bonifica", "d /ordini", "f /campo/V-1"],
   );
   assert.deepEqual(filtraAgenda(voci, moduliAttivi(undefined)), voci);
+});
+
+// Collegamenti: ogni servizio esterno appartiene a un modulo
+test("ogni servizio ha un modulo", () => {
+  for (const s of SERVIZI) assert.ok(ORDINE_MODULI.includes(s.modulo), s.id);
+  const openapi = SERVIZI.find((s) => s.id === "openapi")!;
+  assert.equal(openapi.modulo, "magazzino");
+  const opzioni = openapi.campi.find((c) => c.key === "servizi")?.opzioni ?? [];
+  assert.deepEqual(Object.keys(openapi.opzioniModulo ?? {}).filter((k) => !opzioni.includes(k)), []);
+  assert.equal(openapi.opzioniModulo?.["Visura PRA"], "accettazione");
+  assert.equal(SERVIZI.find((s) => s.id === "rvfu")?.modulo, "accettazione");
+  assert.equal(SERVIZI.find((s) => s.id === "platerecognizer")?.modulo, "magazzino");
 });
 
 // Barra inferiore del telefono: mai schede bloccate, mai doppie

@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, ExternalLink, FileKey, Loader2 } from "lucide-react";
+import { ChevronDown, ExternalLink, FileKey, Loader2, Lock } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { ACCESSO, completo, MODO, SERVIZI, type Campo, type Servizio, type StatoServizio } from "@/lib/collegamenti";
 import type { StatoPonte } from "@/lib/ebay/contratto";
 import { testoErroreCollegamento } from "@/lib/ebay/codici";
 import { Button, Notice, PageTitle, Panel } from "@/components/ui";
+import { Bloccato } from "@/components/ModuloBloccato";
+import { useModuli } from "@/lib/use-moduli";
+import { MODULI } from "@/lib/moduli";
 
 type Stati = Record<string, StatoServizio>;
 
@@ -112,6 +115,16 @@ function Stato({ s, st }: { s: Servizio; st?: StatoServizio }) {
 }
 
 function ServizioRiga({ s, st, open, onToggle, onSaved }: { s: Servizio; st?: StatoServizio; open: boolean; onToggle: () => void; onSaved: (st: StatoServizio | null) => void }) {
+  const moduli = useModuli();
+  // Servizio di un modulo non attivo: si vede a cosa serve, ma la scheda resta chiusa
+  if (!moduli.has(s.modulo))
+    return (
+      <li className="px-4 py-3.5">
+        <span className="block font-semibold text-ink-3">{s.nome}</span>
+        <span className="mb-2 block text-[14px] text-ink-3">{s.uso}</span>
+        <Bloccato modulo={s.modulo} funzione={`Serve al modulo ${MODULI[s.modulo].nome}`}>{null}</Bloccato>
+      </li>
+    );
   return (
     <li>
       <button onClick={onToggle} aria-expanded={open} className="flex w-full items-start gap-3 px-4 py-3.5 text-left hover:bg-carton/60">
@@ -397,6 +410,7 @@ function Modulo({ s, st, onSaved }: { s: Servizio; st?: StatoServizio; onSaved: 
           <CampoInput
             key={c.key}
             c={c}
+            opzioniModulo={s.opzioniModulo}
             valore={valori[c.key]}
             salvato={c.tipo === "segreto" ? !!st?.segreti[c.key] && !togli.includes(c.key) : undefined}
             fileSalvato={c.tipo === "file" && !togli.includes(c.key) ? st?.file[c.key] : undefined}
@@ -440,6 +454,7 @@ function Modulo({ s, st, onSaved }: { s: Servizio; st?: StatoServizio; onSaved: 
 
 function CampoInput(p: {
   c: Campo;
+  opzioniModulo?: Servizio["opzioniModulo"];
   valore?: string | string[];
   salvato?: boolean;
   fileSalvato?: { nome: string; byte: number };
@@ -451,6 +466,9 @@ function CampoInput(p: {
   onTogli: () => void;
 }) {
   const { c } = p;
+  const moduli = useModuli();
+  // Opzione di un servizio condiviso che appartiene a un modulo spento (es. Visura PRA di Openapi)
+  const spenta = (o: string) => !!p.opzioniModulo?.[o] && !moduli.has(p.opzioniModulo[o]);
   const id = `campo-${c.key}`;
   const label = (
     <label htmlFor={id} className="mb-1.5 block text-sm font-semibold text-ink">
@@ -467,14 +485,20 @@ function CampoInput(p: {
         <legend className="mb-1.5 text-sm font-semibold text-ink">{c.label}</legend>
         <div className="grid gap-2 sm:grid-cols-2">
           {c.opzioni!.map((o) => (
-            <label key={o} className="flex min-h-11 items-center gap-3 rounded-md border border-hair bg-label px-3">
+            <label key={o} className={`flex min-h-11 items-center gap-3 rounded-md border border-hair bg-label px-3 ${spenta(o) ? "text-ink-3" : ""}`}>
               <input
                 type="checkbox"
                 className="size-5 accent-[var(--band)]"
-                checked={sel.includes(o)}
+                checked={sel.includes(o) && !spenta(o)}
+                disabled={spenta(o)}
                 onChange={(e) => p.onValore(e.target.checked ? [...sel, o] : sel.filter((x) => x !== o))}
               />
               <span className="text-[15px]">{o}</span>
+              {spenta(o) && (
+                <span className="ml-auto flex items-center gap-1 text-[13px] font-semibold">
+                  <Lock className="size-4" aria-hidden /> {MODULI[p.opzioniModulo![o]].nome}
+                </span>
+              )}
             </label>
           ))}
         </div>
