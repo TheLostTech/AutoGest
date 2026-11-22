@@ -1,28 +1,30 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import { BRAND, PRODUTTORE } from "@/lib/config";
-import { MODULI, ORDINE_MODULI } from "@/lib/moduli";
-import { DEMO, Piede, Testata } from "@/components/sito/Sito";
+import { ORDINE_MODULI } from "@/lib/moduli";
+import { LISTINO, euro } from "@/lib/listino";
+import { DEMO, Piede, SITO, Testata } from "@/components/sito/Sito";
 import { EtichettaStampata, EtichettaPiccola, Percorso } from "./parti";
+import { Offerta } from "./offerta";
 import "./scopri.css";
 
 export const metadata: Metadata = {
   title: `${BRAND.azienda} · Il gestionale per autodemolizioni`,
   description:
-    "Dalla targa allo scontrino: accettazione, smontaggio guidato dalle scorte, etichette QR, magazzino, vendita al banco e online, registro rifiuti. Ogni ricambio sa da che macchina viene.",
+    `Dalla targa allo scontrino: accettazione, smontaggio guidato dalle scorte, etichette QR, magazzino, vendita al banco e online, registro rifiuti. A moduli, da ${euro(LISTINO.magazzino.mese)} al mese.`,
 };
 
 const FERMATE = [
   {
     nome: "Accettazione",
-    titolo: "Fotografi la targa. Il resto lo legge lui.",
+    titolo: "Fotografi la targa. Al resto pensa il gestionale.",
     testo:
-      "Targa e telaio dalla foto, con i caratteri incerti segnati da controllare. Avvisa se il veicolo è già entrato. La pratica di demolizione resta separata dal numero interno: non si confondono mai.",
+      "Dalla foto il gestionale legge la targa e recupera marca, modello e telaio. Se un carattere non è sicuro lo evidenzia, così lo controlli prima di salvare. Se il veicolo è già entrato una volta, te lo dice. Il numero della pratica di demolizione resta separato dal numero interno del veicolo: non si confondono mai.",
     oggetto: "targa",
   },
   {
     nome: "Cosa smontare",
-    titolo: "Smonti quello che manca, non quello che è comodo.",
+    titolo: "Smonti quello che ti manca in magazzino, il sistema te lo dice.",
     testo:
       "Prima di toccare la macchina il gestionale confronta i pezzi recuperabili con lo scaffale e con le soglie che hai deciso tu. Chi smonta vede la lista sul telefono, in ordine di utilità.",
     oggetto: "recupero",
@@ -36,7 +38,7 @@ const FERMATE = [
   },
   {
     nome: "Scaffale",
-    titolo: "Scansioni il pezzo, poi il ripiano. È a posto.",
+    titolo: "Scansioni il pezzo, poi il ripiano. Finito.",
     testo:
       "Magazzino, corsia, scaffale, ripiano, contenitore. Con la fotocamera del telefono o con la pistola laser. Il gestionale ti dice anche il primo posto libero per quel tipo di pezzo.",
     oggetto: "scaffale",
@@ -57,12 +59,36 @@ const FERMATE = [
   },
 ] as const;
 
+const ATTIVAZIONE = [
+  { titolo: "Ti registri", testo: "Crei l'account della tua azienda dal sito. Gli accessi dei dipendenti li crei tu, uno per ruolo." },
+  { titolo: "Inserisci il primo veicolo", testo: "Fotografi la targa e vedi come lavora sul tuo piazzale, senza pagare niente." },
+  { titolo: "Scegli e paghi", testo: "Scegli i moduli e se pagare al mese o all'anno. Paghi con carta su Stripe e i moduli si attivano subito." },
+] as const;
+
+// Listino per i motori di ricerca: un'offerta mensile per modulo, IVA esclusa
+const OFFERTA_LD = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: BRAND.azienda,
+  applicationCategory: "BusinessApplication",
+  operatingSystem: "Web",
+  url: `${SITO}/scopri`,
+  offers: ORDINE_MODULI.map((m) => ({
+    "@type": "Offer",
+    name: `${BRAND.azienda} ${LISTINO[m].nome}`,
+    priceCurrency: "EUR",
+    price: (LISTINO[m].mese / 100).toFixed(2),
+    priceSpecification: { "@type": "UnitPriceSpecification", price: (LISTINO[m].mese / 100).toFixed(2), priceCurrency: "EUR", billingDuration: "P1M", valueAddedTaxIncluded: false },
+  })),
+};
+
 export default function ScopriPage() {
   return (
     <div className="scopri min-h-dvh bg-ground text-ink">
       <Testata />
 
       <main id="contenuto">
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(OFFERTA_LD).replace(/</g, "\\u003c") }} />
         {/* Apertura */}
         <section className="relative overflow-hidden">
           <div className="mx-auto grid max-w-[1240px] gap-2 px-4 pb-20 md:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] md:gap-12 md:px-8 md:pb-28">
@@ -143,38 +169,40 @@ export default function ScopriPage() {
           </div>
         </section>
 
-        {/* Costo */}
+        {/* Quanto costa: la base, i moduli che si aggiungono e come si attivano */}
         <section id="costo" className="scroll-mt-4 border-t border-hair bg-carton">
-          <div className="mx-auto grid max-w-[1240px] items-start gap-12 px-4 py-20 md:px-8 md:py-28 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)]">
-            <div>
-              <h2 className="scopri-h2 max-w-[15ch]">Guadagniamo quando vendi tu.</h2>
-              <p className="mt-5 max-w-[54ch] text-[18px] leading-[1.6] text-ink-2">
-                Il prezzo del pezzo lo decidi tu. Quando esce online, su eBay o sul tuo negozio, il gestionale ci aggiunge l&apos;8%: è il nostro compenso, e lo fatturiamo solo sui
-                pezzi venduti. Se il pezzo torna indietro, la commissione si storna.
-              </p>
-              <p className="mt-4 max-w-[54ch] text-[18px] leading-[1.6] text-ink-2">Al banco non aggiungiamo niente.</p>
-            </div>
-            <Scontrino />
-          </div>
-        </section>
-
-        {/* Come si compra: la base e i moduli che si aggiungono */}
-        <section id="moduli" className="scroll-mt-4 border-t border-hair">
           <div className="mx-auto max-w-[1240px] px-4 py-20 md:px-8 md:py-28">
-            <h2 className="scopri-h2 max-w-[18ch]">Parti dal magazzino. Aggiungi il resto quando serve.</h2>
-            <p className="mt-5 max-w-[60ch] text-[18px] leading-[1.6] text-ink-2">
-              Il Magazzino è la base e comprende già la pubblicazione online. Accettazione, Ambiente e Vendite si attivano a parte, ognuno da solo: quelli che non hai li vedi nel
-              gestionale, bloccati, e li chiedi con un messaggio.
+            <h2 className="scopri-h2 max-w-[17ch]">Paghi il magazzino. Il resto quando ti serve.</h2>
+            <p className="mt-5 max-w-[62ch] text-[18px] leading-[1.6] text-ink-2">
+              Il Magazzino è la base e c&apos;è sempre: veicoli, smontaggio, etichette, scaffali e vendita online. Pratiche, Ambiente e Banco si aggiungono uno per uno, quando ti
+              servono. Quelli che non hai li vedi nel gestionale, bloccati, e li attivi da lì.
             </p>
-            <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {ORDINE_MODULI.map((m) => (
-                <li key={m} className={`rounded-md border p-5 ${m === "magazzino" ? "border-band bg-band-tint" : "border-hair bg-label"}`}>
-                  <p className="code text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-3">{m === "magazzino" ? "La base" : "Si aggiunge"}</p>
-                  <h3 className="mt-1 text-[22px] font-bold">{MODULI[m].nome}</h3>
-                  <p className="mt-2 text-[16px] leading-[1.55] text-ink-2">{MODULI[m].frase}</p>
-                </li>
-              ))}
-            </ul>
+            <Offerta />
+
+            <div className="mt-20 grid gap-12 border-t border-hair pt-14 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+              <div>
+                <h3 className="text-[28px] font-bold tracking-[-0.02em]">Come si attiva</h3>
+                <ol className="mt-6 grid gap-6 md:grid-cols-3">
+                  {ATTIVAZIONE.map((p, i) => (
+                    <li key={p.titolo}>
+                      <span className="code grid size-10 place-items-center rounded-full bg-band text-[20px] font-bold text-white" aria-hidden>
+                        {i + 1}
+                      </span>
+                      <h4 className="mt-3 text-[20px] font-bold leading-snug">{p.titolo}</h4>
+                      <p className="mt-1.5 text-[16px] leading-[1.55] text-ink-2">{p.testo}</p>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+              <div>
+                <h3 className="text-[28px] font-bold tracking-[-0.02em]">E sui pezzi venduti</h3>
+                <p className="mt-4 text-[17px] leading-[1.6] text-ink-2">
+                  Il prezzo del pezzo lo decidi tu. Quando esce online, su eBay o sul tuo negozio, il gestionale ci aggiunge l&apos;8%: lo fatturiamo solo sui pezzi venduti, e se
+                  il pezzo torna indietro si storna. Su un faro da 120,00 € il prezzo online è 129,60 €.
+                </p>
+                <p className="mt-3 text-[17px] leading-[1.6] text-ink-2">Al banco non aggiungiamo niente.</p>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -427,37 +455,5 @@ function Registro() {
         })}
       </ul>
     </div>
-  );
-}
-
-function Scontrino() {
-  return (
-    <figure className="scopri-scontrino mx-auto w-full max-w-[340px] lg:mx-0 lg:justify-self-end" aria-label="Esempio di prezzo con e senza commissione">
-      <div className="code px-6 pb-3 pt-6 text-center text-[17px] font-bold uppercase tracking-[0.08em]">{BRAND.azienda}</div>
-      <div className="code px-6 text-center text-[14px] text-ink-3">Faro anteriore sx · R-000417</div>
-      <dl className="code mt-5 space-y-2 border-t border-dashed border-hair px-6 pt-4 text-[18px]">
-        <div className="flex justify-between">
-          <dt>Il tuo prezzo</dt>
-          <dd className="font-bold">120,00</dd>
-        </div>
-        <div className="flex justify-between pt-3">
-          <dt>Online</dt>
-          <dd className="font-bold">129,60</dd>
-        </div>
-        <div className="flex justify-between text-[16px] text-ink-3">
-          <dt>di cui commissione 8%</dt>
-          <dd>9,60</dd>
-        </div>
-        <div className="flex justify-between pt-3">
-          <dt>Al banco</dt>
-          <dd className="font-bold">120,00</dd>
-        </div>
-        <div className="flex justify-between text-[16px] text-ink-3">
-          <dt>commissione</dt>
-          <dd>0,00</dd>
-        </div>
-      </dl>
-      <div className="code mt-5 border-t border-dashed border-hair px-6 pb-9 pt-4 text-center text-[14px] text-ink-3">Importi in euro, esempio</div>
-    </figure>
   );
 }

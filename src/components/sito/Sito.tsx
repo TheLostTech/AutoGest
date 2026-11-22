@@ -6,6 +6,8 @@ import { LostarCredit } from "@/components/Lostar";
 // Testata e piede delle pagine pubbliche (presentazione e normative): la fascia blu della scatola.
 
 export const DEMO = "/";
+// Dove si parte per comprare: la registrazione dell'azienda. Finché la pagina di registrazione non c'è, porta alla demo.
+export const REGISTRAZIONE = DEMO;
 
 // Indirizzo pubblico del sito, per canonical, sitemap e condivisioni. Da impostare in produzione.
 export const SITO = (process.env.SITO_PUBBLICO ?? "http://localhost:3000").replace(/\/$/, "");
