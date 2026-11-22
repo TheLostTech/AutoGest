@@ -46,6 +46,23 @@ export function voceDelModulo(voci: { id: string; price: { product: unknown } }[
   return null;
 }
 
+const IN_CORSO = new Set(["active", "trialing"]);
+
+// L'abbonamento appena riletto da Stripe si può cambiare? I moduli solo se è active o trialing (anche disdetto a fine
+// periodo); la riattivazione solo se è active o trialing e ha la disdetta. Tutto il resto: "Abbonamento non attivo".
+export function abbonamentoModificabile(s: { status: string; cancel_at_period_end: boolean }, azione: "aggiungi" | "togli" | "anteprima" | "riattiva"): boolean {
+  if (!IN_CORSO.has(s.status)) return false;
+  return azione === "riattiva" ? s.cancel_at_period_end : true;
+}
+
+// Stripe ha rifiutato il pagamento (carta rifiutata, autenticazione richiesta, fattura non pagata): errore della
+// carta o risposta 402. Gli altri errori (rete, richiesta sbagliata) non sono un pagamento rifiutato.
+export function pagamentoRifiutato(e: unknown): boolean {
+  if (!e || typeof e !== "object") return false;
+  const x = e as { type?: unknown; statusCode?: unknown };
+  return x.type === "StripeCardError" || x.statusCode === 402;
+}
+
 // Anteprima della fattura: quanto si paga subito, IVA esclusa (in centesimi), mai sotto zero.
 export function importoSenzaTasse(f: { amount_due: number; total_taxes: { amount: number }[] | null }): number {
   const tasse = (f.total_taxes ?? []).reduce((s, t) => s + t.amount, 0);

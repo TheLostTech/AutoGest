@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { importoSenzaTasse, subMinima, voceDelModulo } from "./forma.ts";
+import { abbonamentoModificabile, importoSenzaTasse, pagamentoRifiutato, subMinima, voceDelModulo } from "./forma.ts";
 
 const voce = (product: unknown, interval: string | null, fine = 1_800_000_000) => ({
   price: { recurring: interval ? { interval } : null, product },
@@ -51,4 +51,32 @@ test("importoSenzaTasse: quanto si paga subito meno le tasse, mai sotto zero", (
   assert.equal(importoSenzaTasse({ amount_due: 1000, total_taxes: null }), 1000);
   assert.equal(importoSenzaTasse({ amount_due: 1464, total_taxes: [{ amount: 200 }, { amount: 64 }] }), 1200);
   assert.equal(importoSenzaTasse({ amount_due: 0, total_taxes: [{ amount: 220 }] }), 0);
+});
+
+test("abbonamentoModificabile: i moduli si cambiano solo su un abbonamento active o trialing", () => {
+  for (const azione of ["aggiungi", "togli", "anteprima"] as const) {
+    assert.equal(abbonamentoModificabile({ status: "active", cancel_at_period_end: false }, azione), true);
+    assert.equal(abbonamentoModificabile({ status: "trialing", cancel_at_period_end: false }, azione), true);
+    assert.equal(abbonamentoModificabile({ status: "active", cancel_at_period_end: true }, azione), true); // disdetto
+    for (const status of ["past_due", "canceled", "unpaid", "incomplete", "incomplete_expired", "paused"]) {
+      assert.equal(abbonamentoModificabile({ status, cancel_at_period_end: false }, azione), false, status);
+    }
+  }
+});
+
+test("abbonamentoModificabile: riattiva solo un abbonamento active o trialing con la disdetta", () => {
+  assert.equal(abbonamentoModificabile({ status: "active", cancel_at_period_end: true }, "riattiva"), true);
+  assert.equal(abbonamentoModificabile({ status: "trialing", cancel_at_period_end: true }, "riattiva"), true);
+  assert.equal(abbonamentoModificabile({ status: "active", cancel_at_period_end: false }, "riattiva"), false);
+  assert.equal(abbonamentoModificabile({ status: "canceled", cancel_at_period_end: true }, "riattiva"), false);
+  assert.equal(abbonamentoModificabile({ status: "past_due", cancel_at_period_end: true }, "riattiva"), false);
+});
+
+test("pagamentoRifiutato: errore della carta o 402 di Stripe, non gli altri errori", () => {
+  assert.equal(pagamentoRifiutato({ type: "StripeCardError", statusCode: 402, code: "card_declined" }), true);
+  assert.equal(pagamentoRifiutato({ type: "StripeInvalidRequestError", statusCode: 402 }), true);
+  assert.equal(pagamentoRifiutato({ type: "StripeInvalidRequestError", statusCode: 400 }), false);
+  assert.equal(pagamentoRifiutato({ type: "StripeConnectionError" }), false);
+  assert.equal(pagamentoRifiutato(new Error("rete")), false);
+  assert.equal(pagamentoRifiutato(null), false);
 });

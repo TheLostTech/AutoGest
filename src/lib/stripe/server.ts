@@ -8,7 +8,7 @@ import type { Periodo } from "@/lib/listino";
 import type { Modulo } from "@/lib/moduli";
 import { azioneCliente, ESPANSIONI, modalitaDaChiave, pagamentoInCorso, sessioniDaScadere, sincronizzazioneLimitata, stessoAmbiente, type ModalitaStripe, type SessioneCheckout } from "./chiavi";
 import { creaFila, type Fila } from "./fila";
-import { importoSenzaTasse, subMinima, voceDelModulo, type SubDaStripe } from "./forma";
+import { abbonamentoModificabile, importoSenzaTasse, pagamentoRifiutato, subMinima, voceDelModulo, type SubDaStripe } from "./forma";
 
 // Versione dell'API fissata: quella che porta con sé stripe@23.2.0 (Stripe.API_VERSION). Si cambia insieme alla libreria.
 const VERSIONE_API = "2026-11-18.endive";
@@ -213,7 +213,9 @@ export function unCambioAllaVolta<T>(aziendaId: string, lavoro: () => Promise<T>
   return unoAllaVolta(cambiInCorso, aziendaId, lavoro);
 }
 
-export type EsitoCambio = { abbonamento: Abbonamento } | { importo: number } | { errore: string; stato: number };
+const PAGAMENTO_RIFIUTATO = "Pagamento non riuscito: controlla la carta da «Carta, fatture e disdetta».";
+
+export type EsitoCambio ={ abbonamento: Abbonamento } | { importo: number } | { errore: string; stato: number };
 
 /**
  * Aggiunge o toglie un modulo sull'abbonamento in corso, ne calcola l'anteprima, oppure toglie la disdetta.
@@ -228,11 +230,17 @@ export async function cambiaModuli(aziendaId: string, r: RichiestaModuli): Promi
   if (!stessoAmbiente(ab, modalitaStripe())) return { errore: ALTRO_AMBIENTE, stato: 409 };
   if (!ab.subscriptionId || !ab.customerId) return { errore: "Abbonamento non attivo", stato: 409 };
   const s = stripe();
+  const sub = await s.subscriptions.retrieve(ab.subscriptionId, { expand: [...ESPANSIONI.abbonamento] });
+  // Il file salvato può essere vecchio (avviso di Stripe non ancora arrivato): conta l'abbonamento appena riletto,
+  // e il file si rimette in pari subito
+  if (!abbonamentoModificabile(sub, r.azione)) {
+    await sincronizza(aziendaId);
+    return { errore: "Abbonamento non attivo", stato: 409 };
+  }
   if (r.azione === "riattiva") {
     await s.subscriptions.update(ab.subscriptionId, { cancel_at_period_end: false });
     return { abbonamento: await sincronizza(aziendaId) };
   }
-  const sub = await s.subscriptions.retrieve(ab.subscriptionId, { expand: [...ESPANSIONI.abbonamento] });
   const voce = voceDelModulo(sub.items.data, r.modulo);
   if (r.azione === "togli") {
     if (!voce) return { errore: "Modulo non attivo", stato: 409 };
@@ -252,7 +260,21 @@ export async function cambiaModuli(aziendaId: string, r: RichiestaModuli): Promi
     });
     return { importo: importoSenzaTasse(fattura) };
   }
-  await s.subscriptionItems.create({ subscription: ab.subscriptionId, price, tax_rates: [iva], proration_behavior: "always_invoice" });
+  try {
+    // error_if_incomplete: se la fattura della parte fino al rinnovo non si paga, la voce non entra e l'abbonamento
+    // non va in past_due (niente modulo senza pagamento)
+    await s.subscriptionItems.create({
+      subscription: ab.subscriptionId,
+      price,
+      tax_rates: [iva],
+      proration_behavior: "always_invoice",
+      payment_behavior: "error_if_incomplete",
+    });
+  } catch (e) {
+    if (!pagamentoRifiutato(e)) throw e;
+    console.warn("Modulo non aggiunto: pagamento rifiutato da Stripe", aziendaId, r.modulo, (e as { code?: unknown }).code);
+    return { errore: PAGAMENTO_RIFIUTATO, stato: 402 };
+  }
   return { abbonamento: await sincronizza(aziendaId) };
 }
 
