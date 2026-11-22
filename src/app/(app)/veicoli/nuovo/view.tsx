@@ -144,6 +144,21 @@ export default function NuovoVeicolo() {
             </p>
           )}
 
+          {/* La ricerca parte dalla targa appena scritta: sta nello stesso riquadro, i dati trovati compaiono sotto */}
+          <div className="flex flex-wrap items-center gap-3">
+            <Button onClick={doLookup} disabled={!plateOk || !!dup || lookupState === "loading"}>
+              {lookupState === "loading" ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <Search className="size-5" aria-hidden />}
+              Cerca dati veicolo
+            </Button>
+            <label className="flex min-h-11 items-center gap-2 text-sm font-medium text-ink-2">
+              <input type="checkbox" checked={simulateFail} onChange={(e) => setSimulateFail(e.target.checked)} className="size-5 accent-[var(--band)]" />
+              Simula servizio esterno non disponibile
+            </label>
+          </div>
+          {lookupState === "found" && <Notice tone="ok">Dati trovati nella banca dati veicoli (simulata). Controlla qui sotto che corrispondano al mezzo e al libretto.</Notice>}
+          {lookupState === "notfound" && <Notice tone="warn">Nessun risultato per <span className="code font-bold">{normPlate}</span>. Compila a mano qui sotto: il veicolo resterà «da verificare».</Notice>}
+          {lookupState === "error" && <Notice tone="danger">{lookupError}</Notice>}
+
           {dup && (
             <Notice tone="danger">
               Veicolo già presente: <Link className="code font-bold underline" href={`/veicoli/${dup.id}`}>{dup.id}</Link> · {dup.make} {dup.model}, ingresso del {new Date(dup.intakeAt).toLocaleDateString("it-IT")}. Non è possibile registrarlo due volte.
@@ -154,20 +169,6 @@ export default function NuovoVeicolo() {
 
       <Panel title="2 · Identificazione" className="mt-5">
         <div className="space-y-4 p-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Button variant="secondary" onClick={doLookup} disabled={!plateOk || !!dup || lookupState === "loading"}>
-              {lookupState === "loading" ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <Search className="size-5" aria-hidden />}
-              Cerca dati veicolo
-            </Button>
-            <label className="flex min-h-11 items-center gap-2 text-sm font-medium text-ink-2">
-              <input type="checkbox" checked={simulateFail} onChange={(e) => setSimulateFail(e.target.checked)} className="size-5 accent-[var(--band)]" />
-              Simula servizio esterno non disponibile
-            </label>
-          </div>
-          {lookupState === "found" && <Notice tone="ok">Dati trovati nella banca dati veicoli (simulata). Controlla che corrispondano al mezzo e al libretto.</Notice>}
-          {lookupState === "notfound" && <Notice tone="warn">Nessun risultato per <span className="code font-bold">{normPlate}</span>. Compila a mano: il veicolo resterà «da verificare».</Notice>}
-          {lookupState === "error" && <Notice tone="danger">{lookupError}</Notice>}
-
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Marca" error={touched && !f.make ? "Obbligatoria" : undefined}>
               <input className="field" value={f.make} onChange={set("make")} />
