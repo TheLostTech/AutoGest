@@ -63,8 +63,8 @@ Senza questo il prodotto non si può vendere: oggi il prototipo salva i dati sol
 | A9 | Firma dei documenti: firma su tablet del cliente e firma digitale dell'impianto | M | Esterno: fornitore di firma |
 | A10 | Backup, ripristino, monitoraggio, gestione errori delle integrazioni con nuovi tentativi | M | |
 | A11 | Privacy (GDPR): informative, tempi di conservazione, esportazione e cancellazione dati | S | Con consulente |
-| A12 | Abbonamenti dei nostri clienti: piani, moduli attivabili, fatturazione del servizio | M | Modello di vendita |
-| A13 | Pannello interno per noi: attivazione clienti, supporto, stato delle integrazioni | M | In parte fatto (18 nov 2026): area Piattaforma per il super admin (codice dal telefono obbligatorio) con creazione aziende, utenti con richiesta scritta, dispositivi e ingresso di assistenza (2 ore, con motivo e riga nel registro dell'azienda). Mancano: attivazione e piani (A12), stato delle integrazioni |
+| A12 | Abbonamenti dei nostri clienti: piani, moduli attivabili, fatturazione del servizio | M | In parte fatto (22 nov 2026, ramo `registrazione-pagamento`): registrazione con codice invito, abbonamento per azienda con Stripe (solo sandbox di prova), moduli accesi dal pagamento, blocco a scadenza con dati visibili. Vedi `docs/PAGAMENTI.md`. Mancano: chiavi live, fattura elettronica verso lo SDI, email, periodo di prova a tempo |
+| A13 | Pannello interno per noi: attivazione clienti, supporto, stato delle integrazioni | M | In parte fatto (18 nov 2026): area Piattaforma per il super admin (codice dal telefono obbligatorio) con creazione aziende, utenti con richiesta scritta, dispositivi e ingresso di assistenza (2 ore, con motivo e riga nel registro dell'azienda). Mancano: stato delle integrazioni (attivazione e piani: vedi A12) |
 
 ### B. Avvio di un nuovo cliente e migrazione
 

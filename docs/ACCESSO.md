@@ -9,6 +9,7 @@
 | `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD`, `SUPERADMIN_NOME` | Primo super admin (vedi sotto). La password è di almeno 8 caratteri. |
 | `NEGOZIO_AZIENDA` | Id dell'azienda che vende dal negozio pubblico. Se manca, è l'azienda demo. |
 | `DEMO_UTENTI` | Con `NODE_ENV=production` gli utenti demo si creano solo se vale `1`. |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_LIVE` | Chiave di Stripe (di prova `sk_test_…`), segreto degli avvisi e consenso alle chiavi vere. Senza chiave Stripe è spento. Dettagli in `docs/PAGAMENTI.md`. |
 | `INDIRIZZO_GESTIONALE` | Indirizzo pubblico del gestionale (es. quello del tunnel): è l'unico altro sito da cui Better Auth accetta le richieste. |
 
 ## Primo avvio
@@ -26,6 +27,10 @@ Se l'avvio non riesce, il server resta acceso, scrive il motivo nel suo registro
 ## Super admin
 
 Si crea impostando le variabili `SUPERADMIN_*` al primo avvio (la password non va mai nel codice). Dopo l'accesso con email e password deve attivare il codice dal telefono (pagina Sicurezza): senza codice non entra in nessuna azienda. L'ingresso in un'azienda è "di assistenza", dura 2 ore e lascia una riga nel registro attività dell'azienda.
+
+## Registrazione e persone
+
+Una nuova azienda si crea da sola: chi ha un codice invito (lo crea il super admin in Piattaforma, Inviti) apre `/registrati` e diventa il responsabile della sua azienda. Il responsabile crea poi gli accessi dei dipendenti da Impostazioni, Persone: nome, ruoli, email e password oppure solo PIN. Per l'abbonamento e i pagamenti vedi `docs/PAGAMENTI.md`.
 
 ## Dispositivi condivisi (nome e PIN)
 
