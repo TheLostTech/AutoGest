@@ -135,11 +135,23 @@ Abbonamento mensile o annuale a scelta del cliente; l'annuale si paga in un'unic
 | Modulo | Nome commerciale | Mensile | Annuale |
 |---|---|---|---|
 | Magazzino (base) | AutoLost Magazzino | 299,90 € | 3.199 € (deciso da Alessandro) |
-| Accettazione | AutoLost Pratiche | 49,90 € | 539 € |
-| Ambiente | AutoLost Ambiente | 99,90 € | 1.079 € |
+| Accettazione | AutoLost Pratiche | 19,90 € | 219 € |
+| Ambiente | AutoLost Ambiente | 49,90 € | 539 € |
 | Vendite | AutoLost Banco | 49,90 € | 539 € |
 
-Annuali dei moduli aggiuntivi: 12 mesi meno 10% (538,92 € e 1.078,92 €) arrotondati al 9.
+Prezzi rivisti da Alessandro il 22/11/2026 (prima: Pratiche 49,90/539, Ambiente 99,90/1.079); fonte unica nel codice: `src/lib/listino.ts` (ramo `offerta-prezzi`).
+
+## Stripe: sandbox AutoLost demo (22/11/2026)
+Account Lostar srls (`acct_1TT0kgAq3HCB9mJS`), sandbox **AutoLost demo** `acct_1UeZEhPHwF2v5yEU`, separata dalle altre ("Sandbox di Lostar srls", "Modalità di test"). Prezzi in EUR, IVA esclusa (`tax_behavior=exclusive`), ricorrenti; ogni prodotto ha `metadata.modulo` uguale all'identificativo del modulo nel codice. Il gestionale trova i prezzi per **lookup key**, non per ID.
+
+| Prodotto | ID prodotto | lookup key mensile | lookup key annuale |
+|---|---|---|---|
+| AutoLost Magazzino (299,90 € / 3.199 €) | `prod_Vfv7gm7X9Aayr3` | `magazzino_mese` | `magazzino_anno` |
+| AutoLost Pratiche (19,90 € / 219 €) | `prod_Vfv85Atpr439j8` | `pratiche_mese` | `pratiche_anno` |
+| AutoLost Ambiente (49,90 € / 539 €) | `prod_Vfv8syhEffdLoK` | `ambiente_mese` | `ambiente_anno` |
+| AutoLost Banco (49,90 € / 539 €) | `prod_Vfv86z3t35LpPa` | `banco_mese` | `banco_anno` |
+
+Nella sandbox compare l'avviso "Varie funzionalità sospese: un'attività obbligatoria è scaduta" (verifica dell'attività): da controllare prima di provare Checkout.
 
 ## Rimandato (aggiornato il 22/11/2026)
 Dalla revisione finale del ramo `moduli-a-pagamento`, cose minori lasciate per dopo:
