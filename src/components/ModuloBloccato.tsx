@@ -7,12 +7,17 @@ import { BRAND } from "@/lib/config";
 import { linkAttivazione, MODULI, type Modulo } from "@/lib/moduli";
 import { useModuli } from "@/lib/use-moduli";
 import { useStore } from "@/lib/store";
+import { useSessione } from "@/lib/accesso/client";
 
 // Al posto di una pagina di un modulo non acquistato: cosa fa il modulo e come chiederne l'attivazione
 export function ModuloBloccato({ modulo }: { modulo: Modulo }) {
   const log = useStore((s) => s.log);
   const router = useRouter();
   const m = MODULI[modulo];
+  // Aziende registrate: il modulo si paga da Abbonamento (solo il titolare); le altre restano con WhatsApp
+  const { accesso } = useSessione();
+  const registrata = !!accesso?.azienda.registrata;
+  const titolare = !!accesso && (accesso.ruoli.includes("responsabile") || !!accesso.assistenza);
   // Torna alla pagina di prima; se la pagina è stata aperta direttamente (nessuna storia), va a "Oggi"
   const indietro = () => (window.history.length > 1 ? router.back() : router.push("/"));
   return (
@@ -45,19 +50,37 @@ export function ModuloBloccato({ modulo }: { modulo: Modulo }) {
               </li>
             ))}
           </ul>
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <a
-              href={linkAttivazione(BRAND.azienda, modulo)}
-              target="_blank"
-              rel="noopener"
-              onClick={() => log({ entity: "sistema", entityId: `modulo-${modulo}`, action: "Richiesta attivazione modulo", detail: m.nome })}
-              className="press inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-band px-5 font-semibold text-white transition-colors duration-150 hover:bg-band-deep"
-            >
-              <MessageCircle className="size-5" aria-hidden />
-              Chiedi l&apos;attivazione
-            </a>
-            <span className="text-[14px] text-ink-3">Si apre WhatsApp con il messaggio già scritto.</span>
-          </div>
+          {registrata ? (
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              {titolare ? (
+                <>
+                  <Link
+                    href={`/impostazioni/abbonamento?aggiungi=${modulo}`}
+                    className="press inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-band px-5 font-semibold text-white transition-colors duration-150 hover:bg-band-deep"
+                  >
+                    Attiva
+                  </Link>
+                  <span className="text-[14px] text-ink-3">Si aggiunge al tuo abbonamento: prima vedi quanto paghi.</span>
+                </>
+              ) : (
+                <p className="text-[16px] font-semibold text-ink-2">Chiedi al titolare di attivarlo.</p>
+              )}
+            </div>
+          ) : (
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <a
+                href={linkAttivazione(BRAND.azienda, modulo)}
+                target="_blank"
+                rel="noopener"
+                onClick={() => log({ entity: "sistema", entityId: `modulo-${modulo}`, action: "Richiesta attivazione modulo", detail: m.nome })}
+                className="press inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-band px-5 font-semibold text-white transition-colors duration-150 hover:bg-band-deep"
+              >
+                <MessageCircle className="size-5" aria-hidden />
+                Chiedi l&apos;attivazione
+              </a>
+              <span className="text-[14px] text-ink-3">Si apre WhatsApp con il messaggio già scritto.</span>
+            </div>
+          )}
         </div>
       </div>
     </div>

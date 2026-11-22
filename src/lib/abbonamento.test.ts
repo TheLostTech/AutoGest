@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   ABBONAMENTO_NUOVO, lookupKey, nomeStripe, moduliDaAbbonamento, bloccato,
   abbonamentoDaStripe, contoAllaRovescia, righeCambio, scritturaAzienda, statoPerBrowser, contaVeicoli, sceltaValida,
+  fasciaDaMostrare, richiestaModuli, rifiutoCambio,
   type Abbonamento, type SubStripe,
 } from "./abbonamento.ts";
 
@@ -167,4 +168,56 @@ test("sceltaValida: doppioni e magazzino una volta sola, nell'ordine dei moduli"
   assert.deepEqual(sceltaValida({ periodo: "mese" }), { periodo: "mese", moduli: ["magazzino"] });
   assert.equal(sceltaValida({ periodo: "mese", moduli: "ambiente" }), null);
   assert.equal(sceltaValida("anno"), null);
+});
+
+const GIORNO = 86_400_000;
+
+test("fasciaDaMostrare: in ritardo sempre, disdetto negli ultimi 7 giorni, mai per gli altri stati", () => {
+  assert.equal(fasciaDaMostrare(ab({ stato: "in-ritardo", rinnovo: ORA + 20 * GIORNO }), ORA), true);
+  assert.equal(fasciaDaMostrare(ab({ stato: "disdetto", rinnovo: ORA + 8 * GIORNO }), ORA), false);
+  assert.equal(fasciaDaMostrare(ab({ stato: "disdetto", rinnovo: ORA + 7 * GIORNO }), ORA), true);
+  assert.equal(fasciaDaMostrare(ab({ stato: "disdetto", rinnovo: ORA - GIORNO }), ORA), true);
+  assert.equal(fasciaDaMostrare(ab({ stato: "attivo", rinnovo: ORA + GIORNO }), ORA), false);
+  assert.equal(fasciaDaMostrare(ab({ stato: "nuovo" }), ORA), false);
+  assert.equal(fasciaDaMostrare(ab({ stato: "scaduto" }), ORA), false);
+  assert.equal(fasciaDaMostrare(ab({ stato: "disdetto", rinnovo: null }), ORA), false);
+});
+
+test("fasciaDaMostrare: con l'orologio di prova conta oraOrologio, non l'ora del Mac", () => {
+  // Il Mac dice 20 giorni alla fine, l'orologio di prova è già a 3 giorni
+  const a = ab({ stato: "disdetto", rinnovo: ORA + 20 * GIORNO, oraOrologio: ORA + 17 * GIORNO });
+  assert.equal(fasciaDaMostrare(a, ORA), true);
+  assert.equal(fasciaDaMostrare({ ...a, oraOrologio: ORA }, ORA + 17 * GIORNO), false);
+});
+
+test("richiestaModuli: un'azione sola con un modulo conosciuto, oppure riattiva", () => {
+  assert.deepEqual(richiestaModuli({ aggiungi: "accettazione" }), { azione: "aggiungi", modulo: "accettazione" });
+  assert.deepEqual(richiestaModuli({ togli: "ambiente" }), { azione: "togli", modulo: "ambiente" });
+  assert.deepEqual(richiestaModuli({ anteprima: "vendite" }), { azione: "anteprima", modulo: "vendite" });
+  assert.deepEqual(richiestaModuli({ riattiva: true }), { azione: "riattiva" });
+  assert.equal(richiestaModuli({ riattiva: "si" }), null);
+  assert.equal(richiestaModuli({ aggiungi: "pratiche" }), null); // nome Stripe, non id dell'app
+  assert.equal(richiestaModuli({ aggiungi: "accettazione", togli: "ambiente" }), null);
+  assert.equal(richiestaModuli({}), null);
+  assert.equal(richiestaModuli(null), null);
+  assert.equal(richiestaModuli("aggiungi"), null);
+  assert.equal(richiestaModuli({ aggiungi: ["ambiente"] }), null);
+});
+
+test("rifiutoCambio: stati ammessi, magazzino, doppioni e riattiva", () => {
+  const attivo = ab({ stato: "attivo", periodo: "mese", moduli: ["magazzino", "ambiente"] });
+  assert.equal(rifiutoCambio(attivo, { azione: "aggiungi", modulo: "accettazione" }), null);
+  assert.equal(rifiutoCambio(attivo, { azione: "anteprima", modulo: "accettazione" }), null);
+  assert.equal(rifiutoCambio(attivo, { azione: "togli", modulo: "ambiente" }), null);
+  assert.equal(rifiutoCambio({ ...attivo, stato: "disdetto" }, { azione: "aggiungi", modulo: "vendite" }), null);
+  assert.deepEqual(rifiutoCambio(attivo, { azione: "togli", modulo: "magazzino" }), { stato: 400, messaggio: "Il Magazzino non si toglie" });
+  assert.deepEqual(rifiutoCambio(attivo, { azione: "aggiungi", modulo: "ambiente" }), { stato: 409, messaggio: "Modulo già attivo" });
+  assert.deepEqual(rifiutoCambio(attivo, { azione: "anteprima", modulo: "magazzino" }), { stato: 409, messaggio: "Modulo già attivo" });
+  assert.deepEqual(rifiutoCambio(attivo, { azione: "togli", modulo: "vendite" }), { stato: 409, messaggio: "Modulo non attivo" });
+  for (const stato of ["nuovo", "in-ritardo", "scaduto"] as const) {
+    assert.deepEqual(rifiutoCambio({ ...attivo, stato }, { azione: "aggiungi", modulo: "accettazione" }), { stato: 409, messaggio: "Abbonamento non attivo" });
+  }
+  assert.deepEqual(rifiutoCambio({ ...attivo, periodo: null }, { azione: "aggiungi", modulo: "accettazione" }), { stato: 409, messaggio: "Abbonamento non attivo" });
+  assert.equal(rifiutoCambio({ ...attivo, stato: "disdetto" }, { azione: "riattiva" }), null);
+  assert.deepEqual(rifiutoCambio(attivo, { azione: "riattiva" }), { stato: 409, messaggio: "L'abbonamento non è disdetto" });
 });

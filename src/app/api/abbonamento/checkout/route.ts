@@ -5,26 +5,14 @@ import { sceltaValida } from "@/lib/abbonamento";
 import { percorsoDaSicuro } from "@/lib/accesso/percorsi";
 import type { Accesso } from "@/lib/accesso/regole";
 import { ruoliDaStringa } from "@/lib/accesso/ruoli";
-import { accessoDaRichiesta, soloRuoli } from "@/lib/accesso/server";
 import { contesto, daAltroSito, errore, leggiJson } from "@/lib/piattaforma/server";
 import { chiaveCheckout } from "@/lib/stripe/chiavi";
+import { origine, titolare } from "@/lib/stripe/richiesta";
 import { aliquotaIva, clientePer, esitoCheckout, modalitaStripe, preparaCheckout, prezziPer, STATI_IN_CORSO, stripe, sincronizza, unCheckoutAllaVolta } from "@/lib/stripe/server";
 
 const NOSTORE = { "Cache-Control": "no-store" };
 const ALTRO_AMBIENTE = "Abbonamento di un altro ambiente Stripe: serve l'assistenza";
 const PAGAMENTO_IN_CORSO = "Un pagamento è già in corso: aspetta la conferma di Stripe e ricarica la pagina.";
-
-// Il titolare dell'azienda attiva, o il super admin in assistenza; solo per le aziende registrate.
-async function titolare(req: Request): Promise<Accesso | Response> {
-  const a = await accessoDaRichiesta(req);
-  if (a instanceof Response) return a;
-  if (!(a.ruoli.includes("responsabile") || !!a.assistenza)) {
-    const no = soloRuoli(a, "responsabile");
-    if (no) return no;
-  }
-  if (!a.azienda.registrata) return errore(403, "Questa azienda non ha un abbonamento da pagare.");
-  return a;
-}
 
 // L'email del cliente Stripe: quella di chi paga; in assistenza quella di un titolare dell'azienda (non del super admin).
 async function emailCliente(a: Accesso): Promise<string> {
@@ -37,12 +25,6 @@ async function emailCliente(a: Accesso): Promise<string> {
   }
   const u = await c.internalAdapter.findUserById(userId).catch(() => null);
   return u?.email ?? "";
-}
-
-// Indirizzo del gestionale per i ritorni da Stripe: INDIRIZZO_GESTIONALE se c'è, altrimenti quello della richiesta.
-function origine(req: Request): string {
-  const fissa = process.env.INDIRIZZO_GESTIONALE?.trim().replace(/\/+$/, "");
-  return fissa || new URL(req.url).origin;
 }
 
 export async function POST(req: Request) {

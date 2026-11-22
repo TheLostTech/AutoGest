@@ -137,6 +137,44 @@ export function contoAllaRovescia(a: Abbonamento, oraMac: number): Conto | null 
   return { tono: "ok", testo: `Si rinnova ${quando}`, giorni };
 }
 
+// Fascia in cima al gestionale (solo per il titolare): pagamento non riuscito sempre, disdetta negli ultimi 7 giorni.
+// I giorni sono quelli della riga del conto alla rovescia (con l'orologio di prova contano da oraOrologio).
+export function fasciaDaMostrare(a: Abbonamento, ora: number): boolean {
+  if (a.stato === "in-ritardo") return true;
+  if (a.stato !== "disdetto") return false;
+  const c = contoAllaRovescia(a, ora);
+  return c?.giorni != null && c.giorni <= 7;
+}
+
+export type RichiestaModuli = { azione: "aggiungi" | "togli" | "anteprima"; modulo: Modulo } | { azione: "riattiva" };
+
+const AZIONI_MODULO = ["aggiungi", "togli", "anteprima"] as const;
+
+// Il corpo di POST /api/abbonamento/moduli: una sola chiave tra aggiungi, togli, anteprima (con un id di modulo
+// dell'app) oppure { riattiva: true }.
+export function richiestaModuli(corpo: unknown): RichiestaModuli | null {
+  if (!corpo || typeof corpo !== "object" || Array.isArray(corpo)) return null;
+  const o = corpo as Record<string, unknown>;
+  const chiavi = Object.keys(o);
+  if (chiavi.length !== 1) return null;
+  if (chiavi[0] === "riattiva") return o.riattiva === true ? { azione: "riattiva" } : null;
+  const azione = AZIONI_MODULO.find((x) => x === chiavi[0]);
+  const modulo = ORDINE_MODULI.find((m) => m === o[chiavi[0]]);
+  return azione && modulo ? { azione, modulo } : null;
+}
+
+const CAMBIABILE = new Set<StatoAbbonamento>(["attivo", "disdetto"]);
+
+// Perché un cambio non si può fare con l'abbonamento salvato (stato HTTP e messaggio), oppure null.
+export function rifiutoCambio(a: Abbonamento, r: RichiestaModuli): { stato: number; messaggio: string } | null {
+  if (r.azione === "riattiva") return a.stato === "disdetto" ? null : { stato: 409, messaggio: "L'abbonamento non è disdetto" };
+  if (!CAMBIABILE.has(a.stato) || !a.periodo) return { stato: 409, messaggio: "Abbonamento non attivo" };
+  if (r.azione === "togli" && r.modulo === "magazzino") return { stato: 400, messaggio: "Il Magazzino non si toglie" };
+  const presente = moduliDaAbbonamento(a).includes(r.modulo);
+  if (r.azione === "togli") return presente ? null : { stato: 409, messaggio: "Modulo non attivo" };
+  return presente ? { stato: 409, messaggio: "Modulo già attivo" } : null;
+}
+
 // Il magazzino base c'è sempre: non genera righe. Righe del registro per il passaggio da `prima` a `dopo`: prima lo stato, poi i moduli aggiunti, poi quelli tolti.
 export function righeCambio(prima: Abbonamento, dopo: Abbonamento): string[] {
   const righe: string[] = [];

@@ -20,6 +20,7 @@ import { inAttesaDiPagamento, inviaInSospeso, resetShared } from "@/lib/sync";
 import { bloccato } from "@/lib/abbonamento";
 import { useAbbonamento } from "@/lib/use-abbonamento";
 import { RiquadroPagamento } from "./RiquadroPagamento";
+import { FasciaAbbonamento } from "./FasciaAbbonamento";
 import { useEbaySync } from "@/lib/ebay-sync";
 
 // Navigazione per aree di lavoro: poche voci, le sottosezioni compaiono solo dentro l'area aperta.
@@ -162,14 +163,19 @@ function useAttesaPagamento(): boolean {
 
 const matches = (path: string, href: string) => (href === "/" ? path === "/" : path === href || path.startsWith(href + "/"));
 
-function visibleAreas(role: Role) {
-  return AREAS.map((a) => ({ ...a, subs: a.subs.filter((s) => s.roles.includes(role)) })).filter((a) => a.subs.length > 0);
+// Aziende registrate: al posto di "Moduli" (gli interruttori) c'è "Abbonamento" (i moduli si pagano con Stripe)
+const ABBONAMENTO: Sub = { href: "/impostazioni/abbonamento", label: "Abbonamento", roles: ["responsabile"] };
+const AREE_REGISTRATA: Area[] = AREAS.map((a) => ({ ...a, subs: a.subs.map((s) => (s.href === "/impostazioni/moduli" ? ABBONAMENTO : s)) }));
+const aree = (registrata: boolean) => (registrata ? AREE_REGISTRATA : AREAS);
+
+function visibleAreas(role: Role, registrata: boolean) {
+  return aree(registrata).map((a) => ({ ...a, subs: a.subs.filter((s) => s.roles.includes(role)) })).filter((a) => a.subs.length > 0);
 }
 
 // La sottosezione più specifica che corrisponde al percorso (es. /veicoli/nuovo batte /veicoli)
-function currentSub(path: string, areas: Area[]) {
+function currentSub(path: string, areas: Area[], registrata: boolean) {
   let best: { area: Area; sub: Sub } | undefined;
-  for (const area of AREAS) {
+  for (const area of aree(registrata)) {
     for (const sub of area.subs) {
       if (matches(path, sub.href) && (!best || sub.href.length > best.sub.href.length)) best = { area, sub };
     }
@@ -198,12 +204,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const attesaPagamento = useAttesaPagamento();
   const pagamento =
     !!accesso?.azienda.registrata && !!abbonamento?.registrata && ((!!abbonamento.abbonamento && bloccato(abbonamento.abbonamento, veicoli)) || attesaPagamento);
+  const registrata = !!accesso?.azienda.registrata;
+  const titolare = !!accesso && (accesso.ruoli.includes("responsabile") || !!accesso.assistenza);
   const subAperta = (s: { href: string }) => attivo(moduli, moduloDi(s.href));
   // Aree con almeno una sottosezione aperta prima, poi quelle dei moduli non attivi
-  const tutte = visibleAreas(role);
+  const tutte = visibleAreas(role, registrata);
   const areaAperta = (a: Area) => a.subs.some(subAperta);
   const areas = [...tutte.filter(areaAperta), ...tutte.filter((a) => !areaAperta(a))];
-  const cur = currentSub(path, areas);
+  const cur = currentSub(path, areas, registrata);
   const tabAperta = (t: Tab) => ("href" in t ? subAperta(t) : areas.some((a) => a.id === t.area && areaAperta(a)));
   const tabs = tabsAttive<Tab>(
     MOBILE_TABS[role],
@@ -253,7 +261,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <RiquadroPagamento
           abbonamento={abbonamento.abbonamento}
           modalita={abbonamento.modalita}
-          titolare={!!accesso && (accesso.ruoli.includes("responsabile") || !!accesso.assistenza)}
+          titolare={titolare}
           assistenza={!!accesso?.assistenza}
         />
       )}
@@ -387,6 +395,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {accesso && !accesso.azienda.demo ? accesso.azienda.nome : DEMO_NOTICE}
           {operatore ? ` · ${operatore.nome}${operatore.assistenza ? " (assistenza)" : ""} · ${operatore.dispositivo}` : ""}
         </div>
+        {/* Pagamento non riuscito o disdetta agli ultimi giorni: solo per il titolare */}
+        {registrata && titolare && !pagamento && abbonamento?.abbonamento && (
+          <FasciaAbbonamento abbonamento={abbonamento.abbonamento} qui={matches(path, ABBONAMENTO.href)} />
+        )}
         {avviso && (
           <p role="alert" className="no-print border-b border-warn/40 bg-warn-bg px-4 py-2 text-center text-[14px] text-ink">
             <b>{avviso.titolo}</b> {avviso.testo}

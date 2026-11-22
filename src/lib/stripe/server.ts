@@ -1,14 +1,14 @@
 // Stripe sul server: chiave, cliente (in prova dentro un orologio di prova), prezzi, IVA e sincronizzazione
 // dell'abbonamento. Solo server. Spec registrazione-pagamento, sezioni 4, 5, 7, 9.
 import Stripe from "stripe";
-import { ABBONAMENTO_NUOVO, abbonamentoDaStripe, lookupKey, righeCambio, scegli, type Abbonamento } from "@/lib/abbonamento";
+import { ABBONAMENTO_NUOVO, abbonamentoDaStripe, lookupKey, rifiutoCambio, righeCambio, scegli, type Abbonamento, type RichiestaModuli } from "@/lib/abbonamento";
 import { aggiornaAbbonamento, leggiAbbonamento } from "@/lib/abbonamento-server";
 import { aggiungiEventi } from "@/lib/archivio-azienda";
 import type { Periodo } from "@/lib/listino";
 import type { Modulo } from "@/lib/moduli";
 import { azioneCliente, ESPANSIONI, modalitaDaChiave, pagamentoInCorso, sessioniDaScadere, sincronizzazioneLimitata, stessoAmbiente, type ModalitaStripe, type SessioneCheckout } from "./chiavi";
 import { creaFila, type Fila } from "./fila";
-import { subMinima, type SubDaStripe } from "./forma";
+import { importoSenzaTasse, subMinima, voceDelModulo, type SubDaStripe } from "./forma";
 
 // Versione dell'API fissata: quella che porta con sé stripe@23.2.0 (Stripe.API_VERSION). Si cambia insieme alla libreria.
 const VERSIONE_API = "2026-11-18.endive";
@@ -20,6 +20,7 @@ type Globali = typeof globalThis & {
   __tentativiSincronizzazione?: Map<string, number>;
   __ivaStripe?: Promise<string>;
   __checkoutInCorso?: Map<string, Promise<unknown>>;
+  __cambiModuliInCorso?: Map<string, Promise<unknown>>;
 };
 const g = globalThis as Globali;
 
@@ -185,20 +186,74 @@ const salvato = async (aziendaId: string) => (await leggiAbbonamento(aziendaId))
 export const STATI_IN_CORSO = new Set<Abbonamento["stato"]>(["attivo", "in-ritardo", "disdetto"]);
 
 const checkoutInCorso = (g.__checkoutInCorso ??= new Map<string, Promise<unknown>>());
+const cambiInCorso = (g.__cambiModuliInCorso ??= new Map<string, Promise<unknown>>());
+
+// Un lavoro per volta per azienda nella mappa: quello dopo parte quando quello prima è finito, riuscito o no.
+function unoAllaVolta<T>(mappa: Map<string, Promise<unknown>>, aziendaId: string, lavoro: () => Promise<T>): Promise<T> {
+  const prima = mappa.get(aziendaId) ?? Promise.resolve();
+  const run = prima.then(lavoro, lavoro);
+  const fine = run.catch(() => undefined);
+  mappa.set(aziendaId, fine);
+  void fine.then(() => {
+    if (mappa.get(aziendaId) === fine) mappa.delete(aziendaId);
+  });
+  return run;
+}
 
 /**
  * Un Checkout per volta per azienda: due schede che pagano insieme non creano due sessioni aperte. Il lavoro dopo parte
  * quando quello prima è finito, riuscito o no.
  */
 export function unCheckoutAllaVolta<T>(aziendaId: string, lavoro: () => Promise<T>): Promise<T> {
-  const prima = checkoutInCorso.get(aziendaId) ?? Promise.resolve();
-  const run = prima.then(lavoro, lavoro);
-  const fine = run.catch(() => undefined);
-  checkoutInCorso.set(aziendaId, fine);
-  void fine.then(() => {
-    if (checkoutInCorso.get(aziendaId) === fine) checkoutInCorso.delete(aziendaId);
-  });
-  return run;
+  return unoAllaVolta(checkoutInCorso, aziendaId, lavoro);
+}
+
+/** Un cambio di moduli (o una riattivazione) per volta per azienda: due schede non aggiungono lo stesso modulo due volte. */
+export function unCambioAllaVolta<T>(aziendaId: string, lavoro: () => Promise<T>): Promise<T> {
+  return unoAllaVolta(cambiInCorso, aziendaId, lavoro);
+}
+
+export type EsitoCambio = { abbonamento: Abbonamento } | { importo: number } | { errore: string; stato: number };
+
+/**
+ * Aggiunge o toglie un modulo sull'abbonamento in corso, ne calcola l'anteprima, oppure toglie la disdetta.
+ * Il controllo sulla voce si fa sull'abbonamento letto adesso da Stripe, non solo su quello salvato.
+ * Dopo un cambio si sincronizza subito (senza limite): le righe del registro le scrive la sincronizzazione.
+ * Lancia se Stripe non risponde. Da chiamare dentro unCambioAllaVolta.
+ */
+export async function cambiaModuli(aziendaId: string, r: RichiestaModuli): Promise<EsitoCambio> {
+  const ab = await salvato(aziendaId);
+  const no = rifiutoCambio(ab, r);
+  if (no) return { errore: no.messaggio, stato: no.stato };
+  if (!stessoAmbiente(ab, modalitaStripe())) return { errore: ALTRO_AMBIENTE, stato: 409 };
+  if (!ab.subscriptionId || !ab.customerId) return { errore: "Abbonamento non attivo", stato: 409 };
+  const s = stripe();
+  if (r.azione === "riattiva") {
+    await s.subscriptions.update(ab.subscriptionId, { cancel_at_period_end: false });
+    return { abbonamento: await sincronizza(aziendaId) };
+  }
+  const sub = await s.subscriptions.retrieve(ab.subscriptionId, { expand: [...ESPANSIONI.abbonamento] });
+  const voce = voceDelModulo(sub.items.data, r.modulo);
+  if (r.azione === "togli") {
+    if (!voce) return { errore: "Modulo non attivo", stato: 409 };
+    await s.subscriptionItems.del(voce, { proration_behavior: "create_prorations" });
+    return { abbonamento: await sincronizza(aziendaId) };
+  }
+  if (voce) return { errore: "Modulo già attivo", stato: 409 };
+  const [[price], iva] = await Promise.all([prezziPer([r.modulo], ab.periodo!), aliquotaIva()]);
+  if (r.azione === "anteprima") {
+    const fattura = await s.invoices.createPreview({
+      customer: ab.customerId,
+      subscription: ab.subscriptionId,
+      subscription_details: {
+        items: [...sub.items.data.map((it) => ({ id: it.id })), { price, tax_rates: [iva] }],
+        proration_behavior: "always_invoice",
+      },
+    });
+    return { importo: importoSenzaTasse(fattura) };
+  }
+  await s.subscriptionItems.create({ subscription: ab.subscriptionId, price, tax_rates: [iva], proration_behavior: "always_invoice" });
+  return { abbonamento: await sincronizza(aziendaId) };
 }
 
 /**

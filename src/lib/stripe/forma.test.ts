@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { subMinima } from "./forma.ts";
+import { importoSenzaTasse, subMinima, voceDelModulo } from "./forma.ts";
 
 const voce = (product: unknown, interval: string | null, fine = 1_800_000_000) => ({
   price: { recurring: interval ? { interval } : null, product },
@@ -31,4 +31,24 @@ test("subMinima: prodotto non espanso o cancellato resta una stringa (il modulo 
 test("subMinima: metadata assente diventa un oggetto vuoto", () => {
   const s = subMinima({ id: "s", status: "active", cancel_at_period_end: false, created: 1, items: { data: [voce({ id: "prod_c" }, "month")] } });
   assert.deepEqual(s.items[0].price.product, { metadata: {} });
+});
+
+test("voceDelModulo: la voce dell'abbonamento si trova da metadata.modulo del prodotto", () => {
+  const voci = [
+    { id: "si_mag", price: { product: { id: "prod_m", metadata: { modulo: "magazzino" } } } },
+    { id: "si_amb", price: { product: { id: "prod_a", metadata: { modulo: "ambiente" } } } },
+    { id: "si_str", price: { product: "prod_non_espanso" } },
+    { id: "si_del", price: { product: { id: "prod_d", deleted: true } } },
+  ];
+  assert.equal(voceDelModulo(voci, "ambiente"), "si_amb");
+  assert.equal(voceDelModulo(voci, "magazzino"), "si_mag");
+  assert.equal(voceDelModulo(voci, "vendite"), null);
+  assert.equal(voceDelModulo([], "ambiente"), null);
+});
+
+test("importoSenzaTasse: quanto si paga subito meno le tasse, mai sotto zero", () => {
+  assert.equal(importoSenzaTasse({ amount_due: 1220, total_taxes: [{ amount: 220 }] }), 1000);
+  assert.equal(importoSenzaTasse({ amount_due: 1000, total_taxes: null }), 1000);
+  assert.equal(importoSenzaTasse({ amount_due: 1464, total_taxes: [{ amount: 200 }, { amount: 64 }] }), 1200);
+  assert.equal(importoSenzaTasse({ amount_due: 0, total_taxes: [{ amount: 220 }] }), 0);
 });

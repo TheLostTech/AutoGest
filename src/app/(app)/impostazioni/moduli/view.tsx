@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useStore } from "@/lib/store";
+import { useSessione } from "@/lib/accesso/client";
 import { useModuli } from "@/lib/use-moduli";
 import { MODULI, ORDINE_MODULI, type Modulo } from "@/lib/moduli";
 import { lavoroAperto } from "@/lib/moduli-lavoro";
@@ -8,6 +10,26 @@ import { dateIt } from "@/lib/logic";
 import { Notice, PageTitle, Panel } from "@/components/ui";
 
 export default function Moduli() {
+  const { accesso } = useSessione();
+  // Aziende registrate: i moduli si pagano da Abbonamento, qui niente interruttori
+  if (accesso?.azienda.registrata) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <PageTitle title="Moduli" />
+        <Notice>
+          I moduli fanno parte del tuo abbonamento: si aggiungono e si tolgono da{" "}
+          <Link href="/impostazioni/abbonamento" className="font-semibold underline">
+            Abbonamento
+          </Link>
+          .
+        </Notice>
+      </div>
+    );
+  }
+  return <Interruttori />;
+}
+
+function Interruttori() {
   const s = useStore();
   const moduli = useModuli();
 

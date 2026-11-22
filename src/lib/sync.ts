@@ -285,6 +285,16 @@ async function pull() {
       applying = false;
       version = res.version;
       synced = pick(useStore.getState());
+    } else if (res.abbonamento != null) {
+      // Aziende registrate: i moduli li decide l'abbonamento, che cambia senza una versione nuova dell'archivio
+      // (modulo aggiunto o tolto da Abbonamento, scadenza): si allineano anche a versione invariata.
+      const moduli = sanitize({ moduli: res.state.moduli })?.moduli;
+      if (moduli && JSON.stringify(moduli) !== JSON.stringify(useStore.getState().moduli)) {
+        applying = true;
+        useStore.setState({ moduli });
+        applying = false;
+        synced = { ...synced, moduli: useStore.getState().moduli };
+      }
     }
     segnaAllineato();
   } catch (e) {
