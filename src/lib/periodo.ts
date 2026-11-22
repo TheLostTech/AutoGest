@@ -153,6 +153,14 @@ export function duplicateIds(moves: WasteMove[]): Set<string> {
 // Registrazioni che hanno già una rettifica o un annullamento
 export const correctedIds = (moves: WasteMove[]) => new Set(moves.flatMap((m) => [m.rettificaDi, m.annullaDi]).filter((x): x is string => !!x));
 
+// Kg attuali di una registrazione: quelli dell'ultima rettifica numerata che la richiama, altrimenti i suoi
+export function currentKg(moves: WasteMove[], id: string): number | undefined {
+  const m = moves.find((x) => x.id === id);
+  if (!m) return undefined;
+  const rett = moves.filter((x) => x.causale === "RETT" && x.rettificaDi === id && !isDraft(x)).sort((a, b) => (a.numero ?? 0) - (b.numero ?? 0));
+  return rett.length ? rett[rett.length - 1].kg : m.kg;
+}
+
 // Mese di una registrazione: quello della registrazione; per le bozze quello dell'operazione
 export const periodKeyOf = (m: WasteMove) => monthKey(m.registeredAt ?? m.at);
 
