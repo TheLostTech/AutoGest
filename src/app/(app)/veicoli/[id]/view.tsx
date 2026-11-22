@@ -14,13 +14,17 @@ import { PartRow } from "@/components/PartRow";
 import { dateIt } from "@/lib/logic";
 import { platformById } from "@/lib/catalog";
 import { fmtKg, itemKg } from "@/lib/ambiente";
+import { useModuli } from "@/lib/use-moduli";
+import { Bloccato } from "@/components/ModuloBloccato";
+import { DatiRegistroPanel } from "@/components/DatiRegistroPanel";
 
 export default function SchedaVeicolo() {
   const { id } = useParams<{ id: string }>();
   const v = useStore((s) => s.vehicles.find((x) => x.id === id));
   const parts = useStore((s) => s.parts).filter((p) => p.vehicleId === id);
-  const { updateVehicle, setActiveVehicle, audit } = useStore();
+  const { updateVehicle, setActiveVehicle, segnaBonificata, audit } = useStore();
   const [vin, setVin] = useState("");
+  const moduli = useModuli();
 
   if (!v) return <Empty title={`Veicolo ${id} non trovato`} />;
   const platform = platformById(v.platform);
@@ -104,15 +108,35 @@ export default function SchedaVeicolo() {
             </dl>
           </Panel>
 
-          <Panel title="Bonifica" action={v.bonifica && <Link href={`/veicoli/${v.id}/bonifica`} className="text-sm font-semibold text-band">Dettaglio</Link>}>
+          <div id="bonifica">
+          <Panel
+            title="Bonifica"
+            action={
+              v.bonifica &&
+              moduli.has("ambiente") && (
+                <Link href={`/veicoli/${v.id}/bonifica`} className="text-sm font-semibold text-band">
+                  {v.bonifica.semplice ? "Registra i materiali" : "Dettaglio"}
+                </Link>
+              )
+            }
+          >
             {v.bonifica ? (
               <dl className="grid grid-cols-[130px_1fr] gap-x-4 gap-y-2.5 p-4 text-[15px]">
                 <dt className="text-ink-3">Eseguita</dt>
                 <dd>{dateIt(v.bonifica.at, true)} · {v.bonifica.by}</dd>
-                <dt className="text-ink-3">Rimossi</dt>
-                <dd className="code text-[18px]">{fmtKg(v.bonifica.items.reduce((a, i) => a + itemKg(i), 0))}</dd>
-                <dt className="text-ink-3">Carcassa</dt>
-                <dd className="code text-[18px]">{fmtKg(v.bonifica.residualKg)} <span className="font-sans text-sm text-ink-3">· EER 16 01 06</span></dd>
+                {v.bonifica.semplice ? (
+                  <>
+                    <dt className="text-ink-3">Materiali</dt>
+                    <dd className="text-ink-2">non registrati (bonifica segnata senza il modulo Ambiente)</dd>
+                  </>
+                ) : (
+                  <>
+                    <dt className="text-ink-3">Rimossi</dt>
+                    <dd className="code text-[18px]">{fmtKg(v.bonifica.items.reduce((a, i) => a + itemKg(i), 0))}</dd>
+                    <dt className="text-ink-3">Carcassa</dt>
+                    <dd className="code text-[18px]">{fmtKg(v.bonifica.residualKg)} <span className="font-sans text-sm text-ink-3">· EER 16 01 06</span></dd>
+                  </>
+                )}
               </dl>
             ) : (
               <div className="flex flex-wrap items-center justify-between gap-3 p-4">
@@ -128,13 +152,27 @@ export default function SchedaVeicolo() {
                   );
                 })()}
                 <p className="text-[15px] text-ink-2">Da fare prima dello smontaggio: liquidi, batteria, airbag, catalizzatore, pneumatici.</p>
-                <ButtonLink href={`/veicoli/${v.id}/bonifica`} size="sm"><Leaf className="size-4" aria-hidden /> Registra bonifica</ButtonLink>
+                {moduli.has("ambiente") ? (
+                  <ButtonLink href={`/veicoli/${v.id}/bonifica`} size="sm"><Leaf className="size-4" aria-hidden /> Registra bonifica</ButtonLink>
+                ) : (
+                  <Button size="sm" onClick={() => segnaBonificata(v.id, new Date().toISOString())}><Leaf className="size-4" aria-hidden /> Bonificato oggi</Button>
+                )}
+              </div>
+            )}
+            {!moduli.has("ambiente") && (
+              <div className="px-4 pb-4">
+                <Bloccato modulo="ambiente" funzione="Materiali tolti e registro rifiuti">{null}</Bloccato>
               </div>
             )}
           </Panel>
+          </div>
+
+          {moduli.has("ambiente") && !moduli.has("accettazione") && <DatiRegistroPanel v={v} />}
 
           <div id="pratica">
-            <PraticaPanel v={v} />
+            <Bloccato modulo="accettazione" funzione="Pratica, visura e radiazione PRA">
+              <PraticaPanel v={v} />
+            </Bloccato>
           </div>
 
           <Panel title="Storico veicolo">

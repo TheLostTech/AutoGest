@@ -10,6 +10,8 @@ import { locToString, onLabel, parseShelf, shelfCode } from "@/lib/warehouse";
 import { Button, ButtonLink, Notice, PageTitle } from "@/components/ui";
 import type { Location, Order, Part } from "@/lib/types";
 import { beep, buzz, unlockAudio } from "@/lib/feedback";
+import { azioneVendi } from "@/lib/moduli";
+import { useModuli } from "@/lib/use-moduli";
 
 type Detector = { detect: (src: HTMLVideoElement) => Promise<{ rawValue: string }[]> };
 type DetectorClass = { new (o: { formats: string[] }): Detector; getSupportedFormats?: () => Promise<string[]> };
@@ -58,6 +60,7 @@ const SHELF_IDLE_MS = 2 * 60 * 1000;
 export default function Scansione() {
   const s = useStore();
   const router = useRouter();
+  const moduli = useModuli();
   const [reason, setReason] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -157,6 +160,8 @@ export default function Scansione() {
       else setOutcome({ tone: "ok", title: `${p.id} è già fuori dallo scaffale`, detail: `Ordine ${order.id} · ${order.customer}` });
       return;
     }
+    // Senza il modulo Vendite il pezzo resta a scaffale: si mostra solo cosa farebbe il banco
+    if (azioneVendi(false, moduli) === "bloccato") return router.push("/moduli/vendite");
     if (p.location) s.pickPart(p.id, "per la vendita al banco");
     router.push(`/vendite?pezzo=${p.id}`);
   }
@@ -415,7 +420,7 @@ export default function Scansione() {
             <div className="mt-3 flex flex-wrap gap-2">
               {outcome.rottami && <ButtonLink href="/rottami" variant="secondary">Area rottami</ButtonLink>}
               {outcome.load && <Button onClick={outcome.load.run}>{outcome.load.label}</Button>}
-              {outcome.sell && <ButtonLink href={`/vendite?pezzo=${outcome.sell}`}>Vendi al banco</ButtonLink>}
+              {outcome.sell && moduli.has("vendite") && <ButtonLink href={`/vendite?pezzo=${outcome.sell}`}>Vendi al banco</ButtonLink>}
               {outcome.undo && (
                 <Button
                   variant="quiet"
