@@ -4,7 +4,7 @@ import { annunciaAziendaSessione } from "@/lib/accesso/azienda-client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { Building2, LogOut, ShieldCheck } from "lucide-react";
+import { Building2, LogOut, Mail, ShieldCheck } from "lucide-react";
 import { authClient } from "@/lib/auth/client";
 import { Button, Notice } from "@/components/ui";
 
@@ -86,6 +86,7 @@ export function Guscio({ children }: { children: React.ReactNode }) {
 
   const nav = [
     { href: "/piattaforma", nome: "Aziende", icona: Building2, attivo: path === "/piattaforma" || path.startsWith("/piattaforma/aziende") || path === "/piattaforma/nuova" },
+    { href: "/piattaforma/inviti", nome: "Inviti", icona: Mail, attivo: path === "/piattaforma/inviti" },
     { href: "/piattaforma/sicurezza", nome: "Sicurezza", icona: ShieldCheck, attivo: path === "/piattaforma/sicurezza" },
   ];
   const aSicurezza = path === "/piattaforma/sicurezza";
