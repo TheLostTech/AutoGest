@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   ABBONAMENTO_NUOVO, lookupKey, nomeStripe, moduliDaAbbonamento, bloccato,
-  abbonamentoDaStripe, contoAllaRovescia, righeCambio, scritturaAzienda, statoPerBrowser, contaVeicoli,
+  abbonamentoDaStripe, contoAllaRovescia, righeCambio, scritturaAzienda, statoPerBrowser, contaVeicoli, sceltaValida,
   type Abbonamento, type SubStripe,
 } from "./abbonamento.ts";
 
@@ -153,4 +153,18 @@ test("statoPerBrowser mette i moduli dell'abbonamento", () => {
   const st = { moduli: [1] };
   assert.equal(statoPerBrowser(false, null, st), st);
   assert.equal(statoPerBrowser(true, null, null), null);
+});
+
+test("sceltaValida: periodo e moduli dal corpo di Checkout", () => {
+  assert.deepEqual(sceltaValida({ periodo: "anno", moduli: ["ambiente"] }), { periodo: "anno", moduli: ["magazzino", "ambiente"] });
+  assert.equal(sceltaValida({ periodo: "settimana", moduli: ["ambiente"] }), null);
+  assert.deepEqual(sceltaValida({ periodo: "mese", moduli: ["boh", "vendite"] }), { periodo: "mese", moduli: ["magazzino", "vendite"] });
+  assert.equal(sceltaValida(null), null);
+});
+
+test("sceltaValida: doppioni e magazzino una volta sola, nell'ordine dei moduli", () => {
+  assert.deepEqual(sceltaValida({ periodo: "mese", moduli: ["vendite", "magazzino", "vendite", "accettazione"] }), { periodo: "mese", moduli: ["magazzino", "accettazione", "vendite"] });
+  assert.deepEqual(sceltaValida({ periodo: "mese" }), { periodo: "mese", moduli: ["magazzino"] });
+  assert.equal(sceltaValida({ periodo: "mese", moduli: "ambiente" }), null);
+  assert.equal(sceltaValida("anno"), null);
 });

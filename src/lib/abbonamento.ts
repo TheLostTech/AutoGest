@@ -39,6 +39,17 @@ export function lookupKey(m: Modulo, p: Periodo): string {
   return `${NOMI_STRIPE[m]}_${p === "anno" ? "anno" : "mese"}`;
 }
 
+// La scelta mandata a Checkout dal riquadro di pagamento: periodo "mese" o "anno" e moduli conosciuti.
+// Il magazzino c'è sempre, i doppioni e i moduli sconosciuti si scartano; `moduli` assente vale solo magazzino.
+export function sceltaValida(corpo: unknown): { periodo: Periodo; moduli: Modulo[] } | null {
+  if (!corpo || typeof corpo !== "object") return null;
+  const { periodo, moduli } = corpo as { periodo?: unknown; moduli?: unknown };
+  if (periodo !== "mese" && periodo !== "anno") return null;
+  if (moduli !== undefined && !Array.isArray(moduli)) return null;
+  const scelti = new Set<unknown>(["magazzino", ...(moduli ?? [])]);
+  return { periodo, moduli: ORDINE_MODULI.filter((m) => scelti.has(m)) };
+}
+
 // Il magazzino base c'è sempre; gli altri solo con un abbonamento in corso.
 export function moduliDaAbbonamento(a: Abbonamento): Modulo[] {
   const attivi = a.stato === "nuovo" || a.stato === "scaduto" ? [] : a.moduli;

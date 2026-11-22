@@ -16,7 +16,10 @@ import { BRAND, DEMO_NOTICE } from "@/lib/config";
 import { Logo } from "@/components/Logo";
 import { GlobalSearch } from "./GlobalSearch";
 import { LostarCredit } from "./Lostar";
-import { inviaInSospeso, resetShared } from "@/lib/sync";
+import { inAttesaDiPagamento, inviaInSospeso, resetShared } from "@/lib/sync";
+import { bloccato } from "@/lib/abbonamento";
+import { useAbbonamento } from "@/lib/use-abbonamento";
+import { RiquadroPagamento } from "./RiquadroPagamento";
 import { useEbaySync } from "@/lib/ebay-sync";
 
 // Navigazione per aree di lavoro: poche voci, le sottosezioni compaiono solo dentro l'area aperta.
@@ -144,6 +147,19 @@ const MOBILE_TABS: Record<Role, Tab[]> = {
   ],
 };
 
+// Le modifiche aspettano il pagamento (rifiuto 402 del server): lo dice la sincronizzazione, che non manda eventi.
+// Si rilegge ogni 2 secondi.
+function useAttesaPagamento(): boolean {
+  const [attesa, setAttesa] = useState(false);
+  useEffect(() => {
+    const leggi = () => setAttesa(inAttesaDiPagamento());
+    const t = setInterval(leggi, 2000);
+    leggi();
+    return () => clearInterval(t);
+  }, []);
+  return attesa;
+}
+
 const matches = (path: string, href: string) => (href === "/" ? path === "/" : path === href || path.startsWith(href + "/"));
 
 function visibleAreas(role: Role) {
@@ -176,6 +192,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const storageFull = useDeviceStorageFull();
   useEbaySync();
   const moduli = useModuli();
+  // Riquadro di pagamento, solo per le aziende registrate: dopo il primo veicolo (o a scadenza) finché non si paga
+  const { dati: abbonamento } = useAbbonamento();
+  const veicoli = useStore((s) => s.vehicles.length);
+  const attesaPagamento = useAttesaPagamento();
+  const pagamento =
+    !!accesso?.azienda.registrata && !!abbonamento?.registrata && ((!!abbonamento.abbonamento && bloccato(abbonamento.abbonamento, veicoli)) || attesaPagamento);
   const subAperta = (s: { href: string }) => attivo(moduli, moduloDi(s.href));
   // Aree con almeno una sottosezione aperta prima, poi quelle dei moduli non attivi
   const tutte = visibleAreas(role);
@@ -227,8 +249,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       )}
+      {pagamento && abbonamento && (
+        <RiquadroPagamento
+          abbonamento={abbonamento.abbonamento}
+          modalita={abbonamento.modalita}
+          titolare={!!accesso && (accesso.ruoli.includes("responsabile") || !!accesso.assistenza)}
+          assistenza={!!accesso?.assistenza}
+        />
+      )}
       {/* Fascia blu: come la stampa sulla scatola */}
-      <aside className="no-print hidden bg-band text-white md:sticky md:top-0 md:flex md:h-dvh md:flex-col">
+      <aside inert={pagamento} className="no-print hidden bg-band text-white md:sticky md:top-0 md:flex md:h-dvh md:flex-col">
         <div className="px-5 pb-4 pt-6">
           <Logo className="text-[32px]" />
           <div className="mt-1 text-[13px] font-medium text-white/75">Gestionale autodemolizione</div>
@@ -298,7 +328,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="flex min-h-dvh min-w-0 flex-col">
+      <div inert={pagamento} className="flex min-h-dvh min-w-0 flex-col">
         {/* Testata mobile */}
         <header className="no-print sticky top-0 z-30 bg-band text-white md:hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-2.5">

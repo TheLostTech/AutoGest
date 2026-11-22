@@ -141,16 +141,13 @@ async function rileggi(aziendaId: string): Promise<Abbonamento> {
     s.subscriptions.list({ customer: prima.customerId, status: "all", limit: 100 }),
     prima.orologioId ? s.testHelpers.testClocks.retrieve(prima.orologioId) : Promise.resolve(null),
   ]);
-  let minime = subs.data.map((x) => subMinima(x as unknown as SubDaStripe));
-  const scelto = scegli(minime);
-  if (scelto) {
-    const pieno = subMinima((await s.subscriptions.retrieve(scelto.id, { expand: [...ESPANSIONI.abbonamento] })) as unknown as SubDaStripe);
-    minime = minime.map((x) => (x.id === pieno.id ? pieno : x));
-  }
+  const scelto = scegli(subs.data.map((x) => subMinima(x as unknown as SubDaStripe)));
+  // Allo stato si passa solo l'abbonamento riletto: lo stesso che sceglie scegli, ora con i prodotti espansi
+  const pieno = scelto ? subMinima((await s.subscriptions.retrieve(scelto.id, { expand: [...ESPANSIONI.abbonamento] })) as unknown as SubDaStripe) : null;
   let righe: string[] = [];
   const dopo = await aggiornaAbbonamento(aziendaId, (cur) => {
     const base = cur ?? prima;
-    const nuovo = abbonamentoDaStripe(minime, base, Date.now(), orologio ? orologio.frozen_time * 1000 : null);
+    const nuovo = abbonamentoDaStripe(pieno ? [pieno] : [], base, Date.now(), orologio ? orologio.frozen_time * 1000 : null);
     righe = righeCambio(base, nuovo);
     return nuovo;
   });
@@ -182,6 +179,32 @@ export function sincronizzaOLancia(aziendaId: string): Promise<Abbonamento> {
 }
 
 const salvato = async (aziendaId: string) => (await leggiAbbonamento(aziendaId)) ?? ABBONAMENTO_NUOVO(modalitaStripe() !== "live", Date.now());
+
+// Stati con un abbonamento in corso: niente nuovo Checkout (i moduli si aggiungono da Abbonamento)
+export const STATI_IN_CORSO = new Set<Abbonamento["stato"]>(["attivo", "in-ritardo", "disdetto"]);
+
+export type EsitoCheckout = { pagata: boolean; abbonamento: Abbonamento } | { errore: string; stato: number };
+
+/**
+ * Il ritorno da Checkout: legge la sessione da Stripe, controlla che sia di questa azienda e, se è pagata, sincronizza
+ * subito (senza limite: può arrivare pochi secondi dopo un'altra sincronizzazione). `pagata` vale vero solo quando
+ * anche l'abbonamento salvato è in corso: se Stripe non lo mostra ancora, la pagina ricontrolla.
+ */
+export async function esitoCheckout(aziendaId: string, sessionId: string): Promise<EsitoCheckout> {
+  if (modalitaStripe() === "spenta") return { errore: "Pagamenti non disponibili", stato: 503 };
+  if (!/^cs_[A-Za-z0-9_]{1,250}$/.test(sessionId)) return { errore: "Pagamento non trovato.", stato: 404 };
+  let sessione: Stripe.Checkout.Session;
+  try {
+    sessione = await stripe().checkout.sessions.retrieve(sessionId);
+  } catch (e) {
+    console.error("Sessione Checkout non letta", aziendaId, sessionId, e);
+    return { errore: "Non riesco a leggere il pagamento da Stripe: riprova tra poco.", stato: 502 };
+  }
+  if (sessione.client_reference_id !== aziendaId) return { errore: "Pagamento non trovato.", stato: 404 };
+  const pagata = sessione.payment_status === "paid" || sessione.payment_status === "no_payment_required";
+  const abbonamento = pagata ? await sincronizza(aziendaId) : await salvato(aziendaId);
+  return { pagata: pagata && STATI_IN_CORSO.has(abbonamento.stato), abbonamento };
+}
 
 /**
  * Come sincronizzaOLancia, ma non lancia mai: con Stripe irraggiungibile scrive nel log e restituisce quello che c'è.
