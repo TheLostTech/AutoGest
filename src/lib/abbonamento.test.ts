@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   ABBONAMENTO_NUOVO, lookupKey, nomeStripe, moduliDaAbbonamento, bloccato,
-  abbonamentoDaStripe, contoAllaRovescia, righeCambio, scritturaAzienda, statoPerBrowser,
+  abbonamentoDaStripe, contoAllaRovescia, righeCambio, scritturaAzienda, statoPerBrowser, contaVeicoli,
   type Abbonamento, type SubStripe,
 } from "./abbonamento.ts";
 
@@ -118,9 +118,25 @@ test("scritturaAzienda: blocco per stato e veicoli", () => {
   const c = { schema: "s", changes: { vehicles: [{ id: "V1" }] } };
   assert.equal(scritturaAzienda(true, ab(), 0, c).esito, "ok");
   assert.equal(scritturaAzienda(true, null, 0, c).esito, "ok");
-  assert.equal(scritturaAzienda(true, ab(), 1, c).esito, "bloccato");
+  assert.equal(scritturaAzienda(true, ab(), 2, c).esito, "bloccato");
+  assert.equal(scritturaAzienda(true, ab(), 1, c).esito, "ok");
   assert.equal(scritturaAzienda(true, ab({ stato: "attivo" }), 9, c).esito, "ok");
   assert.equal(scritturaAzienda(false, ab({ stato: "scaduto" }), 9, c).esito, "ok");
+});
+
+test("scritturaAzienda blocca un primo invio con più veicoli", () => {
+  const c = { schema: "s", changes: { vehicles: [{ id: "V1" }, { id: "V2" }, { id: "V3" }] } };
+  assert.equal(scritturaAzienda(true, ab(), 3, c).esito, "bloccato");
+  assert.equal(scritturaAzienda(true, ab({ stato: "in-ritardo" }), 3, c).esito, "ok");
+  assert.equal(scritturaAzienda(true, ab({ stato: "disdetto" }), 3, c).esito, "ok");
+  assert.equal(scritturaAzienda(true, ab({ stato: "scaduto" }), 0, c).esito, "bloccato");
+});
+
+test("contaVeicoli: lista, assente, valore non valido (blocca)", () => {
+  assert.equal(contaVeicoli(null), 0);
+  assert.equal(contaVeicoli({}), 0);
+  assert.equal(contaVeicoli({ vehicles: [1, 2] }), 2);
+  assert.equal(scritturaAzienda(true, ab(), contaVeicoli({ vehicles: "x" }), { schema: "s" }).esito, "bloccato");
 });
 
 test("statoPerBrowser mette i moduli dell'abbonamento", () => {

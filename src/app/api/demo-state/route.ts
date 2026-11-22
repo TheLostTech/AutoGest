@@ -4,7 +4,7 @@ import { connection } from "next/server";
 import { accessoDaRichiesta } from "@/lib/accesso/server";
 import { aggiornaStato, leggiStato } from "@/lib/archivio-azienda";
 import { leggiAbbonamento } from "@/lib/abbonamento-server";
-import { scritturaAzienda, statoPerBrowser } from "@/lib/abbonamento";
+import { ABBONAMENTO_NUOVO, contaVeicoli, scritturaAzienda, statoPerBrowser } from "@/lib/abbonamento";
 import { esitoPush, unisciPush, type Push, type Stored } from "@/lib/archivio-unione";
 
 const NOSTORE = { "Cache-Control": "no-store" };
@@ -22,8 +22,9 @@ export async function GET(req: Request) {
     const s = await leggiStato(a.azienda.id);
     // aziendaId: la scheda controlla che la risposta sia della sua azienda (mai applicare i dati di un'altra)
     const reg = a.azienda.registrata;
-    const ab = reg ? await leggiAbbonamento(a.azienda.id) : null;
-    return Response.json({ ...s, state: statoPerBrowser(reg, ab, s.state), abbonamento: ab ?? null, demo: a.azienda.demo, aziendaId: a.azienda.id }, { headers: NOSTORE });
+    // Senza file un'azienda registrata è "nuovo", come per il PUT: GET e PUT devono dire la stessa cosa
+    const ab = reg ? ((await leggiAbbonamento(a.azienda.id)) ?? ABBONAMENTO_NUOVO(true, Date.now())) : null;
+    return Response.json({ ...s, state: statoPerBrowser(reg, ab, s.state), abbonamento: ab, demo: a.azienda.demo, aziendaId: a.azienda.id }, { headers: NOSTORE });
   } catch (e) {
     return erroreArchivio(e);
   }
@@ -40,10 +41,10 @@ export async function PUT(req: Request) {
   let r: Stored | 402 | 403 | 409;
   try {
     const reg = a.azienda.registrata;
-    const ab = reg ? await leggiAbbonamento(a.azienda.id) : null;
+    const ab = reg ? ((await leggiAbbonamento(a.azienda.id)) ?? ABBONAMENTO_NUOVO(true, Date.now())) : null;
     r = await aggiornaStato<Stored | 402 | 403 | 409>(a.azienda.id, (cur) => {
-      const veicoliPrima = Array.isArray(cur.state?.vehicles) ? cur.state.vehicles.length : 0;
-      const scr = scritturaAzienda(reg, ab, veicoliPrima, body);
+      // In prova conta lo stato DOPO la fusione: un solo invio non può portare più di un veicolo
+      const scr = scritturaAzienda(reg, ab, contaVeicoli(unisciPush(cur, body).state), body);
       if (scr.esito === "bloccato") return { stored: cur, risultato: 402, nonScrivere: true };
       const esito = esitoPush(cur, scr.corpo, ctx);
       if (esito === 403 || esito === 409) return { stored: cur, risultato: esito, nonScrivere: true };

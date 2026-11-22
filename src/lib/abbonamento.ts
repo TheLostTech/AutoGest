@@ -142,11 +142,20 @@ export function righeCambio(prima: Abbonamento, dopo: Abbonamento): string[] {
 
 export type Scrittura = { esito: "ok"; corpo: Push } | { esito: "bloccato" };
 
+// Veicoli di uno stato: assente = 0; un valore che c'è ma non è una lista vale "troppi" (si blocca, mai si lascia passare).
+export function contaVeicoli(state: Record<string, unknown> | null | undefined): number {
+  const v = state?.vehicles;
+  if (v === undefined || v === null) return 0;
+  return Array.isArray(v) ? v.length : Infinity;
+}
+
 // Un salvataggio dal browser. Per le aziende registrate i moduli non li decide il browser (li decide l'abbonamento)
 // e, se l'abbonamento non è in regola, non si scrive nulla.
-export function scritturaAzienda(registrata: boolean, a: Abbonamento | null, veicoliPrima: number, corpo: Push): Scrittura {
+// veicoliDopo: i veicoli dell'archivio DOPO la fusione del salvataggio (vedi contaVeicoli): in prova passa solo chi ne ha al massimo uno.
+export function scritturaAzienda(registrata: boolean, a: Abbonamento | null, veicoliDopo: number, corpo: Push): Scrittura {
   if (!registrata) return { esito: "ok", corpo };
-  if (bloccato(a ?? ABBONAMENTO_NUOVO(true, 0), veicoliPrima)) return { esito: "bloccato" };
+  // bloccato() conta i veicoli già caricati (da 1 in su si blocca): dopo la fusione uno solo è ancora il primo
+  if (bloccato(a ?? ABBONAMENTO_NUOVO(true, 0), Math.max(0, veicoliDopo - 1))) return { esito: "bloccato" };
   if (!corpo.whole) return { esito: "ok", corpo };
   const whole = { ...corpo.whole };
   delete whole.moduli;
