@@ -1,9 +1,8 @@
 // Elenco delle aziende e creazione di una nuova. Solo super admin con codice dal telefono verificato.
-import { randomBytes } from "node:crypto";
 import { connection } from "next/server";
 import { superadminDaRichiesta } from "@/lib/accesso/server";
 import { creaStatoAzienda } from "@/lib/archivio-azienda";
-import { creaAzienda } from "@/lib/piattaforma/crea";
+import { creaAzienda, slugDa } from "@/lib/piattaforma/crea";
 import { statoVuoto } from "@/lib/stato-iniziale";
 import { DEFAULT_LISTINI } from "@/lib/pricing";
 import { WAREHOUSES } from "@/lib/warehouse";
@@ -37,11 +36,6 @@ export async function GET(req: Request) {
     });
   }
   return ok({ aziende: righe });
-}
-
-function slugDa(nome: string): string {
-  const base = nome.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
-  return `${base || "azienda"}-${randomBytes(3).toString("hex")}`;
 }
 
 export async function POST(req: Request) {

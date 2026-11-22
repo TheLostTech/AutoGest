@@ -5,6 +5,12 @@ import { ruoliAStringa } from "@/lib/accesso/ruoli";
 import { impostaPin } from "@/lib/auth/pin-dispositivo";
 import type { Role } from "@/lib/types";
 
+/** Slug unico dell'azienda: il nome senza accenti e simboli, più 6 caratteri a caso. */
+export function slugDa(nome: string): string {
+  const base = nome.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  return `${base || "azienda"}-${randomBytes(3).toString("hex")}`;
+}
+
 /** Crea l'azienda dall'adapter: nessuno diventa membro (né proprietario). */
 export async function creaAzienda(c: AuthContext, nome: string, slug: string, demo: boolean, extra?: Record<string, unknown>): Promise<{ id: string; name: string }> {
   return c.adapter.create<Record<string, unknown>, { id: string; name: string }>({

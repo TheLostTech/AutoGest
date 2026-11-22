@@ -83,6 +83,7 @@ export default function ScopriPage() {
               <p className="mt-6 max-w-[52ch] text-[15px] text-ink-3">
                 Gira nel browser: telefono in piazzale, computer al banco, pistola laser in magazzino. Niente da installare sui telefoni.
               </p>
+              <p className="mt-2 text-[14px] text-ink-3">Ambiente di prova: nessun addebito vero</p>
             </div>
 
             <div className="order-1 md:order-2">

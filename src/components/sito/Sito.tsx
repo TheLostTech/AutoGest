@@ -32,6 +32,9 @@ export function Testata({ attiva }: { attiva?: "news" }) {
             <Link href="/scopri#costo" className={voce}>
               Quanto costa
             </Link>
+            <Link href="/accesso" className="inline-flex h-11 items-center rounded-md px-3 text-[15px] font-semibold text-white/90 hover:bg-white/12">
+              Accedi
+            </Link>
             <a href={DEMO} className="ml-1 inline-flex h-11 items-center rounded-md bg-label px-4 text-[15px] font-semibold text-band hover:bg-band-tint">
               Apri la demo
             </a>

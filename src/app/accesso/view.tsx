@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { authClient } from "@/lib/auth/client";
 import type { NomiDispositivo } from "@/lib/auth/pin-dispositivo-client";
 import { NomiPin } from "./nomi-pin";
@@ -167,6 +168,11 @@ function AccessoEmail({ da, onNomi }: { da: string; onNomi?: () => void }) {
             {attesa ? "Controllo…" : passo === "password" ? "Entra" : "Conferma"}
           </Button>
         </form>
+        <div className="mt-4 text-center">
+          <Link href="/registrati" className="inline-flex min-h-11 items-center px-2 text-[14px] font-semibold text-band underline">
+            Non hai un account? Registrati
+          </Link>
+        </div>
         {onNomi && (
           <div className="mt-4 text-center">
             <button type="button" onClick={onNomi} className="min-h-11 px-2 text-[14px] font-semibold text-ink-3 underline">
