@@ -314,9 +314,17 @@ export function buildSeed() {
       visura: { at: v.intakeAt, fermo: false, intestatario: conferente.nome },
       presaInCarico: { at: v.intakeAt, by: "Giulia (accettazione)" },
       radiazione: done
-        ? { stato: "completata", richiestaAt: hours(v.intakeAt, 24), completataAt: hours(v.intakeAt, 24 * 6), estremi: `RAD-${v.dossier.number.slice(-6)}` }
+        ? {
+            stato: "completata",
+            codice: "C05332",
+            canale: "rvfu",
+            fascicolo: ["libretto", "proprieta", "crd", "istanza"],
+            richiestaAt: hours(v.intakeAt, 24),
+            completataAt: hours(v.intakeAt, 24 * 6),
+            estremi: `DEMO-${v.dossier.number.slice(-6)}`, // numero di ricevuta finto: nella realtà lo emette il PRA
+          }
         : v.id === "V-000117"
-          ? { stato: "richiesta", richiestaAt: hours(v.intakeAt, 20) }
+          ? { stato: "richiesta", codice: "C05332", canale: "rvfu", fascicolo: ["libretto", "proprieta", "crd", "istanza"], richiestaAt: hours(v.intakeAt, 20) }
           : { stato: "da richiedere" },
     };
   });

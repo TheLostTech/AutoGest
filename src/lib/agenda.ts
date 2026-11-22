@@ -4,7 +4,7 @@ import { bonificaStato, isDraft, MISSING_TEXT, missingFields, periodKeyOf, perio
 // Ogni voce ha un ruolo destinatario, una scadenza (se esiste) e porta all'azione.
 import { typeById } from "./catalog";
 import { eerByCode, fmtKg, stockByEer } from "./ambiente";
-import { identOk } from "./pratica";
+import { distruzioneDal, identOk } from "./pratica";
 import type { Fir, Order, Part, Role, SalesDoc, StockRule, Vehicle, WasteMove } from "./types";
 
 export type Urgency = "scaduto" | "oggi" | "settimana" | "quando-puoi";
@@ -108,13 +108,33 @@ export function buildAgenda(
       items.push({
         id: `radiazione-${v.id}`,
         kind: "pratica",
-        title: v.radiazione?.stato === "richiesta" ? `Registra l'esito della radiazione di ${v.id}` : `Richiedi la radiazione di ${v.id}`,
-        detail: `${name(v)} · pratica ${v.dossier.number}`,
+        title:
+          v.radiazione?.stato === "richiesta"
+            ? `Registra la ricevuta di radiazione di ${v.id}`
+            : v.radiazione?.stato === "da integrare"
+              ? `Integra la pratica di radiazione di ${v.id}`
+              : `Richiedi la radiazione di ${v.id}`,
+        detail: `${name(v)} · pratica ${v.dossier.number}${v.radiazione?.stato === "da integrare" && v.radiazione.integrazione ? ` · il PRA chiede: ${v.radiazione.integrazione.nota}` : ""}`,
         action: "Apri pratica",
         href: `/veicoli/${v.id}#pratica`,
         due: addDays(v.presaInCarico?.at ?? v.intakeAt, TERMS.radiazione),
         roles: ["accettazione", "responsabile"],
       });
+    else if (!v.distruzione && v.presaInCarico) {
+      // Targhe e documenti: si distruggono dopo 120 giorni dal CRD; la voce compare una settimana prima
+      const dal = distruzioneDal(v)!;
+      if (new Date(dal).getTime() - Date.now() <= 7 * DAY)
+        items.push({
+          id: `distruzione-${v.id}`,
+          kind: "pratica",
+          title: `Distruggi targhe e documenti di ${v.id}`,
+          detail: `${name(v)} · radiato, la data va annotata nel RVFU`,
+          action: "Apri pratica",
+          href: `/veicoli/${v.id}#pratica`,
+          due: dal,
+          roles: ["accettazione", "responsabile"],
+        });
+    }
     const clock = bonificaClock(v);
     if (clock)
       items.push({

@@ -44,7 +44,19 @@ export interface Vehicle {
   // Visura chiesta a Openapi e non ancora registrata: il PDF arriva entro 24 ore lavorative
   visuraRichiesta?: { id: string; at: string; stato: string; modo: string; pdf?: string };
   presaInCarico?: { at: string; by: string };
-  radiazione?: { stato: "da richiedere" | "richiesta" | "completata"; richiestaAt?: string; completataAt?: string; estremi?: string; canale?: "rvfu" | "agenzia" };
+  radiazione?: {
+    stato: "da richiedere" | "richiesta" | "da integrare" | "completata";
+    codice?: "C05332" | "C05333";
+    canale?: "rvfu" | "agenzia";
+    fascicolo?: string[]; // voci del fascicolo digitale inviate (vedi FASCICOLO in pratica.ts)
+    richiestaAt?: string;
+    integrazione?: { at: string; nota: string }; // il PRA chiede di integrare (preavviso di ricusazione)
+    completataAt?: string; // data della radiazione, dalla ricevuta del PRA
+    estremi?: string; // numero della ricevuta di avvenuta radiazione
+    ricevuta?: string; // indirizzo del PDF della ricevuta sul server
+  };
+  // Distruzione di targhe e documenti, da annotare nel RVFU (non prima di 120 giorni dal CRD)
+  distruzione?: { at: string; by: string; cosa: string[] };
 }
 
 export type ConferenteTipo = "privato" | "concessionaria" | "assicurazione" | "ente";
