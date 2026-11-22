@@ -4,13 +4,15 @@ import { useSyncExternalStore } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { buildSeed, pad } from "./seed";
+import { statoVuoto } from "./stato-iniziale";
+import { STORE_SCHEMA } from "./schema";
 import { locToString, originLabel, WAREHOUSES, type Warehouse } from "./warehouse";
 import { eerByCode, movesForBonifica, movesForIntake, stockByEer } from "./ambiente";
 import { differenzaPesata } from "./stime";
 import { DEFAULT_LISTINI, onlinePrice, type Listino } from "./pricing";
 import { typeById } from "./catalog";
-import { GPSR_ERRORE, categoriaEbayDa, gpsrAfterVehicleChange, gpsrBlocksEbay, alignedPrice, groupKey, listingFieldsChanged, listingOf, membershipAfter, missingNote, partsOf, pickForSale, placementFor, quantityOf, refreshAnnuncio, shopPicks } from "./annunci";
-import { buildAnnuncio, fieldsFromPart, gpsrOf, textFor, type BozzaAnnuncio } from "./annuncio-build";
+import { GPSR_ERRORE, categoriaEbayDa, gpsrAfterVehicleChange, gpsrBlocksEbay, groupKey, listingFieldsChanged, listingOf, missingNote, partsOf, pickForSale, placementFor, quantityOf } from "./annunci";
+import { buildAnnuncio, fieldsFromPart, gpsrOf, type BozzaAnnuncio } from "./annuncio-build";
 import { isShippable } from "./spedizione";
 import type { EsitoAllinea, VenditaEbay } from "./ebay/contratto";
 import { applyEsito, type Inviato } from "./ebay/sync-puro";
@@ -37,16 +39,13 @@ import type {
   WasteMove,
 } from "./types";
 import { euro, publishChecks } from "./logic";
+import { assestaPezzi, collocaPezzoInAnnuncio, ordineNegozio, pagaOrdine, ricalcolaAnnuncio } from "./negozio-ordine";
 import { canTransmit, currentKg, firNumberTaken, isDraft, missingFields, monthLabel, nextRegisterNumber, periodsOf } from "./periodo";
 
-export const ROLE_USER: Record<Role, { user: string; device: string; label: string }> = {
-  accettazione: { user: "Giulia (accettazione)", device: "PC ufficio", label: "Accettazione" },
-  smontatore: { user: "Marco (smontaggio)", device: "Smartphone campo 1", label: "Smontatore" },
-  magazziniere: { user: "Paolo (magazzino)", device: "Smartphone magazzino", label: "Magazziniere" },
-  responsabile: { user: "Sara (responsabile)", device: "PC ufficio", label: "Responsabile" },
-  vendite: { user: "Anna (vendite)", device: "PC banco", label: "Vendite" },
-  consulente: { user: "Laura (consulente ambientale)", device: "PC studio", label: "Consulente ambientale" },
-};
+// Chi sta usando questo dispositivo: arriva dalla sessione (mai dai dati salvati nel browser).
+export type Operatore = { nome: string; dispositivo: string; assistenza: boolean };
+const nomeOperatore = (o: Operatore | null): string => (o ? (o.assistenza ? `${o.nome} (assistenza)` : o.nome) : "Operatore");
+const dispositivoOperatore = (o: Operatore | null): string => o?.dispositivo || "Browser";
 
 interface Counters {
   vehicle: number;
@@ -63,6 +62,8 @@ interface Counters {
 
 interface State {
   role: Role;
+  operatore: Operatore | null;
+  ruoliPermessi: Role[];
   vehicles: Vehicle[];
   parts: Part[];
   annunci: Annuncio[];
@@ -85,6 +86,10 @@ type Actor = { user: string; role: AuditEvent["role"]; device: string };
 
 interface Actions {
   setRole: (r: Role) => void;
+  /** Dalla sessione: chi è, quali ruoli può usare. Il ruolo attivo resta uno di quelli permessi. */
+  /** Azienda vera: parte da un archivio vuoto, mai dai dati demo. */
+  avviaVuoto: () => void;
+  setSessione: (operatore: Operatore | null, ruoliPermessi: Role[]) => void;
   setActiveVehicle: (id?: string) => void;
   addVehicle: (v: Omit<Vehicle, "id" | "createdBy" | "intakeAt">) => string;
   updateVehicle: (id: string, patch: Partial<Vehicle>, action: string, detail?: string) => void;
@@ -154,12 +159,14 @@ const now = () => new Date().toISOString();
 const EBAY_ACTOR: Actor = { user: "Connettore eBay", role: "sistema", device: "Ponte eBay" };
 
 // Chiave dei dati salvati: cambia quando cambia la struttura dei dati demo
-export const STORE_SCHEMA = "gestionale-demolizione-demo-v12";
+export { STORE_SCHEMA }; // definito in schema.ts, usato anche dal server
 
 function initial(): State {
   const s = buildSeed();
   return {
     role: "smontatore",
+    operatore: null,
+    ruoliPermessi: [],
     vehicles: s.vehicles,
     parts: s.parts,
     annunci: s.annunci,
@@ -189,8 +196,15 @@ const setStorageFull = (v: boolean) => {
   storageFull = v;
   storageListeners.forEach((f) => f());
 };
+// Il salvataggio nel browser è acceso solo nelle pagine della gestione (dopo l'accesso, con la chiave dell'azienda).
+// Nelle pagine pubbliche e prima dell'accesso resta spento: nessun dato di un'azienda finisce in una chiave condivisa.
+let salvaInLocale = false;
+export const abilitaSalvataggioLocale = (v: boolean) => {
+  salvaInLocale = v;
+};
 const deviceStorage = {
   getItem: (k: string) => {
+    if (!salvaInLocale) return null;
     try {
       return localStorage.getItem(k);
     } catch {
@@ -198,6 +212,7 @@ const deviceStorage = {
     }
   },
   setItem: (k: string, v: string) => {
+    if (!salvaInLocale) return;
     try {
       localStorage.setItem(k, v);
       setStorageFull(false);
@@ -229,15 +244,14 @@ export const useStore = create<State & Actions>()(
       const event = (
         e: Omit<AuditEvent, "id" | "at" | "user" | "role" | "device"> & Partial<Pick<AuditEvent, "user" | "role" | "device">>,
       ): AuditEvent => {
-        const { role, counters } = get();
-        const who = ROLE_USER[role];
+        const { role, counters, operatore } = get();
         counters.event += 1;
         return {
           id: `E-${pad(counters.event)}`,
           at: now(),
-          user: e.user ?? who.user,
+          user: e.user ?? nomeOperatore(operatore),
           role: e.role ?? role,
-          device: e.device ?? who.device,
+          device: e.device ?? dispositivoOperatore(operatore),
           entity: e.entity,
           entityId: e.entityId,
           action: e.action,
@@ -252,7 +266,7 @@ export const useStore = create<State & Actions>()(
         set((s) => {
           let n = s.counters.move;
           const all = [...s.wasteMoves];
-          const by = ROLE_USER[s.role].user;
+          const by = nomeOperatore(s.operatore);
           for (const m of ms) {
             const id = `M-${pad(++n)}`;
             ids.push(id);
@@ -285,36 +299,32 @@ export const useStore = create<State & Actions>()(
       const keyOf = (p: Part) => groupKey(p, shipOf(p));
       // Dati del pezzo che decidono l'annuncio: se cambiano, il pezzo può dover cambiare annuncio
       const sigOf = (p: Part) => JSON.stringify([p.typeId, p.oem ?? "", p.oemVerified, p.side ?? "", p.condition, shipOf(p)]);
-      const checksPass = (p: Part) => publishChecks(p, get().vehicles.find((v) => v.id === p.vehicleId)).every((c) => c.ok || !c.blocking);
       const annuncioEvent = (aid: string, action: string, detail?: string, actor?: Actor) => event({ entity: "annuncio", entityId: aid, action, detail, ...actor });
       const setAnnuncioOf = (partId: string, aid: string | undefined) =>
         set((st) => ({ parts: st.parts.map((x) => (x.id === partId ? { ...x, annuncioId: aid } : x)) }));
 
-      // Ricalcolo dopo ogni cambiamento che tocca quantità o dati: stato del negozio, data a zero,
-      // eBay da riallineare, testo riscritto se l'operatore non l'ha modificato
-      const touchAnnuncio = (aid: string) => {
-        let esaurito = false;
-        set((st) => {
-          const a = st.annunci.find((x) => x.id === aid);
-          if (!a) return {};
-          const next = refreshAnnuncio(a, st.parts, now(), (q) => textFor(a, st.parts, st.vehicles, q));
-          esaurito = !!next.esauritoDa && !a.esauritoDa;
-          return { annunci: st.annunci.map((x) => (x.id === aid ? next : x)) };
-        });
-        if (esaurito) push(annuncioEvent(aid, "Annuncio esaurito", "Nessun pezzo disponibile: l'annuncio resta, a zero"));
+      // Annunci e pezzi: la logica sta in negozio-ordine.ts (la usa anche il server); qui si prende una copia dello stato,
+      // si applica e si scrivono solo le chiavi cambiate (se nulla cambia, nessuna scrittura: la sincronizzazione non parte)
+      const lavora = (fn: (st: State, at: string, pred: Actor) => State) => {
+        const cur = get();
+        const pred = { user: nomeOperatore(cur.operatore), role: cur.role, device: dispositivoOperatore(cur.operatore) };
+        const next = fn(cur, now(), pred);
+        const patch: Partial<State> = {};
+        if (next.parts !== cur.parts) patch.parts = next.parts;
+        if (next.annunci !== cur.annunci) patch.annunci = next.annunci;
+        if (next.audit.length !== cur.audit.length) {
+          patch.audit = next.audit;
+          patch.counters = next.counters;
+        }
+        if (Object.keys(patch).length) set(patch);
       };
 
+      // Ricalcolo dopo ogni cambiamento che tocca quantità o dati: stato del negozio, data a zero,
+      // eBay da riallineare, testo riscritto se l'operatore non l'ha modificato
+      const touchAnnuncio = (aid: string) => lavora((st, at, pred) => ricalcolaAnnuncio(st, aid, at, pred));
+
       // Un pezzo disponibile, senza annuncio e che passa i controlli entra da solo nell'annuncio uguale con lo stesso prezzo
-      const placePart = (partId: string) => {
-        const s = get();
-        const p = s.parts.find((x) => x.id === partId);
-        if (!p || p.status !== "disponibile" || p.annuncioId || !checksPass(p)) return;
-        const place = placementFor(p, keyOf(p), s.annunci);
-        if (place.kind !== "unisci") return;
-        setAnnuncioOf(partId, place.annuncioId);
-        push(annuncioEvent(place.annuncioId, "Pezzo aggiunto all'annuncio", partId));
-        touchAnnuncio(place.annuncioId);
-      };
+      const placePart = (partId: string) => lavora((st, at, pred) => collocaPezzoInAnnuncio(st, partId, at, pred));
 
       // I pezzi in coda uguali a un annuncio appena creato, ripubblicato o con un prezzo nuovo vi entrano da soli
       const joinQueued = (aid: string) => {
@@ -328,45 +338,21 @@ export const useStore = create<State & Actions>()(
       // Dopo un cambio di stato: scartato o invendibile escono dall'annuncio; chi torna disponibile
       // resta solo se passa i controlli (altrimenti torna in coda); poi si ricalcolano gli annunci toccati
       // e i pezzi disponibili senza annuncio cercano un annuncio uguale
-      const settle = (ids: string[]) => {
-        const touched = new Set<string>();
-        for (const id of ids) {
-          const p = get().parts.find((x) => x.id === id);
-          if (!p?.annuncioId) continue;
-          touched.add(p.annuncioId);
-          if (membershipAfter(p, checksPass(p)) === p.annuncioId) {
-            // Resta o rientra disponibile: prende il prezzo dell'annuncio (un prezzo solo per i pezzi uguali)
-            const a = get().annunci.find((x) => x.id === p.annuncioId);
-            const price = alignedPrice(p, a);
-            if (price !== undefined) {
-              set((st) => ({ parts: st.parts.map((x) => (x.id === id ? { ...x, price } : x)) }));
-              push(event({ entity: "ricambio", entityId: id, action: `Prezzo allineato all'annuncio ${p.annuncioId}: ${euro(p.price)} → ${euro(price)}` }));
-            }
-            continue;
-          }
-          setAnnuncioOf(id, undefined);
-          push(
-            annuncioEvent(
-              p.annuncioId,
-              "Pezzo uscito dall'annuncio",
-              `${id} · ${p.status === "disponibile" ? "controlli di pubblicazione non superati: torna in coda" : p.status}`,
-            ),
-          );
-        }
-        touched.forEach(touchAnnuncio);
-        ids.forEach(placePart);
-      };
+      const settle = (ids: string[]) => lavora((st, at, pred) => assestaPezzi(st, ids, at, pred));
 
       return {
         ...initial(),
-        setRole: (role) => set({ role }),
+        setRole: (role) => set((s) => (s.ruoliPermessi.includes(role) ? { role } : s)),
+        avviaVuoto: () => set({ ...(statoVuoto({ listini: DEFAULT_LISTINI, warehouses: WAREHOUSES }) as unknown as Partial<State>), activeVehicleId: undefined }),
+        setSessione: (operatore, ruoliPermessi) =>
+          set((s) => ({ operatore, ruoliPermessi, role: ruoliPermessi.includes(s.role) || ruoliPermessi.length === 0 ? s.role : ruoliPermessi[0] })),
         setActiveVehicle: (id) => set({ activeVehicleId: id }),
         log: (e) => push(event(e)),
 
         addVehicle: (v) => {
           const n = get().counters.vehicle + 1;
           const id = `V-${pad(n)}`;
-          const veh: Vehicle = { ...v, id, intakeAt: now(), createdBy: ROLE_USER[get().role].user };
+          const veh: Vehicle = { ...v, id, intakeAt: now(), createdBy: nomeOperatore(get().operatore) };
           set((s) => ({ vehicles: [veh, ...s.vehicles], counters: { ...s.counters, vehicle: n } }));
           push(event({ entity: "veicolo", entityId: id, action: "Ingresso veicolo registrato", detail: `${v.plate} · ${v.make} ${v.model}${v.verification === "da verificare" ? " · da verificare" : ""}` }));
           addMoves(movesForIntake(veh, veh.intakeAt));
@@ -402,7 +388,7 @@ export const useStore = create<State & Actions>()(
         addPart: (p) => {
           const n = get().counters.part + 1;
           const id = `R-${pad(n)}`;
-          const part: Part = { ...p, id, createdAt: now(), createdBy: ROLE_USER[get().role].user, labelPrints: 0 };
+          const part: Part = { ...p, id, createdAt: now(), createdBy: nomeOperatore(get().operatore), labelPrints: 0 };
           const v = get().vehicles.find((x) => x.id === p.vehicleId);
           // Il primo pezzo catalogato da un veicolo accettato ne avvia lo smontaggio
           const starts = v?.work === "accettato" && p.origin !== "inventario";
@@ -698,43 +684,12 @@ export const useStore = create<State & Actions>()(
         // Ordine del negozio per annunci: il prossimo a partire si sceglie nello stesso aggiornamento
         // che controlla la disponibilità, così lo stesso pezzo non si vende due volte
         orderFromAnnunci: (channel, annuncioIds, customer, actor, delivery) => {
-          if (!annuncioIds.length) return { ok: false, error: "Il carrello è vuoto" };
-          let made = undefined as { id: string; partIds: string[]; annunci: string[] } | undefined;
-          let conflicts: string[] = [];
-          set((st) => {
-            const r = shopPicks(annuncioIds, st.annunci, st.parts);
-            if (r.conflicts.length || !r.picks.length) {
-              conflicts = r.conflicts;
-              return {};
-            }
-            const partIds = r.picks.map((x) => x.partId);
-            const prices = Object.fromEntries(r.picks.map((x) => [x.partId, onlinePrice(x.price) ?? 0]));
-            const amount = Math.round(Object.values(prices).reduce((t, x) => t + x, 0) * 100) / 100;
-            const pickupOnly = st.parts.some((p) => partIds.includes(p.id) && !shipOf(p));
-            const n = st.counters.order + 1;
-            const id = `O-${pad(n)}`;
-            const at = now();
-            made = { id, partIds, annunci: [...new Set(r.picks.map((x) => x.annuncioId))] };
-            return {
-              parts: st.parts.map((x) => (partIds.includes(x.id) ? { ...x, status: "riservato" as const } : x)),
-              orders: [
-                { id, channel, delivery: pickupOnly ? "ritiro" : delivery, partIds, amount, prices, status: "in attesa di pagamento", customer, createdAt: at, history: [{ at, status: "in attesa di pagamento" }] },
-                ...st.orders,
-              ],
-              counters: { ...st.counters, order: n },
-            };
-          });
-          if (!made) {
-            push(event({ entity: "ordine", entityId: "—", action: "Riserva rifiutata", detail: `${conflicts.join(", ")} non disponibile (${channel})`, ...actor }));
-            return { ok: false, error: "Ricambio non più disponibile", conflicts };
-          }
-          const { id, partIds } = made;
-          push(
-            event({ entity: "ordine", entityId: id, action: "Ordine creato", detail: `${channel} · ${made.annunci.join(", ")} · ${partIds.join(", ")}`, ...actor }),
-            ...partIds.map((pid) => event({ entity: "ricambio", entityId: pid, action: "Stato: disponibile → riservato", detail: id, ...actor })),
-          );
-          made.annunci.forEach(touchAnnuncio);
-          return { ok: true, value: id };
+          // La logica è in negozio-ordine.ts: la usa anche il server per gli ordini del negozio pubblico
+          const { role, operatore } = get();
+          const predefinito = { user: nomeOperatore(operatore), role, device: dispositivoOperatore(operatore) };
+          const r = ordineNegozio(get(), { annuncioIds, cliente: customer, consegna: delivery, attore: actor, predefinito }, now());
+          set({ parts: r.st.parts, orders: r.st.orders, counters: r.st.counters, audit: r.st.audit, annunci: r.st.annunci });
+          return r.ok ? { ok: true, value: r.ordineId } : { ok: false, error: r.error, conflicts: r.conflicts };
         },
 
         // Vendita arrivata da eBay: già pagata, prende tanti pezzi quanti ne sono stati comprati, i più vecchi.
@@ -885,22 +840,11 @@ export const useStore = create<State & Actions>()(
         },
 
         payOrder: (orderId, success, actor) => {
-          const o = get().orders.find((x) => x.id === orderId);
-          if (!o || o.status !== "in attesa di pagamento") return;
-          const at = now();
-          const status = success ? "pagato" : "pagamento fallito";
-          set((s) => ({
-            orders: s.orders.map((x) => (x.id === orderId ? { ...x, status, paymentRef: success ? `PAY-DEMO-${orderId.slice(2)}` : undefined, history: [...x.history, { at, status, note: success ? "Conferma dal provider (simulata)" : "Rifiuto dal provider (simulato)" }] } : x)),
-            // Venduto: esce dal negozio; pagamento fallito: torna disponibile
-            parts: s.parts.map((x) =>
-              o.partIds.includes(x.id) ? { ...x, status: success ? "venduto" : "disponibile" } : x,
-            ),
-          }));
-          push(
-            event({ entity: "ordine", entityId: orderId, action: success ? "Pagamento confermato" : "Pagamento fallito", detail: success ? "Webhook provider (simulato)" : "Disponibilità ripristinata", ...actor }),
-            ...o.partIds.map((pid) => event({ entity: "ricambio", entityId: pid, action: success ? "Stato: riservato → venduto" : "Stato: riservato → disponibile", detail: orderId, ...actor })),
-          );
-          settle(o.partIds);
+          const { role, operatore } = get();
+          const predefinito = { user: nomeOperatore(operatore), role, device: dispositivoOperatore(operatore) };
+          const st = pagaOrdine(get(), orderId, success, actor ?? predefinito, now(), predefinito);
+          if (st === get()) return;
+          set({ parts: st.parts, orders: st.orders, counters: st.counters, audit: st.audit, annunci: st.annunci });
         },
 
         cancelOrder: (orderId, reason) => {
@@ -979,7 +923,7 @@ export const useStore = create<State & Actions>()(
           // Lo scarico interno usa il peso registrato del carico (con l'ultima rettifica), così carico e scarico coincidono
           const kgCarico = carico ? currentKg(get().wasteMoves, carico.id) : undefined;
           const { moves, residualKg } = movesForBonifica(carico ? { ...withWeight, weightKg: kgCarico } : withWeight, items, at, carico?.id);
-          set((s) => ({ vehicles: s.vehicles.map((x) => (x.id === vehicleId ? { ...withWeight, bonifica: { at, by: ROLE_USER[s.role].user, items, residualKg } } : x)) }));
+          set((s) => ({ vehicles: s.vehicles.map((x) => (x.id === vehicleId ? { ...withWeight, bonifica: { at, by: nomeOperatore(s.operatore), items, residualKg } } : x)) }));
           addMoves([...intake, ...moves]);
           const scritti = intake.length + moves.length + rettifiche;
           push(event({ entity: "veicolo", entityId: vehicleId, action: "Bonifica registrata", detail: `${scritti} movimenti nel registro rifiuti${rettifiche ? " · peso alla pesa rettificato" : ""} · pesi dei componenti stimati per modello` }));
@@ -1000,7 +944,7 @@ export const useStore = create<State & Actions>()(
             ...(patch.pesoPesa !== undefined ? { pesoPesa: patch.pesoPesa } : {}),
           };
           const at = now();
-          const by = ROLE_USER[get().role].user;
+          const by = nomeOperatore(get().operatore);
           const ready = missingFields(next, get().wasteMoves).length === 0;
           set((s) => {
             let all = s.wasteMoves.map((x) => (x.id === id ? { ...next, ...(ready ? { numero: nextRegisterNumber(s.wasteMoves, at), registeredAt: at, by } : {}) } : x));
@@ -1054,7 +998,7 @@ export const useStore = create<State & Actions>()(
           const n = get().counters.fir + 1;
           const id = `F-${pad(n)}`;
           const at = now();
-          const by = ROLE_USER[get().role].user;
+          const by = nomeOperatore(get().operatore);
           const nome = (sid?: string) => get().soggetti.find((x) => x.id === sid)?.nome;
           const fir: Fir = { ...f, id, at, destinatario: nome(f.destinatarioId), trasportatore: nome(f.trasportatoreId), status: "da firmare", history: [{ at, status: "da firmare", by }] };
           set((s) => ({ firs: [fir, ...s.firs], counters: { ...s.counters, fir: n } }));
@@ -1077,7 +1021,7 @@ export const useStore = create<State & Actions>()(
           const e = eerByCode(f.eer);
           const nome = f.numero ?? id;
           const diff = f.svuota ? differenzaPesata(stock, f.kg) : 0;
-          set((s) => ({ firs: s.firs.map((x) => (x.id === id ? { ...x, status: "firmato", history: [...x.history, { at, status: "firmato", by: ROLE_USER[s.role].user }] } : x)) }));
+          set((s) => ({ firs: s.firs.map((x) => (x.id === id ? { ...x, status: "firmato", history: [...x.history, { at, status: "firmato", by: nomeOperatore(s.operatore) }] } : x)) }));
           addMoves([
             ...(diff
               ? [{ at, kind: diff > 0 ? ("carico" as const) : ("scarico" as const), eer: f.eer, kg: Math.abs(diff), origin: id, note: `Differenza tra giacenza stimata (${stock} kg) e pesata del formulario ${nome} (${f.kg} kg)`, rentri: "da trasmettere" as const, causale: "DIFF" as const, fir: id, statoFisico: e?.stato, hp: e?.hp }]
@@ -1100,7 +1044,7 @@ export const useStore = create<State & Actions>()(
         confirmMove: (id) => {
           const m = get().wasteMoves.find((x) => x.id === id);
           if (!m) return;
-          const by = ROLE_USER[get().role].user;
+          const by = nomeOperatore(get().operatore);
           set((s) => ({ wasteMoves: s.wasteMoves.map((x) => (x.id === id ? { ...x, verificato: { at: now(), by } } : x)) }));
           push(event({ entity: "sistema", entityId: id, action: "Registrazione controllata", detail: `n. ${m.numero ?? "bozza"} · ${m.note ?? ""}` }));
         },
@@ -1167,7 +1111,7 @@ export const useStore = create<State & Actions>()(
           const n = get().counters.inventory + 1;
           const id = `I-${pad(n)}`;
           const at = now();
-          const by = ROLE_USER[get().role].user;
+          const by = nomeOperatore(get().operatore);
           set((s) => ({
             inventory: [...s.inventory, { ...c, id, at, by }],
             counters: { ...s.counters, inventory: n },
@@ -1180,13 +1124,28 @@ export const useStore = create<State & Actions>()(
           return id;
         },
 
-        reset: () => set(initial()),
+        reset: () => set((s) => ({ ...initial(), operatore: s.operatore, ruoliPermessi: s.ruoliPermessi, role: s.role })),
       };
     },
     {
       name: STORE_SCHEMA,
       storage: createJSONStorage(() => deviceStorage),
       skipHydration: true,
+      // Chi usa il dispositivo e i ruoli permessi vengono sempre dalla sessione, mai dal salvataggio locale.
+      partialize: (s) => {
+        const { operatore: _o, ruoliPermessi: _r, ...resto } = s;
+        void _o;
+        void _r;
+        return resto as State & Actions;
+      },
+      // Dopo il caricamento dal browser il ruolo salvato non può superare quelli permessi.
+      merge: (salvato, attuale) => {
+        const m = { ...attuale, ...(salvato as Partial<State & Actions>) };
+        m.operatore = attuale.operatore;
+        m.ruoliPermessi = attuale.ruoliPermessi;
+        if (attuale.ruoliPermessi.length > 0 && !attuale.ruoliPermessi.includes(m.role)) m.role = attuale.ruoliPermessi[0];
+        return m;
+      },
     },
   ),
 );

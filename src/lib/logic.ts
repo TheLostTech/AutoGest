@@ -1,5 +1,5 @@
-import { defaultRule, NON_DA_RECUPERARE, PART_TYPES, typeById } from "./catalog";
-import { isShippable } from "./spedizione";
+import { defaultRule, NON_DA_RECUPERARE, PART_TYPES, typeById } from "./catalog.ts";
+import { isShippable } from "./spedizione.ts";
 import type { Order, Part, PartStatus, StockRule, Vehicle } from "./types";
 
 export type StockLevel = "manca" | "sotto soglia" | "sufficiente" | "eccesso";

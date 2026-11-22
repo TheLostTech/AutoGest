@@ -1,8 +1,8 @@
 // Costruzione di un annuncio a partire dai suoi pezzi: usata dallo store e dai dati demo.
-import { CONDITIONS, typeById } from "./catalog";
-import { groupKey, negozioStato, nextToShip, partsOf } from "./annunci";
-import { aspectsFor, generateText, gpsrFor } from "./annuncio-testo";
-import { isShippable } from "./spedizione";
+import { CONDITIONS, typeById } from "./catalog.ts";
+import { groupKey, negozioStato, nextToShip, partsOf } from "./annunci.ts";
+import { aspectsFor, generateText, gpsrFor } from "./annuncio-testo.ts";
+import { isShippable } from "./spedizione.ts";
 import type { Annuncio, Gpsr, Part, Vehicle } from "./types";
 
 /** Testo dal primo pezzo (tipo, lato, veicolo d'origine, codice); difetti e km da `pick`, il pezzo che parte. */

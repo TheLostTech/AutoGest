@@ -8,15 +8,15 @@ import { creaPonteSimulato } from "./simulato";
 const piena = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
 
 /** Chiavi del Developers Program, solo con ambiente Sandbox e App ID, Cert ID e RuName tutti presenti. */
-export async function credenzialiSandbox(): Promise<CredSandbox | undefined> {
-  const v = await leggiValori("ebay");
+export async function credenzialiSandbox(aziendaId: string): Promise<CredSandbox | undefined> {
+  const v = await leggiValori(aziendaId, "ebay");
   if (v.ambiente !== "Sandbox" || !piena(v.appId) || !piena(v.certId) || !piena(v.ruName)) return undefined;
-  return { appId: v.appId.trim(), certId: v.certId.trim(), ruName: v.ruName.trim() };
+  return { aziendaId, appId: v.appId.trim(), certId: v.certId.trim(), ruName: v.ruName.trim() };
 }
 
 /** Sandbox con le chiavi; altrimenti Simulato. */
-export async function scegliPonte(): Promise<Ponte> {
-  const cred = await credenzialiSandbox();
+export async function scegliPonte(aziendaId: string): Promise<Ponte> {
+  const cred = await credenzialiSandbox(aziendaId);
   return cred ? creaPonteSandbox(cred) : creaPonteSimulato();
 }
 

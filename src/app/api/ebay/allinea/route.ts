@@ -1,5 +1,6 @@
 // Allinea un annuncio con eBay (o con il ponte simulato). Le credenziali restano sul server.
 import { connection } from "next/server";
+import { accessoDaRichiesta } from "@/lib/accesso/server";
 import { altroSito } from "@/lib/collegamenti-server";
 import { messaggioPerUtente, scegliPonte } from "@/lib/ebay/server";
 import { validaRichiesta } from "@/lib/ebay/valida";
@@ -9,6 +10,8 @@ const MAX_CORPO = 256 * 1024;
 
 export async function POST(req: Request) {
   await connection();
+  const a = await accessoDaRichiesta(req);
+  if (a instanceof Response) return a;
   if (altroSito(req)) return json({ error: "Richiesta da un altro sito" }, 403);
   const testo = await req.text().catch(() => "");
   if (testo.length > MAX_CORPO) return json({ error: "Richiesta troppo grande" }, 413);
@@ -21,7 +24,7 @@ export async function POST(req: Request) {
   const r = validaRichiesta(corpo);
   if (!r) return json({ error: "Richiesta non valida" }, 400);
   try {
-    return json(await (await scegliPonte()).allinea(r));
+    return json(await (await scegliPonte(a.azienda.id)).allinea(r));
   } catch (e) {
     return json({ stato: "errore", avvisi: [], errore: messaggioPerUtente(e) });
   }

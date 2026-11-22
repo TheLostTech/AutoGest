@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { CircleAlert, Check, FileText, Loader2, Printer, RefreshCw, Upload } from "lucide-react";
-import { ROLE_USER, useStore } from "@/lib/store";
+import { useStore } from "@/lib/store";
 import {
   ATTESTAZIONE,
   cfOk,
@@ -28,10 +28,11 @@ import { dateIt } from "@/lib/logic";
 const eur = (n: number) => n.toLocaleString("it-IT", { style: "currency", currency: "EUR" });
 import type { ConferenteTipo, Vehicle } from "@/lib/types";
 import { Button, Panel } from "./ui";
+import { fetchAzienda } from "@/lib/accesso/azienda-client";
 
 // La pratica come percorso RVFU: un passo alla volta, l'azione compare solo sul passo attuale.
 export function PraticaPanel({ v }: { v: Vehicle }) {
-  const { updateVehicle, vehicles, role } = useStore();
+  const { updateVehicle, vehicles, role, operatore } = useStore();
   const steps = praticaSteps(v);
   // La pratica la gestisce l'ufficio: gli altri ruoli la vedono in sola lettura
   const canEdit = role === "accettazione" || role === "responsabile";
@@ -174,7 +175,7 @@ export function PraticaPanel({ v }: { v: Vehicle }) {
                 updateVehicle(
                   v.id,
                   {
-                    presaInCarico: { at: new Date().toISOString(), by: ROLE_USER[role].user },
+                    presaInCarico: { at: new Date().toISOString(), by: operatore ? `${operatore.nome}${operatore.assistenza ? " (assistenza)" : ""}` : "Operatore" },
                     dossier: { ...v.dossier, number, kind: "Certificato di Rottamazione Digitale", status: "in corso" },
                     radiazione: { stato: "da richiedere" },
                   },
@@ -296,7 +297,7 @@ function VisuraPra({ v }: { v: Vehicle }) {
     setErrore("");
     setAvviso("");
     try {
-      const d = (await leggi(await fetch(`/api/visura/${rq.id}`, { cache: "no-store" }))) as { stato: string; pdf?: string; messaggio?: string };
+      const d = (await leggi(await fetchAzienda(`/api/visura/${rq.id}`, { cache: "no-store" }))) as { stato: string; pdf?: string; messaggio?: string };
       if (d.messaggio) setAvviso(d.messaggio);
       else if (!d.pdf) setAvviso("Visura non ancora pronta: Openapi la evade entro 24 ore lavorative.");
       if (d.stato !== rq.stato || d.pdf !== rq.pdf)
@@ -310,7 +311,7 @@ function VisuraPra({ v }: { v: Vehicle }) {
 
   // All'apertura della pratica: come lavora la visura e, se ce n'è una in attesa, se il PDF è arrivato
   useEffect(() => {
-    fetch("/api/visura", { cache: "no-store" })
+    fetchAzienda("/api/visura", { cache: "no-store" })
       .then(leggi)
       .then((d) => {
         const m = String(d.modo);
@@ -363,7 +364,7 @@ function VisuraPra({ v }: { v: Vehicle }) {
               setBusy(true);
               setErrore("");
               try {
-                const d = await leggi(await fetch("/api/visura", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targa: v.plate, tipo }) }));
+                const d = await leggi(await fetchAzienda("/api/visura", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ targa: v.plate, tipo }) }));
                 updateVehicle(
                   v.id,
                   { visuraRichiesta: { id: String(d.id), at: new Date().toISOString(), stato: String(d.stato), modo: String(d.modo) } },
@@ -642,7 +643,7 @@ function CaricaPdf({ label, onCaricato }: { label: string; onCaricato: (url: str
         fr.readAsDataURL(f);
       });
       const d = (await leggi(
-        await fetch("/api/allegati", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: PDF_PREFIX + url.split(",")[1] }) }),
+        await fetchAzienda("/api/allegati", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: PDF_PREFIX + url.split(",")[1] }) }),
       )) as { url: string };
       onCaricato(d.url);
     } catch (e) {
@@ -676,7 +677,7 @@ function CaricaPdf({ label, onCaricato }: { label: string; onCaricato: (url: str
 
 // Passo 5: dopo la radiazione e non prima di 120 giorni dal CRD si distruggono targhe e documenti; la data va nel RVFU.
 function Distruzione({ v }: { v: Vehicle }) {
-  const { updateVehicle, role } = useStore();
+  const { updateVehicle, operatore } = useStore();
   const oggi = giorno(new Date());
   const dal = giorno(distruzioneDal(v)!);
   const [cosa, setCosa] = useState(() => new Set(DISTRUZIONE.map((d) => d.key)));
@@ -715,7 +716,7 @@ function Distruzione({ v }: { v: Vehicle }) {
         disabled={cosa.size === 0 || !dataOk}
         onClick={() => {
           const voci = DISTRUZIONE.filter((d) => cosa.has(d.key));
-          updateVehicle(v.id, { distruzione: { at: daGiorno(data), by: ROLE_USER[role].user, cosa: voci.map((d) => d.key) } }, "Targhe e documenti distrutti", voci.map((d) => d.label).join(", "));
+          updateVehicle(v.id, { distruzione: { at: daGiorno(data), by: operatore ? `${operatore.nome}${operatore.assistenza ? " (assistenza)" : ""}` : "Operatore", cosa: voci.map((d) => d.key) } }, "Targhe e documenti distrutti", voci.map((d) => d.label).join(", "));
         }}
       >
         Registra la distruzione

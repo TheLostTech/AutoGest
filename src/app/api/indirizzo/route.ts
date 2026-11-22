@@ -4,6 +4,7 @@
 //    aperto come "localhost", che dal telefono non porterebbe da nessuna parte.
 import os from "node:os";
 import { connection } from "next/server";
+import { accessoDaRichiesta } from "@/lib/accesso/server";
 
 function lanAddress() {
   for (const list of Object.values(os.networkInterfaces())) {
@@ -12,8 +13,10 @@ function lanAddress() {
   return undefined;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   await connection();
+  const a = await accessoDaRichiesta(req);
+  if (a instanceof Response) return a;
   const fisso = process.env.INDIRIZZO_GESTIONALE?.trim().replace(/\/+$/, "") || undefined;
   return Response.json({ fisso, lan: lanAddress() }, { headers: { "Cache-Control": "no-store" } });
 }

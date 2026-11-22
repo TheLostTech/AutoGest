@@ -4,13 +4,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Boxes, Briefcase, CarFront, ClipboardList, LayoutGrid, Leaf, Menu, ScanLine, Send, Settings, ShoppingCart, Wrench, X, type LucideIcon } from "lucide-react";
-import { ROLE_USER, useDeviceStorageFull, useStore } from "@/lib/store";
+import { useDeviceStorageFull, useStore } from "@/lib/store";
+import { RUOLO_LABEL } from "@/lib/accesso/ruoli";
+import { esci, esciDallAssistenza, useSessione } from "@/lib/accesso/client";
+import { useSyncAvviso } from "@/lib/sync";
 import type { Role } from "@/lib/types";
 import { BRAND, DEMO_NOTICE } from "@/lib/config";
 import { Logo } from "@/components/Logo";
 import { GlobalSearch } from "./GlobalSearch";
 import { LostarCredit } from "./Lostar";
-import { resetShared } from "@/lib/sync";
+import { inviaInSospeso, resetShared } from "@/lib/sync";
 import { useEbaySync } from "@/lib/ebay-sync";
 
 // Navigazione per aree di lavoro: poche voci, le sottosezioni compaiono solo dentro l'area aperta.
@@ -88,7 +91,10 @@ const AREAS: Area[] = [
     id: "impostazioni",
     label: "Impostazioni",
     icon: Settings,
-    subs: [{ href: "/impostazioni/collegamenti", label: "Collegamenti", roles: ["responsabile"] }],
+    subs: [
+      { href: "/impostazioni/collegamenti", label: "Collegamenti", roles: ["responsabile"] },
+      { href: "/impostazioni/dispositivi", label: "Dispositivi", roles: ["responsabile"] },
+    ],
   },
 ];
 
@@ -133,8 +139,6 @@ const MOBILE_TABS: Record<Role, Tab[]> = {
   ],
 };
 
-const ROLES: Role[] = [...ALL_ROLES, "consulente"];
-
 const matches = (path: string, href: string) => (href === "/" ? path === "/" : path === href || path.startsWith(href + "/"));
 
 function visibleAreas(role: Role) {
@@ -159,6 +163,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const role = useStore((s) => s.role);
   const setRole = useStore((s) => s.setRole);
+  const ruoliPermessi = useStore((s) => s.ruoliPermessi);
+  const operatore = useStore((s) => s.operatore);
+  const { accesso } = useSessione();
+  const avviso = useSyncAvviso();
+  const [uscendo, setUscendo] = useState(false);
   const storageFull = useDeviceStorageFull();
   useEbaySync();
   const areas = visibleAreas(role);
@@ -184,7 +193,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const tabHref = (t: Tab) => ("href" in t ? t.href : (areas.find((a) => a.id === t.area)?.subs[0].href ?? "/"));
 
   return (
-    <div className="min-h-dvh md:grid md:grid-cols-[232px_1fr]">
+    <div className={`min-h-dvh md:grid md:grid-cols-[232px_1fr] ${accesso?.assistenza ? "pt-11" : ""}`}>
+      {accesso?.assistenza && (
+        <div role="status" className="no-print fixed inset-x-0 top-0 z-50 flex h-11 items-center justify-center gap-3 bg-ink px-4 text-[14px] font-semibold text-white">
+          <span className="truncate">Assistenza in corso · {accesso.azienda.nome}</span>
+          <button
+            onClick={async () => {
+              // Prima le modifiche non ancora inviate, con l'assistenza ancora aperta; poi l'uscita
+              setUscendo(true);
+              await inviaInSospeso().catch(() => false);
+              await esciDallAssistenza();
+              window.location.assign("/piattaforma");
+            }}
+            disabled={uscendo}
+            className="shrink-0 rounded border border-white/60 px-3 py-1 hover:bg-white/15"
+          >
+            Esci
+          </button>
+        </div>
+      )}
       {/* Fascia blu: come la stampa sulla scatola */}
       <aside className="no-print hidden bg-band text-white md:sticky md:top-0 md:flex md:h-dvh md:flex-col">
         <div className="px-5 pb-4 pt-6">
@@ -238,7 +265,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <RoleSwitch role={role} setRole={setRole} />
+        <RoleSwitch role={role} setRole={setRole} ruoli={ruoliPermessi} demo={!!accesso?.azienda.demo && ruoliPermessi.includes("responsabile")} />
+        {operatore && (
+          <div className="border-t border-white/20 px-4 py-3 text-[13px] text-white/80">
+            <p className="font-semibold text-white">{operatore.nome}{operatore.assistenza ? " (assistenza)" : ""}</p>
+            <p>{operatore.dispositivo}</p>
+            <button onClick={() => { setUscendo(true); void esci(); }} disabled={uscendo} className="mt-1 font-semibold underline hover:text-white">
+              Esci
+            </button>
+          </div>
+        )}
         <div className="border-t border-white/20 px-4 py-3">
           <LostarCredit className="text-white/75 hover:text-white" />
         </div>
@@ -258,20 +294,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <ScanLine className="size-5" aria-hidden />
                 </Link>
               )}
-              <label>
-                <span className="sr-only">Ruolo</span>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as Role)}
-                  className="h-10 rounded border border-white/40 bg-band-deep px-2 text-[15px] font-semibold text-white"
-                >
-                  {ROLES.map((r) => (
-                    <option key={r} value={r}>
-                      {ROLE_USER[r].label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {ruoliPermessi.length > 1 && (
+                <label>
+                  <span className="sr-only">Ruolo</span>
+                  <select
+                    value={role}
+                    onChange={(e) => setRole(e.target.value as Role)}
+                    className="h-10 rounded border border-white/40 bg-band-deep px-2 text-[15px] font-semibold text-white"
+                  >
+                    {ruoliPermessi.map((r) => (
+                      <option key={r} value={r}>
+                        {RUOLO_LABEL[r]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <button onClick={() => { setUscendo(true); void esci(); }} disabled={uscendo} className="grid h-10 place-items-center rounded border border-white/40 px-2.5 text-[14px] font-semibold md:hidden">
+                Esci
+              </button>
             </div>
           </div>
           {/* Sottosezioni dell'area aperta */}
@@ -294,8 +335,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
         </header>
         <div className="no-print border-b border-hair bg-carton px-4 py-1.5 text-center text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-3 code md:text-right">
-          {DEMO_NOTICE} · {ROLE_USER[role].user} · {ROLE_USER[role].device}
+          {accesso && !accesso.azienda.demo ? accesso.azienda.nome : DEMO_NOTICE}
+          {operatore ? ` · ${operatore.nome}${operatore.assistenza ? " (assistenza)" : ""} · ${operatore.dispositivo}` : ""}
         </div>
+        {avviso && (
+          <p role="alert" className="no-print border-b border-warn/40 bg-warn-bg px-4 py-2 text-center text-[14px] text-ink">
+            <b>{avviso.titolo}</b> {avviso.testo}
+            {avviso.ricarica && (
+              <button onClick={() => window.location.reload()} className="ml-2 rounded border border-ink/40 px-2 py-0.5 font-semibold hover:bg-white/60">
+                Ricarica
+              </button>
+            )}
+          </p>
+        )}
         {storageFull && (
           <p role="status" className="no-print border-b border-warn/40 bg-warn-bg px-4 py-2 text-center text-[14px] text-ink">
             <b>Memoria di questo dispositivo piena.</b> Il lavoro si salva sul server dell&apos;azienda: tieni il telefono collegato alla rete.
@@ -377,27 +429,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function RoleSwitch({ role, setRole }: { role: Role; setRole: (r: Role) => void }) {
+function RoleSwitch({ role, setRole, ruoli, demo }: { role: Role; setRole: (r: Role) => void; ruoli: Role[]; demo: boolean }) {
+  if (ruoli.length <= 1 && !demo) return null;
   return (
     <div className="border-t border-white/20 p-4">
-      <label className="block">
-        <span className="code mb-1 block text-[12px] font-semibold uppercase tracking-[0.14em] text-white/70">Stai usando come</span>
-        <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="h-10 w-full rounded border border-white/40 bg-band-deep px-2 text-[15px] font-semibold text-white">
-          {ROLES.map((r) => (
-            <option key={r} value={r}>
-              {ROLE_USER[r].label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button
+      {ruoli.length > 1 && (
+        <label className="block">
+          <span className="code mb-1 block text-[12px] font-semibold uppercase tracking-[0.14em] text-white/70">Stai usando come</span>
+          <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="h-10 w-full rounded border border-white/40 bg-band-deep px-2 text-[15px] font-semibold text-white">
+            {ruoli.map((r) => (
+              <option key={r} value={r}>
+                {RUOLO_LABEL[r]}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {demo && <button
         onClick={() => {
           if (confirm("Ripristinare i dati dimostrativi iniziali su tutti i dispositivi collegati? Le modifiche fatte nella demo andranno perse.")) void resetShared();
         }}
         className="mt-3 text-[13px] font-semibold text-white/75 underline hover:text-white"
       >
         Ripristina dati demo
-      </button>
+      </button>}
     </div>
   );
 }

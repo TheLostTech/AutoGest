@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import JsBarcode from "jsbarcode";
+import { fetchAzienda } from "@/lib/accesso/azienda-client";
 
 // Indirizzo base dei QR stampati (vedi /api/indirizzo): quello fisso dell'azienda se impostato,
 // altrimenti quello di rete del server quando si stampa da "localhost", altrimenti quello in uso.
@@ -13,7 +14,7 @@ const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 export function usePublicBase() {
   const [info, setInfo] = useState<BaseInfo | null>(null);
   useEffect(() => {
-    baseInfo ??= fetch("/api/indirizzo", { cache: "no-store" })
+    baseInfo ??= fetchAzienda("/api/indirizzo", { cache: "no-store" })
       .then((r) => (r.ok ? (r.json() as Promise<BaseInfo>) : {}))
       .catch(() => ({}));
     let alive = true;

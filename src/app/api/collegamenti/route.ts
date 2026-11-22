@@ -4,9 +4,10 @@
 // Chiave: variabile CHIAVE_COLLEGAMENTI (64 caratteri esadecimali) o, se manca, un file generato nella
 // cartella dati. Nel prodotto vero la chiave va in un archivio di segreti, non accanto ai dati.
 import { connection } from "next/server";
+import { accessoDaRichiesta, soloRuoli } from "@/lib/accesso/server";
 import { servizioById, type StatoServizio } from "@/lib/collegamenti";
 import { cifra } from "@/lib/cifratura";
-import { altroSito, load, save, MAX_TEXT, type Salvato } from "@/lib/collegamenti-server";
+import { altroSito, inFilaCollegamenti, load, save, MAX_TEXT, type Salvato } from "@/lib/collegamenti-server";
 
 const MAX_FILE = 64 * 1024; // un certificato .p12 pesa pochi KB
 
@@ -25,10 +26,17 @@ const json = (body: unknown, status = 200) => Response.json(body, { status, head
 // così nessuno può dirottarla verso un altro indirizzo senza conoscerla
 const INDIRIZZI = ["endpoint"];
 
-export async function GET() {
+export async function GET(req: Request) {
   await connection();
-  const a = await load();
-  return json(Object.fromEntries(Object.entries(a).map(([id, s]) => [id, pubblico(s)])));
+  const acc = await accessoDaRichiesta(req);
+  if (acc instanceof Response) return acc;
+  try {
+    const a = await load(acc.azienda.id);
+    return json(Object.fromEntries(Object.entries(a).map(([id, s]) => [id, pubblico(s)])));
+  } catch (e) {
+    console.error("Collegamenti non leggibili", e);
+    return json({ error: "Il file dei collegamenti non si legge: non è stato modificato. Avvisa l'assistenza." }, 500);
+  }
 }
 
 interface Modifica {
@@ -39,17 +47,27 @@ interface Modifica {
   togli?: string[]; // segreti o file da cancellare
 }
 
-let lock: Promise<unknown> = Promise.resolve();
+// Un blocco per azienda: le modifiche della stessa azienda vanno in fila (coda condivisa da tutte le route)
+const inFila = inFilaCollegamenti;
+
+async function soloResponsabile(req: Request) {
+  const acc = await accessoDaRichiesta(req);
+  if (acc instanceof Response) return acc;
+  return soloRuoli(acc, "responsabile") ?? acc;
+}
 
 export async function PUT(req: Request) {
+  const acc = await soloResponsabile(req);
+  if (acc instanceof Response) return acc;
   if (altroSito(req)) return json({ error: "Richiesta da un altro sito" }, 403);
   const body = (await req.json().catch(() => null)) as Modifica | null;
   const serv = body && servizioById(String(body.id));
   if (!body || !serv) return json({ error: "Servizio sconosciuto" }, 400);
   const campo = (k: string) => serv.campi.find((c) => c.key === k);
 
-  const run = lock.then(async () => {
-    const a = await load();
+  const aid = acc.azienda.id;
+  const run = inFila(aid, async () => {
+    const a = await load(aid);
     const s: Salvato = a[serv.id] ?? { valori: {}, segreti: {}, file: {} };
 
     // Valgono solo le password già salvate e reinserite tutte in questa richiesta
@@ -91,10 +109,9 @@ export async function PUT(req: Request) {
     }
     s.aggiornato = new Date().toISOString();
     a[serv.id] = s;
-    await save(a);
+    await save(aid, a);
     return pubblico(s);
   });
-  lock = run.catch(() => undefined);
   try {
     return json(await run);
   } catch (e) {
@@ -104,15 +121,21 @@ export async function PUT(req: Request) {
 
 // Scollega: cancella tutti i dati salvati del servizio
 export async function DELETE(req: Request) {
+  const acc = await soloResponsabile(req);
+  if (acc instanceof Response) return acc;
   if (altroSito(req)) return json({ error: "Richiesta da un altro sito" }, 403);
   const id = new URL(req.url).searchParams.get("id") ?? "";
   if (!servizioById(id)) return json({ error: "Servizio sconosciuto" }, 400);
-  const run = lock.then(async () => {
-    const a = await load();
-    delete a[id];
-    await save(a);
-  });
-  lock = run.catch(() => undefined);
-  await run;
+  const aid = acc.azienda.id;
+  try {
+    await inFila(aid, async () => {
+      const a = await load(aid);
+      delete a[id];
+      await save(aid, a);
+    });
+  } catch (e) {
+    console.error("Collegamenti non leggibili", e);
+    return json({ error: "Il file dei collegamenti non si legge: non è stato modificato. Avvisa l'assistenza." }, 500);
+  }
   return json({ ok: true });
 }

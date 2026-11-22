@@ -1,11 +1,12 @@
 // Archivio dei collegamenti sul server: lettura, scrittura e segreti decifrati. Solo server.
 // Lo usano la route /api/collegamenti e il ponte eBay (le route Next non possono esportare altro che gli handler).
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DATA_DIR } from "@/lib/server-data";
+import { cartellaAzienda } from "@/lib/server-data";
 import { decifra } from "@/lib/cifratura";
+import { leggiCollegamentiDaFile, scriviCollegamentiSuFile } from "@/lib/collegamenti-file";
+import { inFilaPer } from "@/lib/fila";
 
-const FILE = path.join(DATA_DIR, "collegamenti.json");
+const file = (aziendaId: string) => path.join(cartellaAzienda(aziendaId), "collegamenti.json");
 export const MAX_TEXT = 4000;
 
 export interface Salvato {
@@ -16,22 +17,23 @@ export interface Salvato {
 }
 export type Archivio = Record<string, Salvato>;
 
-export async function load(): Promise<Archivio> {
-  try {
-    return JSON.parse(await readFile(FILE, "utf8")) as Archivio;
-  } catch {
-    return {};
-  }
+// File assente: nessun collegamento. File illeggibile o corrotto: errore (CollegamentiIlleggibili), mai {} da riscrivere.
+export function load(aziendaId: string): Promise<Archivio> {
+  return leggiCollegamentiDaFile<Archivio>(file(aziendaId));
 }
 
-export async function save(a: Archivio) {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(FILE, JSON.stringify(a), { mode: 0o600 });
+export function save(aziendaId: string, a: Archivio): Promise<void> {
+  return scriviCollegamentiSuFile(file(aziendaId), a);
+}
+
+/** Le modifiche ai collegamenti di un'azienda vanno in fila (coda sulla globalThis, una sola per processo). */
+export function inFilaCollegamenti<T>(aziendaId: string, fn: () => Promise<T>): Promise<T> {
+  return inFilaPer("collegamenti", aziendaId, fn);
 }
 
 /** Valori salvati di un servizio più i segreti decifrati. Mai da mandare al browser. */
-export async function leggiValori(id: string): Promise<Record<string, string | string[]>> {
-  const s = (await load())[id];
+export async function leggiValori(aziendaId: string, id: string): Promise<Record<string, string | string[]>> {
+  const s = (await load(aziendaId))[id];
   const out: Record<string, string | string[]> = { ...(s?.valori ?? {}) };
   for (const [k, v] of Object.entries(s?.segreti ?? {})) {
     try {
@@ -43,9 +45,9 @@ export async function leggiValori(id: string): Promise<Record<string, string | s
   return out;
 }
 
-// Nessun login vero nel prototipo: chiunque raggiunga il server può chiamare questa API.
-// Intanto si bloccano le richieste partite da pagine di altri siti (il browser manda sempre Origin
-// su PUT e DELETE). Prima della produzione: login con ruolo responsabile verificato qui sul server.
+// Il login vero c'è: ogni route chiama prima accessoDaRichiesta, che ricava azienda e ruoli dalla sessione (mai dalla richiesta).
+// Limite noto: il server controlla l'accesso, la separazione tra aziende e, per ruolo, alcune azioni delicate (collegamenti, collegamento e politiche eBay, richiesta della visura PRA, ripristino dei dati, gestione dei dispositivi, Piattaforma); tutto il resto è limitato per ruolo solo nelle schermate fino al database dei dati (A1).
+// In più si bloccano le richieste partite da pagine di altri siti (il browser manda sempre Origin su PUT e DELETE).
 export function altroSito(req: Request) {
   const origin = req.headers.get("origin");
   if (!origin) return false;

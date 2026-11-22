@@ -5,7 +5,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { leggiValori } from "@/lib/collegamenti-server";
-import { DATA_DIR } from "@/lib/server-data";
+import { cartellaAzienda } from "@/lib/server-data";
 
 export type ModoVisura = "Simulato" | "Sandbox" | "Produzione";
 export type TipoVeicolo = "AUTOVEICOLO" | "MOTOVEICOLO" | "RIMORCHIO";
@@ -14,7 +14,8 @@ export const TIPI_VEICOLO: TipoVeicolo[] = ["AUTOVEICOLO", "MOTOVEICOLO", "RIMOR
 const BASE = { Sandbox: "https://test.docuengine.openapi.com", Produzione: "https://docuengine.openapi.com" };
 // Id del documento nell'elenco /documents di Openapi; si cerca per nome e, se non si trova, si usa questo
 const DOCUMENTO_PRA = "67d066772cbb7e30d3d93e33";
-const VISURE_DIR = path.join(DATA_DIR, "visure");
+// Ogni azienda ha le sue visure: aziende/<id>/visure/ (mai una cartella comune a tutte)
+const cartellaVisure = (aziendaId: string) => path.join(cartellaAzienda(aziendaId), "visure");
 const MAX_PDF = 10 * 1024 * 1024;
 
 export class ErroreVisura extends Error {
@@ -30,8 +31,11 @@ interface Cred {
 }
 
 /** Credenziali da Impostazioni → Collegamenti → Openapi. Senza token o senza "Visura PRA" tra i servizi: simulata. */
-export async function credenziali(): Promise<Cred | undefined> {
-  const v = await leggiValori("openapi");
+export async function credenziali(aziendaId: string): Promise<Cred | undefined> {
+  // File dei collegamenti danneggiato: errore, non "Simulato" (si vedrebbe una visura finta al posto di quella vera)
+  const v = await leggiValori(aziendaId, "openapi").catch(() => {
+    throw new ErroreVisura("Il file dei collegamenti non si legge: avvisa l'assistenza.", 500);
+  });
   const token = typeof v.token === "string" ? v.token.trim() : "";
   const servizi = Array.isArray(v.servizi) ? v.servizi : [];
   if (!token || !servizi.includes("Visura PRA")) return undefined;
@@ -102,17 +106,17 @@ export async function richiediVisura(c: Cred, targa: string, tipo: TipoVeicolo) 
 }
 
 export const idValido = (id: string) => /^[A-Za-z0-9_-]{6,64}$/.test(id);
-const filePdf = (id: string) => path.join(VISURE_DIR, `${id}.pdf`);
+const filePdf = (aziendaId: string, id: string) => path.join(cartellaVisure(aziendaId), `${id}.pdf`);
 export const urlPdf = (id: string) => `/api/visura/${id}/pdf`;
 
-export async function leggiPdf(id: string) {
+export async function leggiPdf(aziendaId: string, id: string) {
   if (!idValido(id)) return undefined;
-  return readFile(filePdf(id)).catch(() => undefined);
+  return readFile(filePdf(aziendaId, id)).catch(() => undefined);
 }
 
 /** Stato della richiesta; quando è evasa scarica il PDF nella cartella dati e ne dà l'indirizzo. */
-export async function statoVisura(c: Cred, id: string): Promise<{ stato: string; pdf?: string; messaggio?: string }> {
-  if (await leggiPdf(id)) return { stato: "DONE", pdf: urlPdf(id) };
+export async function statoVisura(c: Cred, aziendaId: string, id: string): Promise<{ stato: string; pdf?: string; messaggio?: string }> {
+  if (await leggiPdf(aziendaId, id)) return { stato: "DONE", pdf: urlPdf(id) };
   const r = await chiama<Richiesta & { cancellationReason?: string }>(c, "GET", `/requests/${id}`);
   const stato = r.state ?? "NEW";
   if (stato === "CANCELLED") return { stato, messaggio: r.cancellationReason || "Richiesta annullata da Openapi." };
@@ -134,7 +138,7 @@ export async function statoVisura(c: Cred, id: string): Promise<{ stato: string;
     if (dec.subarray(0, 4).toString() !== "%PDF") throw new ErroreVisura("Il file ricevuto non è un PDF.");
     bytes = dec;
   }
-  await mkdir(VISURE_DIR, { recursive: true });
-  await writeFile(filePdf(id), bytes, { mode: 0o600 });
+  await mkdir(cartellaVisure(aziendaId), { recursive: true });
+  await writeFile(filePdf(aziendaId, id), bytes, { mode: 0o600 });
   return { stato, pdf: urlPdf(id) };
 }
