@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Check, Lock, MessageCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Check, ChevronLeft, Lock, MessageCircle } from "lucide-react";
 import { BRAND } from "@/lib/config";
 import { linkAttivazione, MODULI, type Modulo } from "@/lib/moduli";
 import { useModuli } from "@/lib/use-moduli";
@@ -10,9 +11,16 @@ import { useStore } from "@/lib/store";
 // Al posto di una pagina di un modulo non acquistato: cosa fa il modulo e come chiederne l'attivazione
 export function ModuloBloccato({ modulo }: { modulo: Modulo }) {
   const log = useStore((s) => s.log);
+  const router = useRouter();
   const m = MODULI[modulo];
+  // Torna alla pagina di prima; se la pagina è stata aperta direttamente (nessuna storia), va a "Oggi"
+  const indietro = () => (window.history.length > 1 ? router.back() : router.push("/"));
   return (
     <div className="mx-auto max-w-3xl">
+      <button type="button" onClick={indietro} className="no-print -ml-1 mb-3 inline-flex min-h-11 items-center gap-1 text-[15px] font-semibold text-band hover:underline">
+        <ChevronLeft className="size-5" aria-hidden />
+        Indietro
+      </button>
       <div className="overflow-hidden rounded-md border border-hair bg-label">
         {modulo !== "magazzino" && (
           <div className="relative h-44 overflow-hidden border-b border-hair bg-carton md:h-56" aria-hidden>
