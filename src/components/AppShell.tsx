@@ -102,6 +102,7 @@ const AREAS: Area[] = [
     subs: [
       { href: "/impostazioni/collegamenti", label: "Collegamenti", roles: ["responsabile"] },
       { href: "/impostazioni/dispositivi", label: "Dispositivi", roles: ["responsabile"] },
+      { href: "/impostazioni/persone", label: "Persone", roles: ["responsabile"] },
       { href: "/impostazioni/moduli", label: "Moduli", roles: ["responsabile"] },
     ],
   },
