@@ -70,3 +70,30 @@ test("una coda salvata con un altro schema viene sostituita, non unita", () => {
   const coda = aggiungiInSospeso(vecchia, SCHEMA, { parts: [{ id: "P-1" }] }, undefined, ORA, LISTE);
   assert.deepEqual(corpoDaRiprendere(coda, SCHEMA, ORA, LISTE), { schema: SCHEMA, changes: { parts: [{ id: "P-1" }] } });
 });
+
+test("coda in attesa di pagamento: le voci di 3 giorni fa non scadono", () => {
+  const coda = aggiungiInSospeso(null, SCHEMA, { vehicles: [{ id: "V-2" }] }, { vehicle: 2 }, ORA, LISTE, { pagamento: true });
+  const c = corpoDaRiprendere(JSON.parse(JSON.stringify(coda)), SCHEMA, ORA + 3 * IN_SOSPESO_MAX_MS, LISTE);
+  assert.deepEqual(c, { schema: SCHEMA, changes: { vehicles: [{ id: "V-2" }] }, counters: { vehicle: 2 } });
+});
+
+test("la stessa coda senza pagamento scade dopo 24 ore, come prima", () => {
+  const coda = aggiungiInSospeso(null, SCHEMA, { vehicles: [{ id: "V-2" }] }, { vehicle: 2 }, ORA, LISTE);
+  assert.equal("pagamento" in coda, false);
+  assert.equal(corpoDaRiprendere(coda, SCHEMA, ORA + 3 * IN_SOSPESO_MAX_MS, LISTE), null);
+});
+
+test("aggiungi con { pagamento: true } su una coda senza il flag la segna in attesa di pagamento", () => {
+  const prima = aggiungiInSospeso(null, SCHEMA, { parts: [{ id: "P-1" }] }, undefined, ORA, LISTE);
+  const coda = aggiungiInSospeso(prima, SCHEMA, { vehicles: [{ id: "V-2" }] }, undefined, ORA + 1000, LISTE, { pagamento: true });
+  assert.equal(coda.pagamento, true);
+  assert.deepEqual(corpoDaRiprendere(coda, SCHEMA, ORA + 1000, LISTE)?.changes, { parts: [{ id: "P-1" }], vehicles: [{ id: "V-2" }] });
+});
+
+test("una coda già in attesa di pagamento tiene il flag anche se la chiamata non lo passa", () => {
+  const prima = aggiungiInSospeso(null, SCHEMA, { vehicles: [{ id: "V-2" }] }, undefined, ORA, LISTE, { pagamento: true });
+  const coda = aggiungiInSospeso(JSON.parse(JSON.stringify(prima)), SCHEMA, { parts: [{ id: "P-1" }] }, undefined, ORA + 2 * IN_SOSPESO_MAX_MS, LISTE);
+  assert.equal(coda.pagamento, true);
+  // La voce vecchia di V-2 resta: la coda è ancora in attesa di pagamento
+  assert.deepEqual(corpoDaRiprendere(coda, SCHEMA, ORA + 2 * IN_SOSPESO_MAX_MS, LISTE)?.changes, { vehicles: [{ id: "V-2" }], parts: [{ id: "P-1" }] });
+});

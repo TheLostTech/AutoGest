@@ -3,12 +3,14 @@
 // Puro. Quello che si rimanda al server si ricostruisce campo per campo: solo record con id delle liste note e
 // contatori numerici. Mai `whole` (regole, listini, magazzini, soggetti: un reset locale li svuoterebbe sul server),
 // mai `replace`, mai l'oggetto salvato così com'è (nel browser chiunque può modificarlo).
+// Eccezione: una coda con `pagamento: true` (scritture rifiutate con 402, abbonamento non pagato) non scade dopo
+// 24 ore: aspetta il pagamento e parte dopo. Il flag resta finché la coda non viene inviata e tolta.
 
 export const IN_SOSPESO_MAX_MS = 86_400_000; // dopo 24 ore una modifica non inviata non si rimanda più
 
 type Rec = Record<string, unknown>;
 type Voce = { k: string; r: Rec; at: number };
-export type CodaInSospeso = { v: 1; schema: string; voci: Voce[]; counters?: { valori: Contatori; at: number } };
+export type CodaInSospeso = { v: 1; schema: string; voci: Voce[]; counters?: { valori: Contatori; at: number }; pagamento?: true };
 export type CorpoRipresa = { schema: string; changes: Record<string, Rec[]>; counters?: Contatori };
 
 const isRec = (x: unknown): x is Rec => !!x && typeof x === "object" && !Array.isArray(x);
@@ -43,19 +45,33 @@ function unisciContatori(a: Contatori, b: Contatori): Contatori {
   return out;
 }
 
-/** Legge una coda salvata tenendo solo ciò che ha la forma attesa, è dello schema giusto e ha meno di 24 ore. */
+/**
+ * Legge una coda salvata tenendo solo ciò che ha la forma attesa, è dello schema giusto e ha meno di 24 ore
+ * (senza limite di tempo se la coda aspetta il pagamento).
+ */
 function leggiCoda(raw: unknown, schema: string, ora: number, liste: readonly string[]): CodaInSospeso | null {
   if (!isRec(raw) || raw.v !== 1 || raw.schema !== schema || !Array.isArray(raw.voci)) return null;
+  const pagamento = raw.pagamento === true;
+  const tieni = (at: unknown): at is number => (pagamento ? numero(at) : fresco(at, ora));
   const voci: Voce[] = [];
   for (const v of raw.voci) {
-    if (!isRec(v) || typeof v.k !== "string" || !liste.includes(v.k) || !isRec(v.r) || !idDi(v.r) || !fresco(v.at, ora)) continue;
+    if (!isRec(v) || typeof v.k !== "string" || !liste.includes(v.k) || !isRec(v.r) || !idDi(v.r) || !tieni(v.at)) continue;
     voci.push({ k: v.k, r: v.r, at: v.at });
   }
-  const c = isRec(raw.counters) && fresco(raw.counters.at, ora) ? numeri(raw.counters.valori) : null;
-  return { v: 1, schema, voci, ...(c ? { counters: { valori: c, at: (raw.counters as { at: number }).at } } : {}) };
+  const c = isRec(raw.counters) && tieni(raw.counters.at) ? numeri(raw.counters.valori) : null;
+  return {
+    v: 1,
+    schema,
+    voci,
+    ...(c ? { counters: { valori: c, at: (raw.counters as { at: number }).at } } : {}),
+    ...(pagamento ? { pagamento: true as const } : {}),
+  };
 }
 
-/** Unisce alla coda già salvata (se dello stesso schema) le modifiche di adesso: per ogni record vince la copia più recente. */
+/**
+ * Unisce alla coda già salvata (se dello stesso schema) le modifiche di adesso: per ogni record vince la copia più recente.
+ * Con `{ pagamento: true }` la coda aspetta il pagamento (niente scadenza); una coda che già lo aspetta lo tiene.
+ */
 export function aggiungiInSospeso(
   prima: unknown,
   schema: string,
@@ -63,6 +79,7 @@ export function aggiungiInSospeso(
   counters: unknown,
   ora: number,
   liste: readonly string[],
+  opzioni?: { pagamento?: boolean },
 ): CodaInSospeso {
   const base = leggiCoda(prima, schema, ora, liste) ?? { v: 1 as const, schema, voci: [] };
   const perChiave = new Map(base.voci.map((v) => [`${v.k}\u0000${idDi(v.r)}`, v]));
@@ -76,7 +93,8 @@ export function aggiungiInSospeso(
   }
   const c = numeri(counters);
   const cont = c ? { valori: unisciContatori(base.counters?.valori ?? {}, c), at: ora } : base.counters;
-  return { v: 1, schema, voci: [...perChiave.values()], ...(cont ? { counters: cont } : {}) };
+  const pagamento = opzioni?.pagamento === true || base.pagamento === true;
+  return { v: 1, schema, voci: [...perChiave.values()], ...(cont ? { counters: cont } : {}), ...(pagamento ? { pagamento: true as const } : {}) };
 }
 
 /** Il corpo da rimandare al server, ricostruito solo dai campi tipizzati; null se non resta niente. */

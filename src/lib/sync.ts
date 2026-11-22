@@ -10,6 +10,7 @@ import { intestazioniPassive } from "./accesso/attivita";
 import { aggiungiInSospeso, corpoDaRiprendere } from "./sync-in-sospeso";
 import { aziendaFissata, fetchAzienda, segnalaAziendaCambiata, suAziendaCambiata } from "./accesso/azienda-client";
 import { MOTIVO_AZIENDA_CAMBIATA } from "./accesso/regole";
+import { bloccato, type Abbonamento } from "./abbonamento";
 
 const PREPEND = ["vehicles", "parts", "annunci", "orders", "docs", "firs"] as const;
 const APPEND = ["audit", "wasteMoves", "inventory"] as const;
@@ -48,6 +49,13 @@ export type AvvisoSync = { titolo: string; testo: string; ricarica?: boolean };
 let avviso: AvvisoSync | null = null;
 let fermata = false;
 let inUscita = false; // uscita in corso (blocco per inattività, "Esci"): chi esce porta già all'accesso
+
+// Il server ha rifiutato una scrittura con 402 (abbonamento non pagato). Finché resta così non si scrive: le letture
+// continuano, le modifiche si aggiungono alla coda in sospeso con `pagamento: true` (non scade dopo 24 ore) e partono
+// quando una lettura dice che l'azienda non è più bloccata.
+let attesaPagamento = false;
+/** Le modifiche di questo dispositivo aspettano il pagamento dell'abbonamento (le legge il riquadro di pagamento). */
+export const inAttesaDiPagamento = (): boolean => attesaPagamento;
 const ascoltatoriAvviso = new Set<() => void>();
 function mostraAvviso(titolo: string, testo: string, ricarica = false) {
   avviso = { titolo, testo, ...(ricarica ? { ricarica } : {}) };
@@ -97,8 +105,18 @@ function fermaPerAziendaCambiata() {
 suAziendaCambiata(fermaPerAziendaCambiata);
 
 // 401: la sessione non vale più, si torna all'accesso (tranne sulle pagine pubbliche). 403/409: ci si ferma con un avviso.
+// 402: abbonamento non pagato, le modifiche aspettano il pagamento nella coda in sospeso.
 function gestisciRifiuto(e: unknown): boolean {
   if (!(e instanceof ErroreApi)) return false;
+  if (e.stato === 402 && e.motivo === "abbonamento") {
+    attesaPagamento = true;
+    // Solo dopo il primo allineamento: prima non si sa cosa è davvero nuovo
+    if (allineato) {
+      const d = differenze(useStore.getState());
+      if (d) salvaInSospeso(d, { pagamento: true });
+    }
+    return true;
+  }
   if (e.stato === 409 && e.motivo === MOTIVO_AZIENDA_CAMBIATA) {
     segnalaAziendaCambiata(); // già segnalato da fetchAzienda: qui per sicurezza
     return true;
@@ -168,7 +186,7 @@ async function api(method: "GET" | "PUT", body?: unknown) {
 // Scrive lo stato intero. Intanto `pushing` ferma le letture (un pull in corso non riapplica lo stato vecchio)
 // e una scrittura a pezzi in attesa si annulla: lo stato intero la comprende già.
 async function pushAll() {
-  if (fermata || !demoAzienda) return; // lo stato intero si manda solo per l'azienda demo
+  if (fermata || !demoAzienda || attesaPagamento) return; // lo stato intero si manda solo per l'azienda demo
   pushing++;
   clearTimeout(timer);
   try {
@@ -207,6 +225,13 @@ function differenze(s: S) {
 
 async function pushChanges() {
   if (pushing || fermata) return;
+  if (attesaPagamento) {
+    // In attesa del pagamento non si scrive: quello che è cambiato si aggiunge alla coda, così non va perso
+    dirty = false;
+    const d = allineato ? differenze(useStore.getState()) : null;
+    if (d) salvaInSospeso(d, { pagamento: true });
+    return;
+  }
   pushing++;
   dirty = false;
   try {
@@ -230,6 +255,19 @@ async function pull() {
     // Risposta di un'altra azienda (la sessione è cambiata): mai applicarla a questa scheda
     if (typeof res.aziendaId === "string" && aziendaFissata() && res.aziendaId !== aziendaFissata()) return segnalaAziendaCambiata();
     demoAzienda = res.demo === true;
+    if (attesaPagamento && !bloccatoDalServer(res)) {
+      // Pagato: partono le modifiche rimaste in attesa, poi il giro normale manda quelle ancora da inviare.
+      // La risposta di adesso non contiene le modifiche appena inviate: la prossima lettura scarica l'archivio unito.
+      attesaPagamento = false;
+      pushing++;
+      try {
+        await inviaSalvateInSospeso();
+      } finally {
+        pushing--;
+      }
+      if (!attesaPagamento && differenze(useStore.getState())) dirty = true;
+      return;
+    }
     if (devePubblicareStatoLocale({ state: res.state, schema: res.schema, demo: demoAzienda }, STORE_SCHEMA)) return await pushAll();
     if (!res.state || res.schema !== STORE_SCHEMA) {
       // Azienda vera con archivio vuoto o di un'altra versione: il browser non lo riempie e non lo sovrascrive.
@@ -252,15 +290,22 @@ async function pull() {
   }
 }
 
+// L'azienda è ancora bloccata secondo l'ultima lettura (i veicoli contati sono quelli del server, non del dispositivo)
+function bloccatoDalServer(res: { abbonamento?: Abbonamento | null; state?: { vehicles?: unknown } | null }): boolean {
+  if (res.abbonamento == null) return false;
+  const veicoli = Array.isArray(res.state?.vehicles) ? res.state.vehicles.length : 0;
+  return bloccato(res.abbonamento, veicoli);
+}
+
 // Modifiche rimaste da inviare all'uscita: si salvano accanto alla copia locale della stessa azienda
 // (la chiave dello store contiene l'id dell'azienda) e partono al prossimo accesso su questo dispositivo.
 const chiaveInSospeso = () => `${useStore.persist.getOptions().name}:in-sospeso`;
 
-function salvaInSospeso(diff: NonNullable<ReturnType<typeof differenze>>) {
+function salvaInSospeso(diff: { changes: Record<string, Rec[]>; counters?: unknown }, opzioni?: { pagamento?: boolean }) {
   try {
     const prima = JSON.parse(localStorage.getItem(chiaveInSospeso()) ?? "null") as unknown;
     // Solo record con id e contatori: gli interi (regole, listini, ...) non si rimandano più tardi
-    const coda = aggiungiInSospeso(prima, STORE_SCHEMA, diff.changes, diff.counters, Date.now(), LISTS);
+    const coda = aggiungiInSospeso(prima, STORE_SCHEMA, diff.changes, diff.counters, Date.now(), LISTS, opzioni);
     localStorage.setItem(chiaveInSospeso(), JSON.stringify(coda));
   } catch {
     // memoria piena o non disponibile: resta solo la copia locale
@@ -282,6 +327,7 @@ async function inviaSalvateInSospeso() {
   }
   if (raw === null) return;
   // Ricostruito campo per campo: mai l'oggetto salvato così com'è, mai whole né replace, niente più vecchio di 24 ore
+  // (tranne se la coda aspetta il pagamento)
   const corpo = corpoDaRiprendere(raw, STORE_SCHEMA, Date.now(), LISTS);
   if (!corpo) return togliInSospeso();
   try {
@@ -289,6 +335,11 @@ async function inviaSalvateInSospeso() {
     togliInSospeso();
   } catch (e) {
     if (!(e instanceof ErroreApi) || e.stato === 401) return; // rete assente o accesso perso: restano per la prossima volta
+    // Abbonamento non pagato: la coda resta dov'è e da adesso non scade più; parte dopo il pagamento
+    if (e.stato === 402 && e.motivo === "abbonamento") {
+      attesaPagamento = true;
+      return salvaInSospeso({ changes: {} }, { pagamento: true });
+    }
     // Sessione passata a un'altra azienda: le modifiche restano in coda per la prossima volta in questa azienda
     if (e.stato === 409 && e.motivo === MOTIVO_AZIENDA_CAMBIATA) return void gestisciRifiuto(e);
     // Rifiutate dal server: riprovarle non serve, ma chi lavora deve saperlo
@@ -322,7 +373,7 @@ export async function inviaInSospeso(): Promise<boolean> {
     dirty = false;
     return true;
   }
-  if (!fermata) {
+  if (!fermata && !attesaPagamento) {
     pushing++;
     try {
       const res = await api("PUT", diff);
@@ -330,13 +381,14 @@ export async function inviaInSospeso(): Promise<boolean> {
       dirty = false;
       if (res.version === version + 1) version = res.version;
       return true;
-    } catch {
-      // si salva sotto
+    } catch (e) {
+      // si salva sotto; un 402 la segna in attesa di pagamento (non scade)
+      if (e instanceof ErroreApi && e.stato === 402 && e.motivo === "abbonamento") attesaPagamento = true;
     } finally {
       pushing--;
     }
   }
-  salvaInSospeso(diff);
+  salvaInSospeso(diff, { pagamento: attesaPagamento });
   return false;
 }
 
