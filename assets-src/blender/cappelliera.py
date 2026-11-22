@@ -89,22 +89,23 @@ def carpet(name="NeedleFelt", hexc="#2A2B2E", scale=1400.0):
     nz.inputs["Roughness"].default_value = 0.7
     nz2 = nt.nodes.new("ShaderNodeTexNoise")
     nt.links.new(co, nz2.inputs["Vector"])
-    nz2.inputs["Scale"].default_value = 40.0
+    nz2.inputs["Scale"].default_value = 260.0
+    nz2.inputs["Detail"].default_value = 6.0
     mix = nt.nodes.new("ShaderNodeMix")
     mix.data_type = "RGBA"
     mr = nt.nodes.new("ShaderNodeMapRange")
     mr.inputs["From Min"].default_value = 0.25
     mr.inputs["From Max"].default_value = 0.75
-    nt.links.new(_math(nt, "ADD", _math(nt, "MULTIPLY", nz.outputs["Fac"], 0.7),
-                       _math(nt, "MULTIPLY", nz2.outputs["Fac"], 0.3)), mr.inputs["Value"])
+    nt.links.new(_math(nt, "ADD", _math(nt, "MULTIPLY", nz.outputs["Fac"], 0.45),
+                       _math(nt, "MULTIPLY", nz2.outputs["Fac"], 0.55)), mr.inputs["Value"])
     nt.links.new(mr.outputs["Result"], mix.inputs["Factor"])
     mix.inputs["A"].default_value = tuple(c * 0.65 for c in base[:3]) + (1,)
     mix.inputs["B"].default_value = tuple(c * 1.35 for c in base[:3]) + (1,)
     nt.links.new(mix.outputs["Result"], b.inputs["Base Color"])
     bump = nt.nodes.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.75
-    bump.inputs["Distance"].default_value = 0.0012
-    nt.links.new(nz.outputs["Fac"], bump.inputs["Height"])
+    bump.inputs["Strength"].default_value = 0.9
+    bump.inputs["Distance"].default_value = 0.0015
+    nt.links.new(_math(nt, "ADD", nz.outputs["Fac"], _math(nt, "MULTIPLY", nz2.outputs["Fac"], 0.6)), bump.inputs["Height"])
     nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
     return m
 
@@ -259,11 +260,11 @@ def prism_bm(bm, poly, z0, z1, M=None, mat=0):
     n = len(P)
     fs = [bm.faces.new((a[k], a[(k + 1) % n], b[(k + 1) % n], b[k])) for k in range(n)]
     fs += [bm.faces.new(a[::-1]), bm.faces.new(b)]
-    bmesh.ops.recalc_face_normals(bm, faces=fs)
     for f in fs:
         f.material_index = mat
     if M is not None:
         bmesh.ops.transform(bm, matrix=M, verts=a + b)
+    bmesh.ops.recalc_face_normals(bm, faces=fs)
     return fs
 
 
@@ -428,7 +429,7 @@ def strings(black, cord):
         ctrl = [(ex, ey, zt + 0.002), (ex - sx * 0.02, ey + 0.035, zt), (ex - sx * 0.075, ey + 0.085, zt),
                 (ex - sx * 0.155, ey + 0.095, zt), (ex - sx * 0.215, ey + 0.060, zt), (ex - sx * 0.245, ey + 0.010, zt)]
         pts = rounded(ctrl, [0, 0.03, 0.05, 0.05, 0.04, 0], closed=False, seg=8)
-        out.append(tube("Cord", pts, 0.0032, cord, res=3))
+        out.append(tube("Cord", pts, 0.0038, cord, res=3))
         end = Vector(ctrl[-1])
         d = (end - Vector(ctrl[-2])).normalized()
         Mh = frame(d, Vector((0, 0, 1)).cross(d), (0, 0, 1), end + d * 0.016 + Vector((0, 0, 0.001)))
@@ -440,7 +441,8 @@ def strings(black, cord):
 
 
 def build():
-    felt = carpet("ShelfFelt", hexc="#242528", scale=1100.0)
+    felt = carpet("ShelfFelt", hexc="#1E1F22", scale=900.0)
+    C._set(bsdf(felt), "Sheen Weight", 0.25)
     fibre = C.principled("Fibreboard", C.srgb("#1E1D1C"), rough=0.9)
     C.add_noise_bump(fibre, scale=400, strength=0.35, distance=0.001, detail=8.0, rough_var=0.04)
     black = grained("ShelfTrim", v=0.024, rough=0.52)
@@ -460,4 +462,4 @@ if __name__ == "__main__":
     C.shoot("cappelliera", objs, "cappelliera.py",
             "rear parcel shelf of a hatchback: anthracite felt-covered board with two round speaker cut-outs, "
             "pivot pins at the hinge corners and two lifting strings with clips",
-            az=26, el=30, lens=70, fill=0.90, **res_samples())
+            az=24, el=27, lens=70, fill=0.90, **res_samples())

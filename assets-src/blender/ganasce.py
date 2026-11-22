@@ -179,7 +179,7 @@ def hold_down(c, zinc, spring_m):
     P = [(0.0, z0 + 0.115, 0), (0.07, z0 + 0.115, 0), (0.075, z0 + 0.125, 0), (0.068, z0 + 0.14, 0), (0.055, z0 + 0.142, 0),
          (0.03, z0 + 0.132, 0), (0.0, z0 + 0.132, 0)]
     cup = C.lathe("Cup", P, [zinc], steps=48)
-    cup.location = (p.x, p.y, 0)
+    cup.matrix_world = Matrix.Translation((p.x, p.y, 0))
     out.append(C.finalize(cup, angle=40))
     bm = bmesh.new()
     C.box_bm(bm, 0.05, 0.012, 0.012, center=(p.x, p.y, z0 + 0.146))
@@ -196,7 +196,7 @@ def adjuster(paint, zinc, brass):
     # flat strut from the left web to the star wheel, forked ends straddling the webs
     xl = -0.72
     bm = bmesh.new()
-    C.box_bm(bm, 0.62, 0.06, 0.03, center=(xl + 0.31, y, ZW))
+    C.box_bm(bm, 0.62, 0.075, 0.034, center=(xl + 0.31, y, ZW))
     for s in (-1, 1):
         C.box_bm(bm, 0.07, 0.05, 0.012, center=(xl + 0.015, y, ZW + s * (TW / 2 + 0.008)))
     st = C.mesh_obj("Strut", bm, [paint])
@@ -213,8 +213,8 @@ def adjuster(paint, zinc, brass):
         if r < 0.06:
             return r
         f = (t * 18 / math.tau) % 1.0
-        return r - 0.016 * (1 - abs(2 * f - 1)) * 1.6 if r > 0.06 else r
-    P = [(0.03, 0.10, 0), (0.068, 0.10, 0), (0.068, 0.135, 0), (0.03, 0.135, 0)]
+        return r - 0.024 * (1 - abs(2 * f - 1)) ** 1.5
+    P = [(0.03, 0.10, 0), (0.088, 0.10, 0), (0.088, 0.14, 0), (0.03, 0.14, 0)]
     sw = C.lathe("StarWheel", P, [zinc], steps=144, mod=teeth)
     sw.matrix_world = axis_mat(Vector((X0, y, ZW)), (1, 0, 0))
     C.add_bevel(sw, 0.003, segments=1, angle=30)
@@ -253,12 +253,18 @@ def lever(paint, zinc):
         w = 0.075 - 0.02 * u
         pts_out.append(polar(r + w / 2, th))
         pts_in.append(polar(r - w / 2, th))
-    # cable hook at the bottom: curls inwards
+    # rounded lower end with the cable hook notch
     thb = c + math.radians(46)
-    hook = [polar(0.70, thb + math.radians(4)), polar(0.62, thb + math.radians(1)), polar(0.60, thb - math.radians(6)),
-            polar(0.66, thb - math.radians(9))]
-    pts = pts_out + hook[::-1][:0] + [polar(0.74, thb + math.radians(5)), polar(0.62, thb + math.radians(3)),
-                                      polar(0.58, thb - math.radians(3)), polar(0.62, thb - math.radians(8))] + pts_in[::-1]
+    rb_ = 0.80 - 0.06 * math.sin(math.pi)
+    wb = 0.075 - 0.02
+    cen = polar(rb_, thb)
+    tdir = Vector((-math.sin(thb), math.cos(thb), 0))
+    rdir = Vector((math.cos(thb), math.sin(thb), 0))
+    cap = []
+    for i in range(1, 12):
+        a = math.pi * i / 12
+        cap.append(cen + rdir * (wb / 2 + 0.03) * math.cos(a) + tdir * (0.09 * math.sin(a)))
+    pts = pts_out + [cen + rdir * (wb / 2 + 0.03)] + cap + [cen - rdir * (wb / 2 + 0.03)] + pts_in[::-1]
     bm = bmesh.new()
     prism_xy(bm, pts, z0, z0 + 0.03)
     lv = C.mesh_obj("Lever", bm, [paint])
@@ -268,7 +274,7 @@ def lever(paint, zinc):
     p = polar(0.80, c - math.radians(50))
     P = [(0.0, z0 + 0.03, 0), (0.035, z0 + 0.03, 0), (0.032, z0 + 0.045, 0), (0.02, z0 + 0.052, 0), (0.0, z0 + 0.052, 0)]
     rv = C.lathe("Rivet", P, [zinc], steps=32)
-    rv.location = (p.x, p.y, 0)
+    rv.matrix_world = Matrix.Translation((p.x, p.y, 0))
     out.append(C.finalize(rv, angle=50))
     return out
 

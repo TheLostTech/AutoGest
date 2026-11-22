@@ -16,6 +16,7 @@ HEAD_PTS = [(-0.56, 0.17), (-0.47, 0.29), (0.28, 0.31), (0.44, 0.24), (0.47, -0.
             (0.36, -0.23), (-0.28, -0.22), (-0.53, -0.07)]
 RC = 1.4                      # radius of curvature of the convex glass
 GT = 0.0022                   # glass thickness
+AZ, EL, TILT = -58, 15, -22   # camera azimuth / elevation, glass tilted back
 PLATE_Y0, PLATE_Y1 = 0.0030, 0.0062
 
 
@@ -136,7 +137,7 @@ def back(black, dark, brass):
     C.add_bevel(rib, 0.0004, segments=1, angle=30)
     out.append(C.finalize(rib, angle=35))
     # heater contacts: boss with two spade tabs near the outboard (narrow) end
-    bx, bz = min(p.x for p in outline()) + 0.016, CEN.y - 0.004
+    bx, bz = min(p.x for p in outline()) + 0.013, CEN.y - 0.004
     bm = bmesh.new()
     C.box_bm(bm, 0.016, 0.006, 0.024, center=(bx, PLATE_Y1 + 0.003, bz))
     boss = C.mesh_obj("Boss", bm, [black])
@@ -144,11 +145,102 @@ def back(black, dark, brass):
     out.append(C.finalize(boss, angle=35))
     for dz in (-0.0065, 0.0065):
         bm = bmesh.new()
-        C.box_bm(bm, 0.0008, 0.011, 0.0063, center=(bx, PLATE_Y1 + 0.0105, bz + dz))
+        C.box_bm(bm, 0.0008, 0.014, 0.0063, center=(bx, PLATE_Y1 + 0.012, bz + dz))
         t = C.mesh_obj("Spade", bm, [brass])
         C.add_bevel(t, 0.0002, segments=1, angle=30)
         out.append(C.finalize(t, angle=35))
     return out
+
+
+def mirror_card(center, normal, view, dist, size, lo=0.30, hi=0.97, band=(0.38, 0.64), roll=25.0,
+                strength=1.0, name="MirrorCard"):
+    """Soft studio card seen only by glossy rays, placed (closer than the area lights) where
+    the mirror reflects the camera, so the glass shows a clean light-grey to white studio
+    gradient instead of the dark lower world or hard-edged light panels. Never black."""
+    v = Vector(view).normalized()
+    n = Vector(normal).normalized()
+    r = (2 * n.dot(v) * n - v).normalized()
+    bm = bmesh.new()
+    uv = bm.loops.layers.uv.new("UVMap")
+    h = size / 2
+    vs = [bm.verts.new(c) for c in ((-h, -h, 0), (h, -h, 0), (h, h, 0), (-h, h, 0))]
+    f = bm.faces.new(vs)
+    for l, c in zip(f.loops, ((0, 0), (1, 0), (1, 1), (0, 1))):
+        l[uv].uv = c
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    em = nt.nodes.new("ShaderNodeEmission")
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(tc.outputs["UV"], sep.inputs[0])
+    # gradient coordinate rotated by `roll` on the card: a slightly diagonal sweep
+    ca, sa = math.cos(math.radians(roll)), math.sin(math.radians(roll))
+    gx = nt.nodes.new("ShaderNodeMath")
+    gx.operation = "MULTIPLY"
+    gx.inputs[1].default_value = -sa
+    nt.links.new(sep.outputs["X"], gx.inputs[0])
+    gy = nt.nodes.new("ShaderNodeMath")
+    gy.operation = "MULTIPLY_ADD"
+    gy.inputs[1].default_value = ca
+    nt.links.new(sep.outputs["Y"], gy.inputs[0])
+    nt.links.new(gx.outputs[0], gy.inputs[2])
+    off = nt.nodes.new("ShaderNodeMath")
+    off.operation = "ADD"
+    off.inputs[1].default_value = 0.5 * (1 - ca + sa)
+    nt.links.new(gy.outputs[0], off.inputs[0])
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    cr = ramp.color_ramp
+    cr.interpolation = "EASE"
+    cr.elements[0].position = band[0]
+    cr.elements[0].color = (lo, lo, lo, 1)
+    cr.elements[1].position = band[1]
+    cr.elements[1].color = (hi, hi, hi, 1)
+    nt.links.new(off.outputs[0], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], em.inputs["Color"])
+    em.inputs["Strength"].default_value = strength
+    nt.links.new(em.outputs[0], out.inputs["Surface"])
+    ob = C.mesh_obj(name, bm, [m])
+    z = (-r).normalized()
+    x = Vector((0, 0, 1)).cross(z)
+    if x.length < 1e-4:
+        x = Vector((1, 0, 0))
+    x.normalize()
+    y = z.cross(x).normalized()
+    Mx = Matrix.Identity(4)
+    for i, ax in enumerate((x, y, z)):
+        Mx[0][i], Mx[1][i], Mx[2][i] = ax.x, ax.y, ax.z
+    Mx.translation = Vector(center) + r * dist
+    ob.matrix_world = Mx
+    for a in ("visible_camera", "visible_diffuse", "visible_shadow", "visible_transmission",
+              "visible_volume_scatter"):
+        setattr(ob, a, False)
+    return ob
+
+
+def mirror_frame(ob, mat_index=0):
+    """World-space centre and mean normal of the faces of ob using mat_index."""
+    mw = ob.matrix_world
+    n = Vector((0, 0, 0))
+    c = Vector((0, 0, 0))
+    A = 0.0
+    for p in ob.data.polygons:
+        if p.material_index != mat_index:
+            continue
+        a = p.area
+        n += p.normal * a
+        c += p.center * a
+        A += a
+    c = mw @ (c / A)
+    n = (mw.to_3x3() @ n).normalized()
+    return c, n
+
+
+def view_dir(az, el):
+    a, e = math.radians(az), math.radians(el)
+    return Vector((math.sin(a) * math.cos(e), -math.cos(a) * math.cos(e), math.sin(e)))
 
 
 def build():
@@ -162,7 +254,7 @@ def build():
     objs += plate(black)
     objs += back(black, dark, brass)
     # stand it up, tilted back a little, rotated to a 3/4 view
-    M = Matrix.Rotation(math.radians(0), 4, "Z") @ Matrix.Rotation(math.radians(-24), 4, "X")
+    M = Matrix.Rotation(math.radians(0), 4, "Z") @ Matrix.Rotation(math.radians(TILT), 4, "X")
     C.transform_all(objs, M)
     return objs
 
@@ -171,8 +263,14 @@ if __name__ == "__main__":
     soft_studio_reflections()
     C.clear()
     objs = build()
+    # the old card was black in its lower half and the convex glass showed it as a solid
+    # black area: a soft card that is never darker than light grey, closer than the lights
+    Rt = Matrix.Rotation(math.radians(TILT), 3, "X")
+    gn = Rt @ Vector((0, -1, 0))
+    gc = Rt @ Vector((CEN.x, glass_y(CEN), CEN.y))
+    mirror_card(gc, gn, view_dir(AZ, EL), 0.30, 1.2, lo=0.22, hi=1.0, band=(0.36, 0.64), roll=45.0)
     r = int(os.environ.get("RES", "1024"))
     C.shoot("vetro-specchietto", objs, "vetro-specchietto.py",
             "door mirror glass (generic small hatchback): convex silvered glass on black backing plate with "
             "mount ring, clip hooks and heater spade contacts",
-            az=-46, el=15, lens=70, fill=0.84, res=(r, r), samples=int(os.environ.get("SAMPLES", "128")))
+            az=AZ, el=EL, lens=70, fill=0.84, res=(r, r), samples=int(os.environ.get("SAMPLES", "128")))

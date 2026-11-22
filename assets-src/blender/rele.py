@@ -425,6 +425,43 @@ def fast_kw():
     return dict(res=(512, 512), samples=32) if FAST else {}
 
 
+SEGS = {"0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc", "5": "afgcd",
+        "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abcdfg", "-": "g", " ": ""}
+
+
+def seven(cv, ch, x, y, w, h, t, col, ghost=None, slant=0.0):
+    """7-segment digit, lower-left corner (x, y)."""
+    g = t * 0.55
+    P = {"a": ((0, 1), (1, 1)), "b": ((1, 1), (1, .5)), "c": ((1, .5), (1, 0)), "d": ((0, 0), (1, 0)),
+         "e": ((0, 0), (0, .5)), "f": ((0, .5), (0, 1)), "g": ((0, .5), (1, .5))}
+    for s, ((u0, v0), (u1, v1)) in P.items():
+        lit = s in SEGS[ch]
+        if not lit and ghost is None:
+            continue
+        ax, ay = x + u0 * w + slant * v0 * h, y + v0 * h
+        bx, by = x + u1 * w + slant * v1 * h, y + v1 * h
+        L = math.hypot(bx - ax, by - ay)
+        ux, uy = (bx - ax) / L, (by - ay) / L
+        cv.seg((ax + ux * g, ay + uy * g), (bx - ux * g, by - uy * g), t, col if lit else ghost)
+
+
+def number(cv, s, cx, cy, h, t, col):
+    w = h * 0.5
+    x = cx - (len(s) * w * 1.5 - w * 0.5) / 2
+    for ch in s:
+        seven(cv, ch, x, cy - h / 2, w, h, t, col)
+        x += w * 1.5
+
+
+def drop(objs, x=None, y=None, z=0.0):
+    """Translate a group so its lowest point rests on z (optionally move to x, y)."""
+    bpy.context.view_layer.update()
+    ps = [(o.matrix_world @ v.co) for o in objs for v in o.data.vertices]
+    dx = 0.0 if x is None else x - (min(p.x for p in ps) + max(p.x for p in ps)) / 2
+    dy = 0.0 if y is None else y - (min(p.y for p in ps) + max(p.y for p in ps)) / 2
+    C.transform_all(objs, T((dx, dy, z - min(p.z for p in ps))))
+
+
 # units: 1 = 10 cm.  Cover 28 x 28 x 25 mm, base at z = 0, blades below.
 HW = 0.14          # cover half width
 HB = 0.035         # base plate height
@@ -517,10 +554,9 @@ def artwork():
         x = cx + 0.024 + k * 0.012
         cv.seg((x, cy), (x + 0.006, cy), lw * 0.7, W)
     # terminal marks (small dots + bars standing for numbers)
-    for x in (cx, sx, sx - 0.012, sx + 0.03):
-        cv.rrect(x, cy - 0.062 if x in (cx, sx) else cy + 0.062, 0.008, 0.004, 0.002, W)
-    # rule + code bars
-    cv.seg((0.02, 0.012), (0.18, 0.012), 0.003, W)
+    for x, yy, lab in ((cx, cy + 0.062, "86"), (cx, cy - 0.062, "85"), (sx, cy - 0.062, "30"),
+                       (sx - 0.012, cy + 0.062, "  "), (sx + 0.03, cy + 0.062, "87")):
+        number(cv, lab, x, yy, 0.012, 0.0022, W)
     M = T((0.0, -HW * 0.99 - 0.0012, 0.135))
     out.append(print_plane("SidePrint", cv.image("SidePrint"), w, h, M, rough=0.45))
     # top: blank code field with a few bars

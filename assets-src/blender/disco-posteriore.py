@@ -28,9 +28,10 @@ def disc(iron, ring, drum):
         (RH, H - 0.035, 0),
         (RH, T + 0.05, 0), (RH + 0.012, T + 0.025, 0),         # hat wall -> fillet
         (RF - 0.03, T + 0.012, 0), (RF - 0.02, T, 0),          # undercut groove
-        (RF, T, 1), (RO - c, T, 0), (RO, T - c, 0),            # outer friction face
-        (RO, c, 0), (RO - c, 0.0, 1),                          # rim
-        (RF, 0.0, 0),                                          # inner friction face
+        (RF, T, 1), (RO - 0.045, T, 0), (RO - 0.04, T + 0.004, 0),   # outer friction face + unworn lip
+        (RO - c, T + 0.004, 0), (RO, T - c, 0),
+        (RO, c, 0), (RO - c, -0.004, 0), (RO - 0.04, -0.004, 0),     # rim
+        (RO - 0.045, 0.0, 1), (RF, 0.0, 0),                          # inner friction face
         (RD + 0.03, 0.0, 0), (RD, -0.012, 2),                  # drum mouth chamfer
         (RD, H - 0.10, 0),                                     # machined drum bore
         (RD - 0.03, H - 0.07, 0), (RB + 0.05, H - 0.07, 0),    # inside of hub face
@@ -69,28 +70,29 @@ def disc(iron, ring, drum):
 
 def build():
     iron = mat_rusty_iron("HatIron", base=0.075, rust=0.55, scale=4.0, seed=2.0)
-    ring = C.mat_machined("FrictionRing", color=0.44, rough=0.20, rings=1100)
+    ring = C.mat_machined("FrictionRing", color=0.26, rough=0.34, rings=1100)
     drum = C.mat_machined("HubMachined", color=0.36, rough=0.28, rings=500)
     # light rust bloom on the friction ring: mix brown in by noise near the rim
     nt = ring.node_tree
     b = next(n for n in nt.nodes if n.type == "BSDF_PRINCIPLED")
     nz = nt.nodes.new("ShaderNodeTexNoise")
     nt.links.new(C._coord(nt), nz.inputs["Vector"])
-    nz.inputs["Scale"].default_value = 3.0
-    nz.inputs["Detail"].default_value = 10.0
+    nz.inputs["Scale"].default_value = 2.2
+    nz.inputs["Detail"].default_value = 12.0
+    nz.inputs["Roughness"].default_value = 0.7
     mr = nt.nodes.new("ShaderNodeMapRange")
-    mr.inputs["From Min"].default_value = 0.58
-    mr.inputs["From Max"].default_value = 0.80
-    mr.inputs["To Max"].default_value = 0.55
+    mr.inputs["From Min"].default_value = 0.62
+    mr.inputs["From Max"].default_value = 0.82
+    mr.inputs["To Max"].default_value = 0.40
     nt.links.new(nz.outputs["Fac"], mr.inputs["Value"])
     mix = nt.nodes.new("ShaderNodeMix")
     mix.data_type = "RGBA"
     nt.links.new(mr.outputs["Result"], mix.inputs["Factor"])
-    mix.inputs["A"].default_value = (0.44, 0.44, 0.444, 1)
-    mix.inputs["B"].default_value = (0.20, 0.085, 0.035, 1)
+    mix.inputs["A"].default_value = (0.26, 0.26, 0.265, 1)
+    mix.inputs["B"].default_value = (0.11, 0.045, 0.018, 1)
     nt.links.new(mix.outputs["Result"], b.inputs["Base Color"])
     rr = nt.nodes.new("ShaderNodeMapRange")
-    rr.inputs["To Min"].default_value = 0.20
+    rr.inputs["To Min"].default_value = 0.34
     rr.inputs["To Max"].default_value = 0.75
     nt.links.new(mr.outputs["Result"], rr.inputs["Value"])
     nt.links.new(rr.outputs["Result"], b.inputs["Roughness"])
@@ -110,5 +112,5 @@ if __name__ == "__main__":
     objs = build()
     C.shoot("disco-posteriore", objs, "disco-posteriore.py",
             "rear brake disc: solid non-vented cast-iron disc with tall drum-in-hat, machined friction ring, 4 bolt holes",
-            az=-34, el=18, lens=70, fill=0.82,
+            az=-34, el=18, lens=70, fill=0.80,
             res=(512, 512) if q else (1024, 1024), samples=32 if q else 128)

@@ -37,6 +37,24 @@ def chaikin(pts, it=4):
     return pts
 
 
+def fillet_poly(pts, radii, n=10):
+    """Polygon with each corner rounded (quadratic blend over a tangent length per corner)."""
+    if not isinstance(radii, (list, tuple)):
+        radii = [radii] * len(pts)
+    out = []
+    m = len(pts)
+    for i in range(m):
+        p, a, b = Vector(pts[i]), Vector(pts[i - 1]), Vector(pts[(i + 1) % m])
+        u, w = (a - p), (b - p)
+        t = min(radii[i], u.length * 0.49, w.length * 0.49)
+        s0, s1 = p + u.normalized() * t, p + w.normalized() * t
+        for k in range(n + 1):
+            q = k / n
+            c = s0 * (1 - q) ** 2 + p * 2 * q * (1 - q) + s1 * q * q
+            out.append((c.x, c.y))
+    return out
+
+
 def resample(poly, n):
     L = [0.0]
     P = list(poly) + [poly[0]]
@@ -534,12 +552,12 @@ def build():
     out = []
     # flange: a ring around the lens, sloping outer edge, sits on the wing
     out.append(slab("Flange", base, [(0.006, -0.03), (0.030, -0.026), (0.034, -0.012), (0.026, 0.010), (0.012, 0.018),
-                                     (-0.004, 0.018), (-0.006, -0.03)], black, bevel=0.003, closed=True))
+                                     (-0.004, 0.018), (-0.006, -0.08), (-0.045, -0.08)], black, bevel=0.003, closed=True))
     # through-body behind the wing, tapering back
-    out.append(slab("Body", base, [(-0.045, -0.03), (-0.048, -0.17), (-0.065, -0.21)], black, bevel=0.006))
+    out.append(slab("Body", base, [(-0.045, -0.08), (-0.048, -0.17), (-0.065, -0.21)], black, bevel=0.006))
     # chrome reflector dish inside the lens
     out.append(dish("Reflector", offset_poly(base, -0.004), SPINE, chrome, 0.075, z0=0.012, ns=12))
-    out.append(lens_shell("Lens", base, SPINE, amber, zedge=0.028, bulge=0.038, rr=0.018, thick=0.014, z0=0.0))
+    out.append(lens_shell("Lens", base, SPINE, amber, zedge=0.026, bulge=0.030, rr=0.018, thick=0.014, z0=0.0))
     out += w5w_bulb(T((0.0, 0.0, -0.12)), mats)
     # spring clip on +X end (zinc steel leaf, riveted low, flaring out under the flange)
     xe = LW / 2 - 0.045
@@ -563,7 +581,7 @@ if __name__ == "__main__":
     matte_floor_in_reflections()
     C.clear()
     objs = build()
-    C.transform_all(objs, Matrix.Rotation(math.radians(-12), 4, "Z") @ Matrix.Rotation(math.radians(64), 4, "X"))
+    C.transform_all(objs, Matrix.Rotation(math.radians(-20), 4, "Z") @ Matrix.Rotation(math.radians(50), 4, "X"))
     C.shoot("freccia-laterale", objs, "freccia-laterale.py",
             "car side repeater indicator: small oval amber lens in a black base flange with chrome reflector and "
             "wedge bulb, spring clip and latch for the wing, twist-lock bulb holder at the back",

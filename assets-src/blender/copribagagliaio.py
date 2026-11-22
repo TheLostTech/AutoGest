@@ -88,22 +88,23 @@ def carpet(name="NeedleFelt", hexc="#2A2B2E", scale=1400.0):
     nz.inputs["Roughness"].default_value = 0.7
     nz2 = nt.nodes.new("ShaderNodeTexNoise")
     nt.links.new(co, nz2.inputs["Vector"])
-    nz2.inputs["Scale"].default_value = 40.0
+    nz2.inputs["Scale"].default_value = 260.0
+    nz2.inputs["Detail"].default_value = 6.0
     mix = nt.nodes.new("ShaderNodeMix")
     mix.data_type = "RGBA"
     mr = nt.nodes.new("ShaderNodeMapRange")
     mr.inputs["From Min"].default_value = 0.25
     mr.inputs["From Max"].default_value = 0.75
-    nt.links.new(_math(nt, "ADD", _math(nt, "MULTIPLY", nz.outputs["Fac"], 0.7),
-                       _math(nt, "MULTIPLY", nz2.outputs["Fac"], 0.3)), mr.inputs["Value"])
+    nt.links.new(_math(nt, "ADD", _math(nt, "MULTIPLY", nz.outputs["Fac"], 0.45),
+                       _math(nt, "MULTIPLY", nz2.outputs["Fac"], 0.55)), mr.inputs["Value"])
     nt.links.new(mr.outputs["Result"], mix.inputs["Factor"])
     mix.inputs["A"].default_value = tuple(c * 0.65 for c in base[:3]) + (1,)
     mix.inputs["B"].default_value = tuple(c * 1.35 for c in base[:3]) + (1,)
     nt.links.new(mix.outputs["Result"], b.inputs["Base Color"])
     bump = nt.nodes.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.75
-    bump.inputs["Distance"].default_value = 0.0012
-    nt.links.new(nz.outputs["Fac"], bump.inputs["Height"])
+    bump.inputs["Strength"].default_value = 0.9
+    bump.inputs["Distance"].default_value = 0.0015
+    nt.links.new(_math(nt, "ADD", nz.outputs["Fac"], _math(nt, "MULTIPLY", nz2.outputs["Fac"], 0.6)), bump.inputs["Height"])
     nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
     return m
 
@@ -258,11 +259,11 @@ def prism_bm(bm, poly, z0, z1, M=None, mat=0):
     n = len(P)
     fs = [bm.faces.new((a[k], a[(k + 1) % n], b[(k + 1) % n], b[k])) for k in range(n)]
     fs += [bm.faces.new(a[::-1]), bm.faces.new(b)]
-    bmesh.ops.recalc_face_normals(bm, faces=fs)
     for f in fs:
         f.material_index = mat
     if M is not None:
         bmesh.ops.transform(bm, matrix=M, verts=a + b)
+    bmesh.ops.recalc_face_normals(bm, faces=fs)
     return fs
 
 
@@ -383,7 +384,7 @@ def blind_z(y, x):
     z_floor = 0.0055
     z = z_floor + (SLOT.z - z_floor) * (1 - sstep(0.0, 0.42, t)) ** 1.2
     # faint transverse ripples and edge curl
-    z += 0.0010 * math.sin(t * 19.0 + x * 3.0) * sstep(0.1, 0.4, t)
+    z += 0.0004 * math.sin(t * 13.0 + x * 2.0) * sstep(0.1, 0.4, t)
     z += 0.0018 * sstep(0.85, 1.0, abs(x) / BW)
     return z
 
@@ -410,7 +411,17 @@ def blind(fab):
     so = ob.modifiers.new("Solid", "SOLIDIFY")
     so.thickness = 0.0016
     so.offset = 0.0
-    return C.finalize(ob, angle=50)
+    blind_ob = C.finalize(ob, angle=50)
+    out = [blind_ob]
+    # stitched hems along both side edges
+    for sx in (-1, 1):
+        x = sx * (BW - 0.004)
+        pts = []
+        for j in range(ny + 1):
+            y = SLOT.y - 0.004 + (BAR_Y + 0.010 - SLOT.y + 0.004) * j / ny
+            pts.append(Vector((x, y, blind_z(y, x) + 0.0008)))
+        out.append(tube("Hem", pts, 0.0024, fab, res=3))
+    return out
 
 
 def bar(black, silver):
@@ -448,7 +459,7 @@ def build():
     steel = zinc("PinSteel")
     fab = fabric("BlindFabric", hexc="#222326", period=0.0028)
     objs = cassette(alu, black, steel)
-    objs.append(blind(fab))
+    objs += blind(fab)
     objs += bar(black, silver)
     return objs
 

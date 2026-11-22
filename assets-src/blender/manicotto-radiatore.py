@@ -12,7 +12,7 @@ import common as C
 Q = bool(os.environ.get("QUICK"))
 
 # units: 1 = 10 cm
-RO, RI = 0.21, 0.16           # hose outer / inner radius (42 / 32 mm)
+RO, RI = 0.225, 0.165         # hose outer / inner radius (45 / 33 mm)
 SEG = 64
 
 
@@ -131,12 +131,12 @@ def mat_hose(name="EPDM"):
     mc = nt.nodes.new("ShaderNodeMix")
     mc.data_type = "RGBA"
     nt.links.new(mr.outputs["Result"], mc.inputs["Factor"])
-    mc.inputs["A"].default_value = (0.024, 0.024, 0.025, 1)
-    mc.inputs["B"].default_value = (0.065, 0.064, 0.062, 1)
+    mc.inputs["A"].default_value = (0.018, 0.018, 0.019, 1)
+    mc.inputs["B"].default_value = (0.050, 0.049, 0.048, 1)
     nt.links.new(mc.outputs["Result"], b.inputs["Base Color"])
     rr = nt.nodes.new("ShaderNodeMapRange")
-    rr.inputs["To Min"].default_value = 0.48
-    rr.inputs["To Max"].default_value = 0.78
+    rr.inputs["To Min"].default_value = 0.42
+    rr.inputs["To Max"].default_value = 0.68
     nt.links.new(mr.outputs["Result"], rr.inputs["Value"])
     nt.links.new(rr.outputs["Result"], b.inputs["Roughness"])
     g = nt.nodes.new("ShaderNodeTexNoise")
@@ -152,8 +152,8 @@ def mat_hose(name="EPDM"):
 
 
 # ----------------------------------------------------------------- parts
-CTRL = [(-2.05, -0.55, 0.0), (-1.55, -0.45, 0.0), (-1.05, -0.25, 0.08), (-0.55, 0.05, 0.45), (-0.05, 0.2, 0.95),
-        (0.55, 0.1, 1.2), (1.15, -0.15, 1.05), (1.55, -0.35, 0.65), (1.70, -0.45, 0.20), (1.72, -0.47, -0.15)]
+CTRL = [(-1.80, -1.40, 0.02), (-1.55, -0.95, 0.02), (-1.20, -0.45, 0.10), (-0.70, 0.0, 0.45), (-0.10, 0.2, 0.95),
+        (0.55, 0.1, 1.2), (1.15, -0.15, 1.05), (1.55, -0.40, 0.65), (1.80, -0.70, 0.30), (2.05, -1.05, 0.10)]
 CUFF = 0.45                     # cuff length (units)
 
 
@@ -197,8 +197,8 @@ def clamp(fr, L, at_start, steel):
     R = Matrix.Rotation(ang, 4, "Z")
     for k, off in enumerate((-0.035, 0.035)):
         bm = bmesh.new()
-        C.box_bm(bm, 0.17, th, w * (0.9 if k else 0.62), center=(rb + 0.08, off, 0.0))
-        C.box_bm(bm, 0.05, th + 0.004, w * (0.9 if k else 0.62), center=(rb + 0.18, off * 1.25, 0.0))
+        C.box_bm(bm, 0.24, th, w * (0.9 if k else 0.62), center=(rb + 0.11, off, 0.0))
+        C.box_bm(bm, 0.06, th + 0.006, w * (0.9 if k else 0.62), center=(rb + 0.24, off * 1.3, 0.0))
         ear = C.mesh_obj("ClampEar", bm, [steel])
         ear.matrix_world = M @ R
         C.add_bevel(ear, 0.007, segments=2, angle=30)

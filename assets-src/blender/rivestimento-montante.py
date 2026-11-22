@@ -89,22 +89,23 @@ def carpet(name="NeedleFelt", hexc="#2A2B2E", scale=1400.0):
     nz.inputs["Roughness"].default_value = 0.7
     nz2 = nt.nodes.new("ShaderNodeTexNoise")
     nt.links.new(co, nz2.inputs["Vector"])
-    nz2.inputs["Scale"].default_value = 40.0
+    nz2.inputs["Scale"].default_value = 260.0
+    nz2.inputs["Detail"].default_value = 6.0
     mix = nt.nodes.new("ShaderNodeMix")
     mix.data_type = "RGBA"
     mr = nt.nodes.new("ShaderNodeMapRange")
     mr.inputs["From Min"].default_value = 0.25
     mr.inputs["From Max"].default_value = 0.75
-    nt.links.new(_math(nt, "ADD", _math(nt, "MULTIPLY", nz.outputs["Fac"], 0.7),
-                       _math(nt, "MULTIPLY", nz2.outputs["Fac"], 0.3)), mr.inputs["Value"])
+    nt.links.new(_math(nt, "ADD", _math(nt, "MULTIPLY", nz.outputs["Fac"], 0.45),
+                       _math(nt, "MULTIPLY", nz2.outputs["Fac"], 0.55)), mr.inputs["Value"])
     nt.links.new(mr.outputs["Result"], mix.inputs["Factor"])
     mix.inputs["A"].default_value = tuple(c * 0.65 for c in base[:3]) + (1,)
     mix.inputs["B"].default_value = tuple(c * 1.35 for c in base[:3]) + (1,)
     nt.links.new(mix.outputs["Result"], b.inputs["Base Color"])
     bump = nt.nodes.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.75
-    bump.inputs["Distance"].default_value = 0.0012
-    nt.links.new(nz.outputs["Fac"], bump.inputs["Height"])
+    bump.inputs["Strength"].default_value = 0.9
+    bump.inputs["Distance"].default_value = 0.0015
+    nt.links.new(_math(nt, "ADD", nz.outputs["Fac"], _math(nt, "MULTIPLY", nz2.outputs["Fac"], 0.6)), bump.inputs["Height"])
     nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
     return m
 
@@ -259,11 +260,11 @@ def prism_bm(bm, poly, z0, z1, M=None, mat=0):
     n = len(P)
     fs = [bm.faces.new((a[k], a[(k + 1) % n], b[(k + 1) % n], b[k])) for k in range(n)]
     fs += [bm.faces.new(a[::-1]), bm.faces.new(b)]
-    bmesh.ops.recalc_face_normals(bm, faces=fs)
     for f in fs:
         f.material_index = mat
     if M is not None:
         bmesh.ops.transform(bm, matrix=M, verts=a + b)
+    bmesh.ops.recalc_face_normals(bm, faces=fs)
     return fs
 
 
@@ -331,8 +332,8 @@ TH = 0.0032
 
 
 def width(z):
-    t = z / L
-    return 0.084 + 0.040 * (1 - t) ** 1.4 + 0.045 * sstep(0.16, 0.0, t)
+    t = min(1.0, max(0.0, z / L))
+    return 0.092 + 0.036 * (1 - t) ** 1.4 + 0.050 * sstep(0.17, 0.0, t)
 
 
 def xc(z):
@@ -355,10 +356,11 @@ def shape(p, u, v, w):
     z = max(z, 0.0) if s > 0 else (0.012 * (u * u))  # lower end slightly curved
     x = xc(z) + u * width(z) / 2
     y = -crown(u) + v * TH / 2
+    y -= 0.006 * sstep(0.150, 0.125, z) * (1 - u * u)     # raised lower section with a moulded step
     return Vector((x, y, z))
 
 
-BELT_Z = 0.545
+BELT_Z = 0.540
 ADJ_Z0, ADJ_Z1 = 0.330, 0.465
 
 
@@ -393,10 +395,10 @@ def slot_ring(name, mat, w, h, r, frame_w, lift, P):
 def trim(grey):
     cuts = []
     pb = surf(0.0, BELT_Z)
-    cuts.append(cutter("BeltCut", lambda b: C.box_bm(b, 0.050, 0.08, 0.011, center=(pb.x, 0.0, pb.z))))
+    cuts.append(cutter("BeltCut", lambda b: C.box_bm(b, 0.058, 0.08, 0.013, center=(pb.x, 0.0, pb.z))))
     pa = surf(0.0, (ADJ_Z0 + ADJ_Z1) / 2)
     cuts.append(cutter("AdjCut", lambda b: C.box_bm(b, 0.026, 0.08, ADJ_Z1 - ADJ_Z0, center=(pa.x, 0.0, pa.z))))
-    ob = box_soft("PillarTrim", [grey], (-1, -1, 0), (1, 1, 1), n=(6, 1, 16), levels=3, shape=shape, angle=60,
+    ob = box_soft("PillarTrim", [grey], (-1, -1, 0), (1, 1, 1), n=(6, 1, 32), levels=3, shape=shape, angle=60,
                   cutters=cuts)
     return ob
 
@@ -404,7 +406,7 @@ def trim(grey):
 def details(black, grey2):
     out = []
     pb = surf(0.0, BELT_Z)
-    out.append(slot_ring("BeltBezel", black, 0.048, 0.009, 0.0045, 0.008, 0.0035, pb))
+    out.append(slot_ring("BeltBezel", black, 0.056, 0.011, 0.0055, 0.010, 0.0045, pb))
     pa = surf(0.0, (ADJ_Z0 + ADJ_Z1) / 2)
     out.append(slot_ring("AdjBezel", black, 0.024, ADJ_Z1 - ADJ_Z0 - 0.002, 0.010, 0.0055, 0.0025, pa))
     # dark backing of the adjuster track, seen through the slot
@@ -423,7 +425,7 @@ def details(black, grey2):
         out.append(solid("Rib", bm, [grey2], bevel=0.0008))
     # belt webbing stub through the guide slot would make it a seat belt: keep the slot empty, show dark gap
     bm = bmesh.new()
-    C.box_bm(bm, 0.054, 0.004, 0.016, center=(pb.x, pb.y + 0.012, pb.z))
+    C.box_bm(bm, 0.062, 0.004, 0.018, center=(pb.x, pb.y + 0.012, pb.z))
     out.append(C.mesh_obj("BeltBack", bm, [black]))
     return out
 
@@ -435,7 +437,7 @@ def lay(objs):
 
 
 def build():
-    grey = grained("PillarGrey", v=0.050, rough=0.6, scale=560.0)
+    grey = grained("PillarGrey", v=0.060, rough=0.6, scale=560.0)
     grey2 = grained("SliderGrey", v=0.036, rough=0.5)
     black = grained("PillarBlack", v=0.016, rough=0.48)
     objs = [trim(grey)]

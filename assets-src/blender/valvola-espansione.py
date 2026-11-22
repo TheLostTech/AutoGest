@@ -42,13 +42,13 @@ def mat_milled(name="MilledAlu", base=0.62, rough=0.24):
     wv = nt.nodes.new("ShaderNodeTexWave")
     wv.wave_type = "RINGS"
     wv.rings_direction = "SPHERICAL"
-    wv.inputs["Scale"].default_value = 9.0
+    wv.inputs["Scale"].default_value = 14.0
     wv.inputs["Distortion"].default_value = 0.4
     wv.inputs["Detail"].default_value = 2.0
     nt.links.new(off.outputs[0], wv.inputs["Vector"])
     bump = nt.nodes.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.05
-    bump.inputs["Distance"].default_value = 0.002
+    bump.inputs["Strength"].default_value = 0.15
+    bump.inputs["Distance"].default_value = 0.003
     nt.links.new(wv.outputs["Fac"], bump.inputs["Height"])
     g = nt.nodes.new("ShaderNodeTexNoise")
     nt.links.new(co, g.inputs["Vector"])
@@ -139,9 +139,9 @@ def head(steel, dark, alu):
 
 
 def build():
-    alu = mat_milled("MilledAlu", 0.60, 0.24)
+    alu = mat_milled("MilledAlu", 0.50, 0.30)
     bore = C.principled("BoreAlu", (0.30, 0.30, 0.30), metallic=1.0, rough=0.35)
-    steel = C.principled("Stainless", (0.66, 0.66, 0.65), metallic=1.0, rough=0.18)
+    steel = C.principled("Stainless", (0.62, 0.62, 0.61), metallic=1.0, rough=0.27)
     C.add_noise_bump(steel, scale=60, strength=0.04, distance=0.002, rough_var=0.05)
     dark = C.principled("DarkPlug", (0.08, 0.08, 0.085), metallic=0.8, rough=0.35)
     objs = block(alu, bore) + head(steel, dark, alu)

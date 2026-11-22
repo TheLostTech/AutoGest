@@ -14,6 +14,7 @@ XE = 0.575          # beam half length
 BX = 0.445          # crash box centre x
 DEPTH = 0.052       # beam depth (y)
 HT = 0.114          # beam height (z)
+ALU_V = 0.60        # raw aluminium base colour (0.78 + the white floor in reflections blew it out)
 
 
 def yc(x):
@@ -96,8 +97,7 @@ def beam(alu, dark):
     cutters.append(C.mesh_obj("Slots", cb, [alu]))
     for c in cutters:
         m = C.add_boolean(ob, c)
-        m.use_self = True
-        m.use_hole_tolerant = True
+        m.solver = "MANIFOLD"
     C.add_bevel(ob, 0.0012, segments=2, angle=40)
     return C.finalize(ob, angle=40, remove=cutters)
 
@@ -180,11 +180,72 @@ def tow_boss(alu, dark):
     return out
 
 
+def glossy_dome(center, radius, K, stops, name="Dome"):
+    """Big sphere seen only by glossy rays (replaces the plain studio world in the
+    reflections): emission brightness ramps with the direction from the centre against
+    K, so differently oriented flats of a polished part reflect different greys."""
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=64, v_segments=32, radius=radius)
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    em = nt.nodes.new("ShaderNodeEmission")
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    nrm = nt.nodes.new("ShaderNodeVectorMath")
+    nrm.operation = "NORMALIZE"
+    nt.links.new(tc.outputs["Object"], nrm.inputs[0])
+    dot = nt.nodes.new("ShaderNodeVectorMath")
+    dot.operation = "DOT_PRODUCT"
+    nt.links.new(nrm.outputs[0], dot.inputs[0])
+    dot.inputs[1].default_value = tuple(Vector(K).normalized())
+    mr = nt.nodes.new("ShaderNodeMapRange")
+    mr.inputs["From Min"].default_value = -1.0
+    mr.inputs["From Max"].default_value = 1.0
+    nt.links.new(dot.outputs["Value"], mr.inputs["Value"])
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    cr = ramp.color_ramp
+    cr.interpolation = "EASE"
+    cr.elements[0].position, cr.elements[0].color = stops[0][0], (stops[0][1],) * 3 + (1,)
+    cr.elements[1].position, cr.elements[1].color = stops[-1][0], (stops[-1][1],) * 3 + (1,)
+    for pos, val in stops[1:-1]:
+        e = cr.elements.new(pos)
+        e.color = (val, val, val, 1)
+    nt.links.new(mr.outputs["Result"], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], em.inputs["Color"])
+    nt.links.new(em.outputs[0], out.inputs["Surface"])
+    ob = C.mesh_obj(name, bm, [m])
+    ob.location = center
+    ob.visible_camera = False
+    ob.visible_diffuse = False
+    ob.visible_shadow = False
+    ob.visible_transmission = False
+    ob.visible_volume_scatter = False
+    return ob
+
+
+def hide_floor_from_glossy():
+    """The white shadow catcher reflected in the satin metal washed it out to white:
+    hide it from glossy rays only (the contact shadow stays)."""
+    orig = C._area
+
+    def _area(name, *a, **k):
+        pl = bpy.data.objects.get("ShadowCatcher")
+        if pl is not None:
+            pl.visible_glossy = False
+        ob = orig(name, *a, **k)
+        if name == "Rim":       # mirrored flat across the whole top face
+            ob.visible_glossy = False
+        return ob
+    C._area = _area
+
+
 def build():
-    alu = mat_alu("Extrusion")
-    alu2 = mat_alu("CrashBoxAlu", v=0.70, rough=0.38, streak=300.0)
+    alu = mat_alu("Extrusion", v=ALU_V, rough=0.36)
+    alu2 = mat_alu("CrashBoxAlu", v=ALU_V * 0.94, rough=0.40, streak=300.0)
     dark = C.principled("Bore", (0.08, 0.08, 0.085), metallic=1.0, rough=0.5)
-    zinc = C.principled("ZincFlange", (0.66, 0.66, 0.64), metallic=1.0, rough=0.34)
+    zinc = C.principled("ZincFlange", (0.50, 0.51, 0.52), metallic=1.0, rough=0.34)
     C.add_noise_bump(zinc, scale=60, strength=0.05, distance=0.0005, rough_var=0.1)
     weld = C.principled("WeldBead", (0.42, 0.40, 0.38), metallic=1.0, rough=0.55)
     C.add_noise_bump(weld, scale=900, strength=0.6, distance=0.0006)
@@ -194,15 +255,19 @@ def build():
         objs.append(box)
         objs += flange(sx, yend, zinc, weld)
     objs += tow_boss(alu, dark)
-    C.transform_all(objs, Matrix.Rotation(math.radians(-24), 4, "Z"))
+    C.transform_all(objs, Matrix.Rotation(math.radians(12), 4, "Z"))
     return objs
 
 
 if __name__ == "__main__":
+    hide_floor_from_glossy()
     C.clear()
     objs = build()
+    # faces turned down/forward reflect the black lower studio world: a glossy-only dome
+    # gives them a soft grey instead, brightening towards the top
+    glossy_dome(Vector((0, 0, 0)), 8.0, (-0.25, -0.35, 0.90), [(0.0, 0.10), (0.4, 0.22), (0.7, 0.50), (1.0, 0.80)])
     r = int(os.environ.get("RES", "1024"))
     C.shoot("traversa-paraurti", objs, "traversa-paraurti.py",
             "front bumper reinforcement beam (generic small hatchback): curved double-cell aluminium extrusion with "
             "mounting slots and tow-eye boss, two aluminium crash boxes with crush beads and steel bolting flanges",
-            az=-18, el=30, lens=70, fill=0.9, res=(r, r), samples=int(os.environ.get("SAMPLES", "128")))
+            az=-30, el=30, lens=70, fill=0.92, res=(r, r), samples=int(os.environ.get("SAMPLES", "128")))

@@ -121,9 +121,6 @@ def ribs(mat):
     ob = C.mesh_obj("Ribs", bm, [mat])
     C.add_bevel(ob, 0.0008, segments=1, angle=40)
     out.append(C.finalize(ob, angle=40))
-    # longitudinal wall along the upper member (closes the channel box)
-    pts = [Vector((-0.62 + 1.24 * k / 200, 0.0)) for k in range(201)]
-    pts = [Vector((p.x, ZI1 + 0.002)) for p in pts]
     return out
 
 
@@ -242,4 +239,4 @@ if __name__ == "__main__":
             "front-end carrier / radiator support (generic small hatchback): black glass-filled plastic frame with ribbed "
             "channels around the radiator opening, headlamp mounting wings with metal-insert bosses, bonnet latch with "
             "release cable, bump stops",
-            az=-28, el=18, lens=70, fill=0.88, res=(r, r), samples=int(os.environ.get("SAMPLES", "128")))
+            az=-34, el=20, lens=70, fill=0.88, res=(r, r), samples=int(os.environ.get("SAMPLES", "128")))

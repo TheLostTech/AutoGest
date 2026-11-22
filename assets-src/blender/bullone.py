@@ -57,7 +57,7 @@ def grade_marks(zinc):
     for i in range(3):
         th = math.radians(90 + 120 * i)
         Mx = Matrix.Rotation(th, 4, "Z") @ Matrix.Translation((0.40, 0, -K - 0.004))
-        C.box_bm(bm, 0.22, 0.032, 0.022, matrix=Mx)
+        C.box_bm(bm, 0.26, 0.045, 0.026, matrix=Mx)
     ob = C.mesh_obj("Marks", bm, [zinc])
     C.add_bevel(ob, 0.007, segments=2, angle=30)
     return C.finalize(ob, angle=40)

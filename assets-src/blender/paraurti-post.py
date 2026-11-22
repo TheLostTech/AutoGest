@@ -41,9 +41,9 @@ def plan(s):
 
 
 # ------------------------------------------------------------------ section (d behind face, z)
-SEC = P.bspline([(0.13, 0.0), (0.06, 0.0), (0.028, 0.008), (0.014, 0.04), (0.006, 0.10), (0.000, 0.15),
-                 (-0.008, 0.20), (-0.013, 0.28), (-0.012, 0.36), (-0.004, 0.43), (0.014, 0.468), (0.045, 0.488),
-                 (0.10, 0.497), (0.20, 0.50)], NT + 1)
+SEC = P.bspline([(0.13, 0.0), (0.06, 0.0), (0.030, 0.008), (0.016, 0.04), (0.008, 0.10), (0.002, 0.15),
+                 (-0.006, 0.20), (-0.008, 0.26), (-0.004, 0.33), (0.004, 0.39), (0.018, 0.44), (0.040, 0.474),
+                 (0.075, 0.492), (0.12, 0.499), (0.20, 0.50)], NT + 1)
 _face = [p for p in SEC if 0.01 < p.y < 0.47]
 
 
@@ -151,8 +151,7 @@ def shell(paint, raw, black, rawb):
         bmc.to_mesh(c.data)
         bmc.free()
         m = C.add_boolean(ob, c)
-        m.use_self = True
-        m.use_hole_tolerant = True
+        m.solver = "MANIFOLD"
     C.add_bevel(ob, 0.0016, segments=2, angle=45)
     return C.finalize(ob, angle=40, remove=cuts)
 
@@ -315,5 +314,5 @@ if __name__ == "__main__":
             "rear bumper cover (generic small hatchback), metallic grey paint: wrap-around shell with top load ledge, "
             "black lower diffuser with strakes and rear fog lamp, red corner reflectors, parking-sensor holes, "
             "number-plate recess with plate lamps, mounting tabs",
-            az=-32, el=16, lens=70, fill=0.88, fill_w=0.92, fill_h=0.85, res=(r, r),
+            az=-32, el=19, lens=70, fill=0.88, fill_w=0.92, fill_h=0.85, res=(r, r),
             samples=int(os.environ.get("SAMPLES", "128")))

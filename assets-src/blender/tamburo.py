@@ -1,8 +1,8 @@
 """Rear brake drum (tamburo freno posteriore) as removed from a small car, shown from the
-open side: cast-iron drum with circumferential cooling ribs and a reinforcing band at the
+open side: cast-iron drum with axial cooling fins and a reinforcing band at the
 mouth, machined inner braking surface with turning marks and a slight wear lip, closed
 end with 4 wheel-bolt holes and an adjuster inspection hole, central hub boss with the
-pressed-in wheel bearing (seal and inner race) and a castellated retaining nut.
+pressed-in wheel bearing (seal and inner race) (stub axle removed).
 1 unit ~ 10 cm (203 mm drum)."""
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -19,19 +19,24 @@ PCD = 0.50
 def drum(iron, mach):
     P = [(0.25, -0.10, 2), (0.40, -0.10, 0), (0.43, -0.07, 0), (0.43, -0.012, 0), (0.46, 0.0, 0),
          (1.08, 0.0, 0), (1.13, 0.03, 0), (1.15, 0.08, 0)]
-    # circumferential cooling ribs on the outer wall
-    z = 0.12
-    for i in range(5):
-        P += [(1.15, z, 0), (1.175, z + 0.012, 0), (1.19, z + 0.03, 0), (1.19, z + 0.045, 0),
-              (1.175, z + 0.062, 0), (1.15, z + 0.074, 0)]
-        z += 0.088
-    P += [(1.15, 0.56, 0), (1.21, 0.585, 0), (1.235, 0.61, 0), (1.235, HT - 0.012, 0), (1.22, HT, 0),
+    # body (axial cooling fins added by the lathe modifier) and reinforcing band at the mouth
+    P += [(1.15, 0.12, 0), (1.15, 0.30, 0), (1.15, 0.50, 0), (1.15, 0.545, 0), (1.21, 0.575, 0), (1.235, 0.60, 0),
+          (1.235, HT - 0.012, 0), (1.22, HT, 1),
           (RD + 0.035, HT, 0), (RD + 0.008, HT - 0.012, 0),
           (RD + 0.004, HT - 0.05, 1),                 # unworn lip at the mouth
           (RD, HT - 0.07, 1), (RD, 0.13, 1), (RD + 0.004, 0.11, 0),
           (RD - 0.04, 0.085, 0), (0.62, 0.085, 0), (0.50, 0.10, 0), (0.45, 0.16, 0),
           (0.42, 0.22, 0), (0.25, 0.22, 2)]
-    ob = C.lathe("Drum", P, [iron, mach, mach], steps=220)
+    NF = 30
+
+    def fins(r, z, t):
+        if r < 1.149 or z < 0.07 or z > 0.56:
+            return r
+        f = (t * NF / math.tau) % 1.0
+        h = C.smoothstep(0.30, 0.40, f) * (1 - C.smoothstep(0.60, 0.70, f))
+        taper = C.smoothstep(0.07, 0.13, z) * (1 - C.smoothstep(0.52, 0.56, z)) if z > 0.3 else C.smoothstep(0.0, 0.12, z)
+        return r + 0.045 * h * taper
+    ob = C.lathe("Drum", P, [iron, mach, mach], steps=NF * 10, mod=fins)
     cb = bmesh.new()
     for k in range(4):
         th = math.radians(45 + 90 * k)
@@ -62,8 +67,8 @@ def bearing(steel, seal, mach):
 
 
 def build():
-    iron = mat_rusty_iron("DrumIron", base=0.08, rust=0.65, scale=3.5, seed=1.3)
-    mach = C.mat_machined("BrakingSurface", color=0.40, rough=0.24, rings=900)
+    iron = mat_rusty_iron("DrumIron", base=0.08, rust=0.45, scale=3.5, seed=1.3)
+    mach = C.mat_machined("BrakingSurface", color=0.55, rough=0.30, rings=900)
     # faint brown tint and darker bands in the worn track
     nt = mach.node_tree
     b = next(n for n in nt.nodes if n.type == "BSDF_PRINCIPLED")
@@ -81,11 +86,11 @@ def build():
     mr.inputs["From Min"].default_value = 0.3
     mr.inputs["From Max"].default_value = 0.75
     mr.inputs["To Min"].default_value = 0.0
-    mr.inputs["To Max"].default_value = 0.45
+    mr.inputs["To Max"].default_value = 0.30
     nt.links.new(nz.outputs["Fac"], mr.inputs["Value"])
     nt.links.new(mr.outputs["Result"], mix.inputs["Factor"])
-    mix.inputs["A"].default_value = (0.42, 0.42, 0.42, 1)
-    mix.inputs["B"].default_value = (0.20, 0.15, 0.12, 1)
+    mix.inputs["A"].default_value = (0.56, 0.56, 0.56, 1)
+    mix.inputs["B"].default_value = (0.30, 0.24, 0.20, 1)
     nt.links.new(mix.outputs["Result"], b.inputs["Base Color"])
     steel = C.principled("SealSteel", (0.55, 0.55, 0.56), metallic=1.0, rough=0.3)
     seal = C.mat_rubber("SealRubber")

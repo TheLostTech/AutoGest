@@ -76,7 +76,7 @@ def parking_lever(zinc, ecoat, spring):
     d = (tip - o)
     nrm = Vector((-d.y, d.x, 0)).normalized()
     for i in range(25):                       # rounded tip
-        a = math.atan2(nrm.y, nrm.x) + math.pi * i / 24
+        a = math.atan2(-nrm.y, -nrm.x) + math.pi * i / 24
         pts.append(tip + Vector((0.075 * math.cos(a), 0.075 * math.sin(a), 0)))
     bm = bmesh.new()
     bot = [bm.verts.new((p.x, p.y, ZL)) for p in pts]

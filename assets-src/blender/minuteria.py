@@ -231,7 +231,7 @@ def _fine_bump(m, scale=900.0, strength=0.08, distance=0.0004):
     return bump
 
 
-def mat_zinc(name="Zinc", tint=(0.60, 0.62, 0.66), rough=0.30, var=0.10):
+def mat_zinc(name="Zinc", tint=(0.50, 0.515, 0.55), rough=0.27, var=0.12):
     """clear/blue passivated zinc plating: bright, slightly bluish, softly mottled."""
     m = C.principled(name, tint, metallic=1.0, rough=rough)
     t2 = tuple(x * 0.86 for x in tint)
@@ -243,8 +243,8 @@ def mat_zinc(name="Zinc", tint=(0.60, 0.62, 0.66), rough=0.30, var=0.10):
 
 def mat_zinc_flake(name="ZincFlake"):
     """dull silver zinc-flake (Geomet-like) coating used on modern chassis screws."""
-    m = C.principled(name, (0.55, 0.56, 0.57), metallic=0.85, rough=0.42)
-    _mottle(m, (0.58, 0.59, 0.60, 1), (0.47, 0.48, 0.50, 1), scale=5.0, r_a=0.38, r_b=0.48)
+    m = C.principled(name, (0.40, 0.41, 0.42), metallic=1.0, rough=0.36)
+    _mottle(m, (0.42, 0.43, 0.44, 1), (0.33, 0.34, 0.355, 1), scale=5.0, r_a=0.32, r_b=0.42)
     _fine_bump(m, 1400.0, 0.18, 0.0003)
     return m
 
@@ -278,18 +278,19 @@ def mat_stainless(name="Stainless", rough=0.22, aniso_axis=None):
     m = C.principled(name, (0.66, 0.65, 0.63), metallic=1.0, rough=rough)
     _mottle(m, (0.68, 0.67, 0.65, 1), (0.60, 0.595, 0.58, 1), scale=4.0,
             r_a=rough - 0.04, r_b=rough + 0.08)
-    # brushed: stretched noise bump
+    # brushed: noise stretched along the brushing direction (object X, or UV U)
     nt = m.node_tree
     b = _b(m)
     mp = nt.nodes.new("ShaderNodeMapping")
-    nt.links.new(C._coord(nt, "UV" if aniso_axis == "UV" else "Object"), mp.inputs["Vector"])
-    mp.inputs["Scale"].default_value = (2000.0, 25.0, 25.0) if aniso_axis != "UV" else (1.0, 1.0, 1.0)
+    uv = aniso_axis == "UV"
+    nt.links.new(C._coord(nt, "UV" if uv else "Object"), mp.inputs["Vector"])
+    mp.inputs["Scale"].default_value = (8.0, 1800.0, 1.0) if uv else (25.0, 1800.0, 1800.0)
     nz = nt.nodes.new("ShaderNodeTexNoise")
-    nz.inputs["Scale"].default_value = 1.0 if aniso_axis != "UV" else 2000.0
-    nz.inputs["Detail"].default_value = 4.0
+    nz.inputs["Scale"].default_value = 1.0
+    nz.inputs["Detail"].default_value = 3.0
     nt.links.new(mp.outputs["Vector"], nz.inputs["Vector"])
     bump = nt.nodes.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.08
+    bump.inputs["Strength"].default_value = 0.10
     bump.inputs["Distance"].default_value = 0.0003
     nt.links.new(nz.outputs["Fac"], bump.inputs["Height"])
     nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])

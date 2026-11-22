@@ -197,7 +197,7 @@ def build():
     tone = mat_rusty_iron("ToneSteel", base=0.20, rust=0.4, scale=8.0, seed=9.0, metal=0.9)
     objs = wheel_flange(flange, cap) + studs(steel) + bearing_body(iron, mach, seal, tone)
     # axis horizontal, wheel side facing the camera side (-Y), turned a little
-    C.transform_all(objs, Matrix.Rotation(math.radians(-28), 4, "Z") @ Matrix.Rotation(math.radians(90), 4, "X"))
+    C.transform_all(objs, Matrix.Rotation(math.radians(-42), 4, "Z") @ Matrix.Rotation(math.radians(90), 4, "X"))
     lowest = min((o.matrix_world @ v.co).z for o in objs for v in o.data.vertices)
     C.transform_all(objs, Matrix.Translation((0, 0, -lowest)))
     return objs
@@ -209,5 +209,5 @@ if __name__ == "__main__":
     objs = build()
     C.shoot("mozzo-posteriore", objs, "mozzo-posteriore.py",
             "rear wheel hub bearing unit: wheel flange with 4 studs and dust cap, sealed bearing body with square 4-bolt mounting flange, toothed ABS ring",
-            az=22, el=18, lens=70, fill=0.84,
+            az=22, el=20, lens=70, fill=0.80,
             res=(512, 512) if q else (1024, 1024), samples=32 if q else 128)

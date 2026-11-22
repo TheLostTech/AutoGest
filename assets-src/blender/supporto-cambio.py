@@ -207,6 +207,44 @@ def pad(alu, steel):
     return out
 
 
+def body_bracket(paint, steel):
+    """black stamped body-side bracket behind the eye, held by the through-bolt."""
+    out = []
+    yb0, yb1 = EYE_HL + 0.10, EYE_HL + 0.16
+    pts = []
+    for i in range(24):
+        a = math.pi / 2 + math.pi * i / 23
+        pts.append((0.24 * math.cos(a), 0.24 * math.sin(a)))
+    pts += [(0.10, -0.24), (0.62, 0.20), (0.62, 0.52), (0.30, 0.52), (0.0, 0.24)]
+    bm = bmesh.new()
+    C.sweep(bm, [(Vector((0, y, 0)), Vector((1, 0, 0)), Vector((0, 0, 1)), pts) for y in (yb0, yb1)])
+    C.fix_normals(bm)
+    out.append(fin(C.mesh_obj("BodyBracket", bm, [paint]), bevel=0.015))
+    # foot bent over toward -Y with two bolt holes
+    bm = bmesh.new()
+    C.box_bm(bm, 0.34, 0.50, 0.05, center=(0.46, yb1 - 0.25, 0.545))
+    cb = bmesh.new()
+    for x in (0.38, 0.54):
+        C.cyl_bm(cb, 0.04, 0.3, 0.8, seg=24, matrix=Matrix.Translation((x, yb1 - 0.30, 0)))
+    out.append(fin(C.mesh_obj("Foot", bm, [paint]), bevel=0.012, cutters=[C.mesh_obj("FootHoles", cb, [])]))
+    # through-bolt: head + washer on the front face, nut at the back
+    M = RX.copy()
+    P = [(0.0, -0.255, 0), (0.16, -0.255, 0), (0.16, -0.23, 0), (0.0, -0.23, 0)]
+    out.append(ylathe("Washer", P, [steel], steps=48))
+    bm = bmesh.new()
+    C.cyl_bm(bm, 0.13, -0.33, -0.255, seg=6, matrix=M @ Matrix.Rotation(math.pi / 6, 4, "Z"))
+    out.append(fin(C.mesh_obj("BoltHead", bm, [steel]), bevel=0.012))
+    bm = bmesh.new()
+    C.cyl_bm(bm, 0.13, yb1, yb1 + 0.09, seg=6, matrix=M @ Matrix.Rotation(math.pi / 6, 4, "Z"))
+    out.append(fin(C.mesh_obj("Nut", bm, [steel]), bevel=0.012))
+    P = [(0.0, -0.26, 0), (0.06, -0.26, 0), (0.06, yb1 + 0.14, 0), (0.0, yb1 + 0.14, 0)]
+    out.append(ylathe("BoltShank", P, [steel], steps=32))
+    # spacer filling the gap between sleeve and bracket
+    P = [(0.062, EYE_HL + 0.05, 0), (0.12, EYE_HL + 0.05, 0), (0.12, yb0, 0), (0.062, yb0, 0)]
+    out.append(ylathe("Spacer", P, [steel], steps=48))
+    return out
+
+
 def build():
     alu = mat_cast_alu("MountAlu", base=0.44, rough=0.48)
     rubber = C.mat_rubber("BushRubber")
@@ -214,9 +252,11 @@ def build():
     rb.inputs["Roughness"].default_value = 0.62
     steel = C.principled("ZincSleeve", (0.62, 0.62, 0.60), metallic=1.0, rough=0.28)
     C.add_noise_bump(steel, scale=800, strength=0.04, distance=0.0005, rough_var=0.06)
-    objs = eye(alu, rubber, steel) + arm(alu) + pad(alu, steel)
+    paint = C.mat_paint("BracketBlack", (0.025, 0.025, 0.027, 1), rough=0.42, coat=0.15)
+    C.add_noise_bump(paint, scale=600, strength=0.05, distance=0.0005)
+    objs = eye(alu, rubber, steel) + arm(alu) + pad(alu, steel) + body_bracket(paint, steel)
     # stand it on the pad's lower edge, eye toward the viewer's right, bush face visible
-    C.transform_all(objs, Matrix.Rotation(math.radians(-40), 4, "Z"))
+    C.transform_all(objs, Matrix.Rotation(math.radians(10), 4, "Z"))
     return objs
 
 
@@ -227,4 +267,4 @@ if __name__ == "__main__":
     C.shoot("supporto-cambio", objs, "supporto-cambio.py",
             "gearbox mount: cast-aluminium bracket with ribbed arm and three-bolt mounting pad, "
             "rubber bush with kidney voids and steel inner sleeve",
-            az=22, el=22, lens=70, fill=0.84, **kw)
+            az=22, el=26, lens=70, fill=0.84, **kw)

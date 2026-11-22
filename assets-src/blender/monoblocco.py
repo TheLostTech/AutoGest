@@ -396,7 +396,7 @@ def block(iron, deck_m, bore_m, hole_m, face_m):
         for x in BORES:   # water-jacket ports
             for s in (-1, 1):
                 for dx in (-0.21, 0.21):
-                    prism_bm(bm, rrect(0.17, 0.075, 0.035, 4), ZD - 0.5, ZD + 0.3,
+                    prism_bm(bm, rrect(0.19, 0.085, 0.04, 4), ZD - 0.5, ZD + 0.3,
                              Matrix.Translation((x + dx, s * 0.55, 0)) @ Matrix.Rotation(s * dx * 2.2, 4, "Z"))
         for (x, y, r) in ((1.80, 0.55, 0.05), (-1.80, -0.55, 0.05), (1.80, -0.30, 0.035), (-1.80, 0.40, 0.06),
                           (1.81, 0.10, 0.03), (-1.81, -0.15, 0.03)):
@@ -437,11 +437,12 @@ def extras(zinc, steel):
 
 def build():
     iron = mat_rusty_iron("BlockIron", base=0.20, rust=0.32, scale=3.0, seed=1.3)
-    deck = flat_machined("DeckFace", 0.55, 0.26, "Z", 2.5)
-    face = flat_machined("EndFace", 0.48, 0.30, "X", 4.0)
-    bore = C.mat_machined("Bore", color=0.40, rough=0.16, rings=900)
+    deck = flat_machined("DeckFace", 0.48, 0.32, "Z", 2.5)
+    face = flat_machined("EndFace", 0.34, 0.44, "X", 4.0)
+    bore = C.principled("Bore", (0.50, 0.50, 0.50), metallic=0.55, rough=0.38)
+    C.add_noise_bump(bore, scale=600, strength=0.05, distance=0.0005)
     hole = C.principled("Hole", (0.03, 0.03, 0.03), metallic=0.5, rough=0.7)
-    zinc = C.principled("PlugZinc", (0.55, 0.54, 0.50), metallic=1.0, rough=0.32)
+    zinc = C.principled("PlugZinc", (0.36, 0.35, 0.32), metallic=1.0, rough=0.42)
     C.add_noise_bump(zinc, scale=500, strength=0.05, distance=0.0005)
     steel = C.principled("DowelSteel", (0.5, 0.5, 0.5), metallic=1.0, rough=0.25)
     objs = [block(iron, deck, bore, hole, face)] + extras(zinc, steel)

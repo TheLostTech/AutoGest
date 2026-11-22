@@ -442,8 +442,80 @@ def superellipse(a, b, n=4.0, k=48, ox=0.0, oy=0.0):
     return out
 
 
+def rring(name, mat, outer, inner, z0, z1, bevel=0.0012, M=None, angle=35):
+    """Flat frame between two closed outlines (same vertex count) in XY, from z0 to z1."""
+    bm = bmesh.new()
+    o0 = [bm.verts.new((p[0], p[1], z0)) for p in outer]
+    o1 = [bm.verts.new((p[0], p[1], z1)) for p in outer]
+    i0 = [bm.verts.new((p[0], p[1], z0)) for p in inner]
+    i1 = [bm.verts.new((p[0], p[1], z1)) for p in inner]
+    n = len(outer)
+    for k in range(n):
+        k2 = (k + 1) % n
+        bm.faces.new((o0[k], o0[k2], o1[k2], o1[k]))
+        bm.faces.new((i0[k2], i0[k], i1[k], i1[k2]))
+        bm.faces.new((o0[k2], o0[k], i0[k], i0[k2]))
+        bm.faces.new((o1[k], o1[k2], i1[k2], i1[k]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    if M is not None:
+        bmesh.ops.transform(bm, matrix=M, verts=bm.verts)
+    ob = C.mesh_obj(name, bm, [mat])
+    if bevel:
+        C.add_bevel(ob, bevel, segments=2, angle=30)
+    return C.finalize(ob, angle=angle)
+
+
+def loft(name, mats, sections, cap=True):
+    """Skin closed sections [[Vector, ...], ...] (equal vertex counts) into a solid."""
+    bm = bmesh.new()
+    rings = [[bm.verts.new(p) for p in sec] for sec in sections]
+    n = len(rings[0])
+    for a, b in zip(rings[:-1], rings[1:]):
+        for k in range(n):
+            k2 = (k + 1) % n
+            bm.faces.new((a[k], a[k2], b[k2], b[k]))
+    if cap:
+        bm.faces.new(rings[0][::-1])
+        bm.faces.new(rings[-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return C.mesh_obj(name, bm, mats)
+
+
+def ribbed_rubber(name="RubberMat", pitch=0.004, axis=0, strength=0.5):
+    """Black rubber with fine parallel ribs (shader relief)."""
+    m = C.principled(name, (0.020, 0.020, 0.021), rough=0.72)
+    nt = m.node_tree
+    b = bsdf(m)
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(C._coord(nt), sep.inputs[0])
+    s = _math(nt, "SINE", _math(nt, "MULTIPLY", sep.outputs[axis], math.tau / pitch))
+    nz = nt.nodes.new("ShaderNodeTexNoise")
+    nt.links.new(C._coord(nt), nz.inputs["Vector"])
+    nz.inputs["Scale"].default_value = 500.0
+    h = _math(nt, "ADD", s, _math(nt, "MULTIPLY", nz.outputs["Fac"], 0.4))
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = strength
+    bump.inputs["Distance"].default_value = 0.0006
+    nt.links.new(h, bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
+    return m
+
+
+def soften_heather(m, lo=0.9, hi=1.1):
+    """Lower the yarn-colour contrast of a fabric() material (for light-grey fabrics)."""
+    b = bsdf(m)
+    base = None
+    for n in m.node_tree.nodes:
+        if n.type == "MIX" and getattr(n, "data_type", "") == "RGBA":
+            a = n.inputs["A"].default_value
+            base = [a[i] / 0.72 for i in range(3)]
+            n.inputs["A"].default_value = tuple(c * lo for c in base) + (1,)
+            n.inputs["B"].default_value = tuple(c * hi for c in base) + (1,)
+    return m
+
+
 # ================================================================== grab handle geometry
-BX = 0.115          # base centre |x|
+BX = 0.118          # base centre |x|
 LX = 0.098          # leg pivot |x|
 GZ = 0.056          # grip height
 
@@ -471,10 +543,10 @@ def grip(mat):
         if N.z < 0 and abs(P.x) < 0.05:
             N = -N
         mid = 1 - sstep(0.03, LX, abs(P.x))          # 1 in the middle, 0 at the legs
-        hw = 0.0135 - 0.0015 * mid                    # half width (Y)
-        ht = 0.0070 + 0.0012 * mid                    # half thickness
+        hw = 0.0165 - 0.0025 * mid                    # half width (Y)
+        ht = 0.0072 + 0.0010 * mid                    # half thickness
         sec = []
-        for (u, v) in superellipse(hw, ht, n=2.8, k=28):
+        for (u, v) in superellipse(hw, ht, n=3.2, k=32):
             # flatter inner (finger) side
             if v < 0:
                 v *= 0.75
@@ -493,10 +565,10 @@ def bases(mat, cap_m, dark):
     out = []
     for s in (-1, 1):
         cx = s * BX
-        poly = rrect(cx, 0.0, 0.044, 0.032, 0.008)
-        b = prism_z("Base", [mat], poly, 0.0, 0.017, bevel=0, angle=None)
+        poly = rrect(cx, 0.0, 0.050, 0.038, 0.009)
+        b = prism_z("Base", [mat], poly, 0.0, 0.019, bevel=0, angle=None)
         # slot where the leg pivots
-        sl = cutter_obj("LegSlot", dark, lambda bm: C.box_bm(bm, 0.016, 0.022, 0.03, center=(s * (LX + 0.002), 0, 0.02)))
+        sl = cutter_obj("LegSlot", dark, lambda bm: C.box_bm(bm, 0.018, 0.036, 0.03, center=(s * (LX + 0.001), 0, 0.022)))
         out.append(cut(b, [sl], angle=35, bevel=0.0035, bevel_seg=3))
         # pivot pin visible across the slot
         pin = C.lathe("Pin", [(0.0, -0.012, 0), (0.0022, -0.012, 0), (0.0022, 0.012, 0), (0.0, 0.012, 0)], [dark], steps=16)
@@ -504,12 +576,12 @@ def bases(mat, cap_m, dark):
         out.append(C.finalize(pin, angle=40))
         # hinged screw cover on the outer half of the base
         capx = s * (BX + 0.008)
-        cp = prism_z("Cap", [cap_m], rrect(capx, 0.0, 0.022, 0.025, 0.005), 0.0165, 0.0205, bevel=0, angle=None)
-        notch = cutter_obj("PryNotch", dark, lambda bm: C.box_bm(bm, 0.003, 0.008, 0.004, center=(capx + s * 0.011, 0, 0.0205)))
+        cp = prism_z("Cap", [cap_m], rrect(capx, 0.0, 0.024, 0.030, 0.005), 0.0185, 0.0225, bevel=0, angle=None)
+        notch = cutter_obj("PryNotch", dark, lambda bm: C.box_bm(bm, 0.003, 0.008, 0.004, center=(capx + s * 0.012, 0, 0.0225)))
         out.append(cut(cp, [notch], angle=35, bevel=0.0012))
         # hinge knuckle at the inner edge of the cap
-        kn = C.lathe("Knuckle", [(0.0, -0.010, 0), (0.0019, -0.010, 0), (0.0019, 0.010, 0), (0.0, 0.010, 0)], [cap_m], steps=16)
-        kn.matrix_world = Matrix.Translation((capx - s * 0.0115, 0, 0.0185)) @ Matrix.Rotation(math.radians(90), 4, "X")
+        kn = C.lathe("Knuckle", [(0.0, -0.013, 0), (0.0019, -0.013, 0), (0.0019, 0.013, 0), (0.0, 0.013, 0)], [cap_m], steps=16)
+        kn.matrix_world = Matrix.Translation((capx - s * 0.0125, 0, 0.0205)) @ Matrix.Rotation(math.radians(90), 4, "X")
         out.append(C.finalize(kn, angle=40))
     # spring-damper housing under the -X leg
     dh = C.lathe("Damper", [(0.0, -0.011, 0), (0.0055, -0.011, 0), (0.006, -0.009, 0), (0.006, 0.011, 0), (0.0, 0.011, 0)],

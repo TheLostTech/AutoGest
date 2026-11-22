@@ -12,8 +12,8 @@ import common as C
 TAU = math.tau
 T = Matrix.Translation
 N = 64
-W, H, NS = 0.32, 0.27, 2.3    # box section (Y width, Z height, superellipse exponent)
-XL = 0.36                     # half length of the box
+W, H, NS = 0.37, 0.31, 2.3    # box section (Y width, Z height, superellipse exponent)
+XL = 0.40                     # half length of the box
 RI = 0.048                    # pipe radius
 
 

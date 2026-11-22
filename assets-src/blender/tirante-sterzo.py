@@ -118,7 +118,7 @@ def build():
     zinc = C.principled("Zinc", (0.66, 0.66, 0.63), metallic=1.0, rough=0.26)
     C.add_noise_bump(zinc, scale=900, strength=0.03, distance=0.0005)
     objs = joint(housing_m, thread, zinc) + rod(rod_m, thread, zinc)
-    C.transform_all(objs, Matrix.Rotation(math.radians(32), 4, "Z"))
+    C.transform_all(objs, Matrix.Rotation(math.radians(32), 4, "Z") @ Matrix.Rotation(math.radians(40), 4, "X"))
     return objs
 
 

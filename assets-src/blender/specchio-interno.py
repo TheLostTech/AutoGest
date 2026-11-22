@@ -443,6 +443,78 @@ def superellipse(a, b, n=4.0, k=48, ox=0.0, oy=0.0):
     return out
 
 
+def rring(name, mat, outer, inner, z0, z1, bevel=0.0012, M=None, angle=35):
+    """Flat frame between two closed outlines (same vertex count) in XY, from z0 to z1."""
+    bm = bmesh.new()
+    o0 = [bm.verts.new((p[0], p[1], z0)) for p in outer]
+    o1 = [bm.verts.new((p[0], p[1], z1)) for p in outer]
+    i0 = [bm.verts.new((p[0], p[1], z0)) for p in inner]
+    i1 = [bm.verts.new((p[0], p[1], z1)) for p in inner]
+    n = len(outer)
+    for k in range(n):
+        k2 = (k + 1) % n
+        bm.faces.new((o0[k], o0[k2], o1[k2], o1[k]))
+        bm.faces.new((i0[k2], i0[k], i1[k], i1[k2]))
+        bm.faces.new((o0[k2], o0[k], i0[k], i0[k2]))
+        bm.faces.new((o1[k], o1[k2], i1[k2], i1[k]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    if M is not None:
+        bmesh.ops.transform(bm, matrix=M, verts=bm.verts)
+    ob = C.mesh_obj(name, bm, [mat])
+    if bevel:
+        C.add_bevel(ob, bevel, segments=2, angle=30)
+    return C.finalize(ob, angle=angle)
+
+
+def loft(name, mats, sections, cap=True):
+    """Skin closed sections [[Vector, ...], ...] (equal vertex counts) into a solid."""
+    bm = bmesh.new()
+    rings = [[bm.verts.new(p) for p in sec] for sec in sections]
+    n = len(rings[0])
+    for a, b in zip(rings[:-1], rings[1:]):
+        for k in range(n):
+            k2 = (k + 1) % n
+            bm.faces.new((a[k], a[k2], b[k2], b[k]))
+    if cap:
+        bm.faces.new(rings[0][::-1])
+        bm.faces.new(rings[-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return C.mesh_obj(name, bm, mats)
+
+
+def ribbed_rubber(name="RubberMat", pitch=0.004, axis=0, strength=0.5):
+    """Black rubber with fine parallel ribs (shader relief)."""
+    m = C.principled(name, (0.020, 0.020, 0.021), rough=0.72)
+    nt = m.node_tree
+    b = bsdf(m)
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(C._coord(nt), sep.inputs[0])
+    s = _math(nt, "SINE", _math(nt, "MULTIPLY", sep.outputs[axis], math.tau / pitch))
+    nz = nt.nodes.new("ShaderNodeTexNoise")
+    nt.links.new(C._coord(nt), nz.inputs["Vector"])
+    nz.inputs["Scale"].default_value = 500.0
+    h = _math(nt, "ADD", s, _math(nt, "MULTIPLY", nz.outputs["Fac"], 0.4))
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = strength
+    bump.inputs["Distance"].default_value = 0.0006
+    nt.links.new(h, bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
+    return m
+
+
+def soften_heather(m, lo=0.9, hi=1.1):
+    """Lower the yarn-colour contrast of a fabric() material (for light-grey fabrics)."""
+    b = bsdf(m)
+    base = None
+    for n in m.node_tree.nodes:
+        if n.type == "MIX" and getattr(n, "data_type", "") == "RGBA":
+            a = n.inputs["A"].default_value
+            base = [a[i] / 0.72 for i in range(3)]
+            n.inputs["A"].default_value = tuple(c * lo for c in base) + (1,)
+            n.inputs["B"].default_value = tuple(c * hi for c in base) + (1,)
+    return m
+
+
 # ================================================================== mirror geometry
 A, B = 0.122, 0.034        # half width / half height of the head
 NU = 96
@@ -461,7 +533,8 @@ def outline(i, s=1.0):
 
 def housing(mat):
     # (scale, y) rings from the bezel lip to the domed back
-    P = [(0.962, 0.0015), (0.962, -0.0035), (0.985, -0.0060), (1.0, -0.0040), (1.012, 0.004), (1.0, 0.014),
+    # (the extra inner ring keeps the subdivided front cap from pulling the lip edge wavy)
+    P = [(0.90, 0.0018), (0.93, 0.0016), (0.962, 0.0015), (0.962, -0.0035), (0.985, -0.0060), (1.0, -0.0040), (1.012, 0.004), (1.0, 0.014),
          (0.94, 0.024), (0.80, 0.032), (0.58, 0.037), (0.30, 0.040)]
     bm = bmesh.new()
     rings = [[bm.verts.new((outline(i, s)[0], y, outline(i, s)[1])) for i in range(NU)] for (s, y) in P]
@@ -480,7 +553,7 @@ def housing(mat):
 
 def glass(mirror_m, edge_m):
     bm = bmesh.new()
-    s = 0.958
+    s = 0.948
     ring0 = [bm.verts.new((outline(i, s)[0], -0.0012, outline(i, s)[1])) for i in range(NU)]
     ring1 = [bm.verts.new((outline(i, s)[0], 0.0010, outline(i, s)[1])) for i in range(NU)]
     f = bm.faces.new(ring0[::-1])
@@ -532,10 +605,98 @@ def stem_and_foot(mat, dark, spring_m):
                  [dark], steps=40)
     bt.matrix_world = Mf @ Matrix.Translation((0, 0.004, 0.0095))
     out.append(C.finalize(bt, angle=40))
-    # locking spring clip across the shroud
-    pts = [Mf @ Vector((x, -0.015, z)) for (x, z) in ((-0.019, -0.004), (-0.019, 0.010), (0.019, 0.010), (0.019, -0.004))]
-    out.append(tube("SpringClip", pts, 0.0011, spring_m, res=2))
     return out
+
+
+def mirror_card(center, normal, view, dist, size, lo=0.30, hi=0.97, band=(0.38, 0.64), roll=25.0,
+                strength=1.0, name="MirrorCard"):
+    """Soft studio card seen only by glossy rays, placed (closer than the area lights) where
+    the mirror reflects the camera, so the glass shows a clean light-grey to white studio
+    gradient instead of the dark lower world or hard-edged light panels. Never black."""
+    v = Vector(view).normalized()
+    n = Vector(normal).normalized()
+    r = (2 * n.dot(v) * n - v).normalized()
+    bm = bmesh.new()
+    uv = bm.loops.layers.uv.new("UVMap")
+    h = size / 2
+    vs = [bm.verts.new(c) for c in ((-h, -h, 0), (h, -h, 0), (h, h, 0), (-h, h, 0))]
+    f = bm.faces.new(vs)
+    for l, c in zip(f.loops, ((0, 0), (1, 0), (1, 1), (0, 1))):
+        l[uv].uv = c
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    em = nt.nodes.new("ShaderNodeEmission")
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(tc.outputs["UV"], sep.inputs[0])
+    # gradient coordinate rotated by `roll` on the card: a slightly diagonal sweep
+    ca, sa = math.cos(math.radians(roll)), math.sin(math.radians(roll))
+    gx = nt.nodes.new("ShaderNodeMath")
+    gx.operation = "MULTIPLY"
+    gx.inputs[1].default_value = -sa
+    nt.links.new(sep.outputs["X"], gx.inputs[0])
+    gy = nt.nodes.new("ShaderNodeMath")
+    gy.operation = "MULTIPLY_ADD"
+    gy.inputs[1].default_value = ca
+    nt.links.new(sep.outputs["Y"], gy.inputs[0])
+    nt.links.new(gx.outputs[0], gy.inputs[2])
+    off = nt.nodes.new("ShaderNodeMath")
+    off.operation = "ADD"
+    off.inputs[1].default_value = 0.5 * (1 - ca + sa)
+    nt.links.new(gy.outputs[0], off.inputs[0])
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    cr = ramp.color_ramp
+    cr.interpolation = "EASE"
+    cr.elements[0].position = band[0]
+    cr.elements[0].color = (lo, lo, lo, 1)
+    cr.elements[1].position = band[1]
+    cr.elements[1].color = (hi, hi, hi, 1)
+    nt.links.new(off.outputs[0], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], em.inputs["Color"])
+    em.inputs["Strength"].default_value = strength
+    nt.links.new(em.outputs[0], out.inputs["Surface"])
+    ob = C.mesh_obj(name, bm, [m])
+    z = (-r).normalized()
+    x = Vector((0, 0, 1)).cross(z)
+    if x.length < 1e-4:
+        x = Vector((1, 0, 0))
+    x.normalize()
+    y = z.cross(x).normalized()
+    Mx = Matrix.Identity(4)
+    for i, ax in enumerate((x, y, z)):
+        Mx[0][i], Mx[1][i], Mx[2][i] = ax.x, ax.y, ax.z
+    Mx.translation = Vector(center) + r * dist
+    ob.matrix_world = Mx
+    for a in ("visible_camera", "visible_diffuse", "visible_shadow", "visible_transmission",
+              "visible_volume_scatter"):
+        setattr(ob, a, False)
+    return ob
+
+
+def mirror_frame(ob, mat_index=0):
+    """World-space centre and mean normal of the faces of ob using mat_index."""
+    mw = ob.matrix_world
+    n = Vector((0, 0, 0))
+    c = Vector((0, 0, 0))
+    A = 0.0
+    for p in ob.data.polygons:
+        if p.material_index != mat_index:
+            continue
+        a = p.area
+        n += p.normal * a
+        c += p.center * a
+        A += a
+    c = mw @ (c / A)
+    n = (mw.to_3x3() @ n).normalized()
+    return c, n
+
+
+def view_dir(az, el):
+    a, e = math.radians(az), math.radians(el)
+    return Vector((math.sin(a) * math.cos(e), -math.cos(a) * math.cos(e), math.sin(e)))
 
 
 def build():
@@ -544,15 +705,29 @@ def build():
     edge = C.principled("GlassEdge", (0.30, 0.34, 0.33), rough=0.2)
     dark = steel_dark("FootButton")
     spring = zinc("SpringSteel")
-    objs = [housing(house), glass(mirror, edge), flip_tab(house)]
-    objs += stem_and_foot(house, dark, spring)
-    return objs
+    head = [housing(house), glass(mirror, edge), flip_tab(house)]
+    sf = stem_and_foot(house, dark, spring)
+    # head tilted up a little on its ball joint (also makes the glass reflect the studio horizon)
+    piv = Vector((0.0, 0.046, 0.012))
+    R = Matrix.Translation(piv) @ Matrix.Rotation(math.radians(-14), 4, "X") @ Matrix.Translation(-piv)
+    for o in head + sf[:1]:
+        o.matrix_world = R @ o.matrix_world
+    return head + sf
 
 
 if __name__ == "__main__":
+    hide_floor_from_glossy()
     C.clear()
     objs = build()
+    AZ, EL = -28, 12
+    # the flat glass reflected the black lower studio world between two hard light panels
+    # (a black band across the mirror): a soft glossy-only card fills the whole reflection
+    glass_ob = next(o for o in objs if o.name.startswith("Glass"))
+    gc, gn = mirror_frame(glass_ob, 0)
+    if gn.dot(view_dir(AZ, EL)) < 0:
+        gn = -gn
+    mirror_card(gc, gn, view_dir(AZ, EL), 0.32, 1.1, lo=0.22, hi=1.0, band=(0.36, 0.64), roll=62.0)
     C.shoot("specchio-interno", objs, "specchio-interno.py",
             "interior rear-view mirror: black grained housing with mirror glass, day/night tab, ball-joint stem "
             "and windscreen mount foot",
-            az=-28, el=12, lens=70, fill=0.84, **render_args())
+            az=AZ, el=EL, lens=70, fill=0.84, **render_args())

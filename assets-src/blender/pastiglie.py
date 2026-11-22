@@ -156,7 +156,8 @@ def wear_indicator(black, copper):
     C.add_bevel(ck, 0.01, segments=2, angle=30)
     out.append(C.finalize(ck, angle=35))
     a = Vector((p.x, -TF * 0.5, p.z + 0.09))
-    pts = bezier(a, a + Vector((0, 0, 0.25)), a + Vector((0.55, -0.35, 0.30)), a + Vector((0.95, -0.50, 0.10)), 50)
+    yf = TB - 0.017                    # local y of a wire lying on the floor
+    pts = bezier(a, a + Vector((-0.05, -0.02, 0.25)), Vector((-0.60, yf, 0.55)), Vector((-1.0, yf, 0.02)), 60)
     out.append(tube("WearWire", pts, 0.017, black))
     # tiny plug
     e = pts[-1]
@@ -180,7 +181,7 @@ def place(objs, M):
 def build():
     paint = mat_worn_black("BackingPaint")
     fric = mat_friction("PadFriction")
-    shim = C.principled("StainlessShim", (0.66, 0.66, 0.67), metallic=1.0, rough=0.22)
+    shim = C.principled("StainlessShim", (0.45, 0.45, 0.46), metallic=1.0, rough=0.38)
     C.add_noise_bump(shim, scale=300, strength=0.15, distance=0.0008, rough_var=0.06)
     clipm = C.principled("SpringSteel", (0.55, 0.56, 0.58), metallic=1.0, rough=0.3)
     black = C.mat_black_plastic("WirePVC", rough=0.5, color=0.025)

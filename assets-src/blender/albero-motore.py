@@ -462,7 +462,7 @@ def build():
         d = Vector((0, -math.sin(ang + 0.9), math.cos(ang + 0.9)))
         objs.append(lathe_at("PinHole", [(0.0, 0.0, 0), (0.025, 0.0, 0), (0.025, 0.06, 0), (0.0, 0.06, 0)], dark,
                              frame_to(c + d * (RP - 0.058), d), steps=20))
-    objs += webs(forged) + ends(mach, face, dark)
+    objs += webs(forged) + ends(mach, forged, face, dark)
     return objs
 
 

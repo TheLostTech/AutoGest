@@ -28,7 +28,7 @@ def rbox(name, mat, sx, sy, sz, center=(0, 0, 0), bevel=0.01, seg=2):
 
 
 def mat_brass(name="Brass", tarnish=0.5):
-    m = C.principled(name, (0.74, 0.55, 0.28), metallic=1.0, rough=0.28)
+    m = C.principled(name, (0.60, 0.48, 0.28), metallic=1.0, rough=0.34)
     nt = m.node_tree
     b = next(n for n in nt.nodes if n.type == "BSDF_PRINCIPLED")
     co = C._coord(nt)
@@ -44,11 +44,11 @@ def mat_brass(name="Brass", tarnish=0.5):
     mc = nt.nodes.new("ShaderNodeMix")
     mc.data_type = "RGBA"
     nt.links.new(mr.outputs["Result"], mc.inputs["Factor"])
-    mc.inputs["A"].default_value = (0.74, 0.55, 0.28, 1)
-    mc.inputs["B"].default_value = (0.40, 0.27, 0.13, 1)
+    mc.inputs["A"].default_value = (0.60, 0.48, 0.28, 1)
+    mc.inputs["B"].default_value = (0.34, 0.25, 0.14, 1)
     nt.links.new(mc.outputs["Result"], b.inputs["Base Color"])
     rr = nt.nodes.new("ShaderNodeMapRange")
-    rr.inputs["To Min"].default_value = 0.24
+    rr.inputs["To Min"].default_value = 0.30
     rr.inputs["To Max"].default_value = 0.50
     nt.links.new(mr.outputs["Result"], rr.inputs["Value"])
     nt.links.new(rr.outputs["Result"], b.inputs["Roughness"])

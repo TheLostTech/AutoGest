@@ -363,14 +363,21 @@ def groove_steel(name="GrooveSteel"):
     nz.inputs["Scale"].default_value = 7.0
     nz.inputs["Detail"].default_value = 8.0
     mr = nt.nodes.new("ShaderNodeMapRange")
-    mr.inputs["From Min"].default_value = 0.5
-    mr.inputs["From Max"].default_value = 0.75
+    mr.inputs["From Min"].default_value = 0.62
+    mr.inputs["From Max"].default_value = 0.85
     nt.links.new(nz.outputs["Fac"], mr.inputs["Value"])
     mix = nt.nodes.new("ShaderNodeMix"); mix.data_type = "RGBA"
     nt.links.new(mr.outputs["Result"], mix.inputs["Factor"])
     mix.inputs["A"].default_value = (0.20, 0.20, 0.21, 1)
     mix.inputs["B"].default_value = (0.16, 0.08, 0.04, 1)
-    nt.links.new(mix.outputs["Result"], b.inputs["Base Color"])
+    ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
+    ao.inputs["Distance"].default_value = 0.012
+    ao.samples = 8
+    mix2 = nt.nodes.new("ShaderNodeMix"); mix2.data_type = "RGBA"
+    nt.links.new(ao.outputs["AO"], mix2.inputs["Factor"])
+    mix2.inputs["A"].default_value = (0.03, 0.028, 0.026, 1)
+    nt.links.new(mix.outputs["Result"], mix2.inputs["B"])
+    nt.links.new(mix2.outputs["Result"], b.inputs["Base Color"])
     r2 = nt.nodes.new("ShaderNodeMapRange")
     r2.inputs["To Min"].default_value = 0.32
     r2.inputs["To Max"].default_value = 0.75
@@ -387,7 +394,7 @@ def ring(iron, steel, dark):
     # 6 ribs, pitch 3.56 mm -> 0.0356
     P += [(RO, z, 1)]
     for i in range(6):
-        P += [(RO - 0.022, z + 0.0178, 1), (RO, z + 0.0356, 1)]
+        P += [(RO - 0.026, z + 0.0178, 1), (RO, z + 0.0356, 1)]
         z += 0.0356
     P += [(RO, zf - 0.02, 0), (RO - 0.02, zf, 0), (RR, zf, 0)]
     ob = C.lathe("InertiaRing", P, [iron, steel], steps=256)
@@ -410,11 +417,11 @@ def rubber_ring(rub):
 def carrier(iron, hubm, dark):
     out = []
     # rim + dished web + hub, one lathe
-    P = [(0.075, -0.44, 2), (0.175, -0.44, 2), (0.185, -0.43, 2), (0.185, -0.16, 0), (0.24, -0.14, 0),
+    P = [(0.075, -0.44, 1), (0.175, -0.44, 1), (0.185, -0.43, 1), (0.185, -0.16, 0), (0.24, -0.14, 0),
          (0.40, -0.10, 0), (RC - 0.035, -0.13, 0), (RC, -0.13, 0), (RC, 0.08, 0), (RC - 0.03, 0.08, 0),
          (RC - 0.03, 0.0, 0), (0.42, -0.02, 0), (0.26, -0.06, 0), (0.22, -0.04, 0), (0.22, 0.06, 0),
-         (0.205, 0.075, 2), (0.10, 0.075, 2), (0.075, 0.05, 2)]
-    ob = C.lathe("Carrier", P, [iron, iron, hubm], steps=256)
+         (0.205, 0.075, 1), (0.10, 0.075, 1), (0.075, 0.05, 1)]
+    ob = C.lathe("Carrier", P, [iron, hubm], steps=256)
     def holes(bm):
         for k in range(4):
             th = math.tau * k / 4 + math.pi / 4

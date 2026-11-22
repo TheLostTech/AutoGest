@@ -89,22 +89,23 @@ def carpet(name="NeedleFelt", hexc="#2A2B2E", scale=1400.0):
     nz.inputs["Roughness"].default_value = 0.7
     nz2 = nt.nodes.new("ShaderNodeTexNoise")
     nt.links.new(co, nz2.inputs["Vector"])
-    nz2.inputs["Scale"].default_value = 40.0
+    nz2.inputs["Scale"].default_value = 260.0
+    nz2.inputs["Detail"].default_value = 6.0
     mix = nt.nodes.new("ShaderNodeMix")
     mix.data_type = "RGBA"
     mr = nt.nodes.new("ShaderNodeMapRange")
     mr.inputs["From Min"].default_value = 0.25
     mr.inputs["From Max"].default_value = 0.75
-    nt.links.new(_math(nt, "ADD", _math(nt, "MULTIPLY", nz.outputs["Fac"], 0.7),
-                       _math(nt, "MULTIPLY", nz2.outputs["Fac"], 0.3)), mr.inputs["Value"])
+    nt.links.new(_math(nt, "ADD", _math(nt, "MULTIPLY", nz.outputs["Fac"], 0.45),
+                       _math(nt, "MULTIPLY", nz2.outputs["Fac"], 0.55)), mr.inputs["Value"])
     nt.links.new(mr.outputs["Result"], mix.inputs["Factor"])
     mix.inputs["A"].default_value = tuple(c * 0.65 for c in base[:3]) + (1,)
     mix.inputs["B"].default_value = tuple(c * 1.35 for c in base[:3]) + (1,)
     nt.links.new(mix.outputs["Result"], b.inputs["Base Color"])
     bump = nt.nodes.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.75
-    bump.inputs["Distance"].default_value = 0.0012
-    nt.links.new(nz.outputs["Fac"], bump.inputs["Height"])
+    bump.inputs["Strength"].default_value = 0.9
+    bump.inputs["Distance"].default_value = 0.0015
+    nt.links.new(_math(nt, "ADD", nz.outputs["Fac"], _math(nt, "MULTIPLY", nz2.outputs["Fac"], 0.6)), bump.inputs["Height"])
     nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
     return m
 
@@ -186,7 +187,7 @@ def cage(n):
     return bm
 
 
-def box_soft(name, mats, lo, hi, n=(3, 3, 3), levels=3, shape=None, M=None, angle=70, cutters=()):
+def box_soft(name, mats, lo, hi, n=(3, 3, 3), levels=3, shape=None, M=None, angle=70, cutters=(), mat_fn=None):
     """Subdivision-surface solid from a lattice cage spanning lo..hi, deformed by shape(p, u, v, w)."""
     lo, hi = Vector(lo), Vector(hi)
     bm = cage(n)
@@ -199,6 +200,9 @@ def box_soft(name, mats, lo, hi, n=(3, 3, 3), levels=3, shape=None, M=None, angl
             p = shape(p, u, vv, w)
         v.co = (M @ p) if M is not None else p
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    if mat_fn:
+        for f in bm.faces:
+            f.material_index = mat_fn(f.calc_center_median())
     ob = C.mesh_obj(name, bm, mats)
     m = ob.modifiers.new("Sub", "SUBSURF")
     m.levels = levels
@@ -259,11 +263,11 @@ def prism_bm(bm, poly, z0, z1, M=None, mat=0):
     n = len(P)
     fs = [bm.faces.new((a[k], a[(k + 1) % n], b[(k + 1) % n], b[k])) for k in range(n)]
     fs += [bm.faces.new(a[::-1]), bm.faces.new(b)]
-    bmesh.ops.recalc_face_normals(bm, faces=fs)
     for f in fs:
         f.material_index = mat
     if M is not None:
         bmesh.ops.transform(bm, matrix=M, verts=a + b)
+    bmesh.ops.recalc_face_normals(bm, faces=fs)
     return fs
 
 
@@ -344,19 +348,24 @@ def inward(x, z):
     ax, ar, ah = 0.035, 0.30, 0.255
     d = ((x - ax) / ar) ** 2 + (z / ah) ** 2
     if d < 1.0:
-        arch = 0.115 * (1 - d) ** 0.55
+        arch = 0.150 * sstep(1.0, 0.55, d) ** 0.8
     lean = 0.045 * (z / 0.5) ** 1.6
-    step = 0.006 * sstep(SPLIT - 0.006, SPLIT + 0.006, z)
+    step = 0.006 * sstep(SPLIT - 0.004, SPLIT + 0.004, z)
     return arch + lean + step
 
 
 def shell_shape(p, u, v, w):
     t = (u + 1) / 2
     s = (w + 1) / 2
+    sb = 7 / 12          # cage row that lies exactly on the carpet / plastic split
+
+    def zmap(x):
+        zt = z_top(x)
+        return s / sb * SPLIT if s <= sb else SPLIT + (s - sb) / (1 - sb) * (zt - SPLIT)
     xa = X0 + (X1 - X0) * t
-    z = s * z_top(xa)
+    z = zmap(xa)
     x = X0 + (x_front(z) - X0) * t
-    z = s * z_top(x)
+    z = zmap(x)
     y = p.y - inward(x, z)
     return Vector((x, y, z))
 
@@ -371,9 +380,7 @@ def shell(felt, plastic):
         C.box_bm(bm2, 0.105, 0.20, 0.042, center=(LAMP[0], y, LAMP[1]))
     cut = cutter("LampCut", lamp_cut)
     ob = box_soft("Shell", [felt, plastic], (X0, -0.006, 0.0), (X1, 0.006, 0.5), n=(14, 1, 12), levels=3,
-                  shape=shell_shape, angle=60, cutters=[cut])
-    for p in ob.data.polygons:
-        p.material_index = 1 if p.center.z > SPLIT else 0
+                  shape=shell_shape, angle=60, cutters=[cut], mat_fn=lambda c: 1 if c.z > SPLIT else 0)
     return ob
 
 
@@ -444,7 +451,7 @@ def clips(black):
 
 
 def build():
-    felt = carpet("BootCarpet", hexc="#2A2B2E")
+    felt = carpet("BootCarpet", hexc="#2A2B2E", scale=900.0)
     plastic = grained("BootTrim", v=0.030, rough=0.56)
     black = grained("BootBlack", v=0.018, rough=0.5)
     objs = [shell(felt, plastic), ledge(plastic)]
@@ -460,4 +467,4 @@ if __name__ == "__main__":
     C.shoot("rivestimento-bagagliaio", objs, "rivestimento-bagagliaio.py",
             "boot side trim panel of a hatchback: moulded shell over the wheel arch, anthracite carpet lower part, "
             "dark grained plastic upper part with shelf ledge, boot light cut-out and bag hook",
-            az=28, el=18, lens=70, fill=0.88, **res_samples())
+            az=40, el=20, lens=70, fill=0.88, **res_samples())

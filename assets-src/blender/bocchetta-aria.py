@@ -88,22 +88,23 @@ def carpet(name="NeedleFelt", hexc="#2A2B2E", scale=1400.0):
     nz.inputs["Roughness"].default_value = 0.7
     nz2 = nt.nodes.new("ShaderNodeTexNoise")
     nt.links.new(co, nz2.inputs["Vector"])
-    nz2.inputs["Scale"].default_value = 40.0
+    nz2.inputs["Scale"].default_value = 260.0
+    nz2.inputs["Detail"].default_value = 6.0
     mix = nt.nodes.new("ShaderNodeMix")
     mix.data_type = "RGBA"
     mr = nt.nodes.new("ShaderNodeMapRange")
     mr.inputs["From Min"].default_value = 0.25
     mr.inputs["From Max"].default_value = 0.75
-    nt.links.new(_math(nt, "ADD", _math(nt, "MULTIPLY", nz.outputs["Fac"], 0.7),
-                       _math(nt, "MULTIPLY", nz2.outputs["Fac"], 0.3)), mr.inputs["Value"])
+    nt.links.new(_math(nt, "ADD", _math(nt, "MULTIPLY", nz.outputs["Fac"], 0.45),
+                       _math(nt, "MULTIPLY", nz2.outputs["Fac"], 0.55)), mr.inputs["Value"])
     nt.links.new(mr.outputs["Result"], mix.inputs["Factor"])
     mix.inputs["A"].default_value = tuple(c * 0.65 for c in base[:3]) + (1,)
     mix.inputs["B"].default_value = tuple(c * 1.35 for c in base[:3]) + (1,)
     nt.links.new(mix.outputs["Result"], b.inputs["Base Color"])
     bump = nt.nodes.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = 0.75
-    bump.inputs["Distance"].default_value = 0.0012
-    nt.links.new(nz.outputs["Fac"], bump.inputs["Height"])
+    bump.inputs["Strength"].default_value = 0.9
+    bump.inputs["Distance"].default_value = 0.0015
+    nt.links.new(_math(nt, "ADD", nz.outputs["Fac"], _math(nt, "MULTIPLY", nz2.outputs["Fac"], 0.6)), bump.inputs["Height"])
     nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
     return m
 
@@ -258,11 +259,11 @@ def prism_bm(bm, poly, z0, z1, M=None, mat=0):
     n = len(P)
     fs = [bm.faces.new((a[k], a[(k + 1) % n], b[(k + 1) % n], b[k])) for k in range(n)]
     fs += [bm.faces.new(a[::-1]), bm.faces.new(b)]
-    bmesh.ops.recalc_face_normals(bm, faces=fs)
     for f in fs:
         f.material_index = mat
     if M is not None:
         bmesh.ops.transform(bm, matrix=M, verts=a + b)
+    bmesh.ops.recalc_face_normals(bm, faces=fs)
     return fs
 
 
@@ -366,7 +367,7 @@ def surround(black, silver):
     C.add_bevel(ob, 0.003, segments=3, angle=30)
     out.append(C.finalize(ob, angle=35, remove=cuts))
     # satin bezel ring around the louvre opening, slightly proud
-    out.append(ring_y("Bezel", silver, rrect2(CX, 0.0, OW + 0.022, OH + 0.022, 0.011, seg=8),
+    out.append(ring_y("Bezel", silver, rrect2(CX, 0.0, OW + 0.017, OH + 0.017, 0.0095, seg=8),
                       rrect2(CX, 0.0, OW + 0.004, OH + 0.004, 0.006, seg=8), -0.0155, -0.0095, bevel=0.0016))
     # inner black throat
     out.append(ring_y("Throat", black, rrect2(CX, 0.0, OW + 0.006, OH + 0.006, 0.006, seg=8),
@@ -376,7 +377,7 @@ def surround(black, silver):
     return out
 
 
-def louvres(black, silver):
+def louvres(black, silver, vane):
     out = []
     tilt = math.radians(-14)
     for i in range(4):
@@ -390,21 +391,17 @@ def louvres(black, silver):
         out.append(solid("Louvre", bm, [black], bevel=0.0005, seg=2, smooth=40))
     # adjuster tab on louvre 2
     z = -OH / 2 + OH * 2.5 / 4
-    M = Matrix.Translation((CX + 0.004, -0.012, z)) @ Matrix.Rotation(tilt, 4, "X")
+    M = Matrix.Translation((CX + 0.004, -0.0115, z)) @ Matrix.Rotation(tilt, 4, "X")
     bm = bmesh.new()
-    C.box_bm(bm, 0.017, 0.012, 0.0085, matrix=M)
+    C.box_bm(bm, 0.020, 0.013, 0.0095, matrix=M)
     out.append(solid("Tab", bm, [silver], sub=2, smooth=50))
-    for k in range(3):
-        bm = bmesh.new()
-        C.box_bm(bm, 0.0012, 0.006, 0.010, center=(-0.004 + 0.004 * k, -0.005, 0.0), matrix=M)
-        out.append(solid("TabRib", bm, [silver], bevel=0.0004))
     # vertical vanes behind
     for i in range(7):
         x = CX - OW / 2 + OW * (i + 0.5) / 7
         bm = bmesh.new()
         M = Matrix.Translation((x, 0.024, 0.0)) @ Matrix.Rotation(math.radians(10), 4, "Z")
         C.box_bm(bm, 0.0018, 0.018, OH - 0.002, matrix=M)
-        out.append(solid("Vane", bm, [black], bevel=0.0006))
+        out.append(solid("Vane", bm, [vane], bevel=0.0006))
     bm = bmesh.new()
     C.box_bm(bm, OW, 0.003, OH, center=(CX, 0.045, 0))
     out.append(C.mesh_obj("Back", bm, [C.principled("Void", (0.004, 0.004, 0.004), rough=0.9)]))
@@ -442,11 +439,13 @@ def housing(black):
 
 def build():
     black = grained("VentBlack", v=0.020, rough=0.5)
-    slat = grained("SlatBlack", v=0.016, rough=0.42, scale=900.0)
+    slat = grained("SlatBlack", v=0.020, rough=0.42, scale=900.0)
+    vane = grained("VaneBlack", v=0.032, rough=0.5, scale=900.0)
     silver = satin_silver()
+    C._set(bsdf(silver), "Roughness", 0.36)
     rubber = C.mat_rubber("WheelRubber")
     objs = surround(black, silver)
-    objs += louvres(slat, silver)
+    objs += louvres(slat, silver, vane)
     objs += thumbwheel(rubber)
     objs += housing(black)
     return objs

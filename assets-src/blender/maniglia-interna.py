@@ -443,6 +443,78 @@ def superellipse(a, b, n=4.0, k=48, ox=0.0, oy=0.0):
     return out
 
 
+def rring(name, mat, outer, inner, z0, z1, bevel=0.0012, M=None, angle=35):
+    """Flat frame between two closed outlines (same vertex count) in XY, from z0 to z1."""
+    bm = bmesh.new()
+    o0 = [bm.verts.new((p[0], p[1], z0)) for p in outer]
+    o1 = [bm.verts.new((p[0], p[1], z1)) for p in outer]
+    i0 = [bm.verts.new((p[0], p[1], z0)) for p in inner]
+    i1 = [bm.verts.new((p[0], p[1], z1)) for p in inner]
+    n = len(outer)
+    for k in range(n):
+        k2 = (k + 1) % n
+        bm.faces.new((o0[k], o0[k2], o1[k2], o1[k]))
+        bm.faces.new((i0[k2], i0[k], i1[k], i1[k2]))
+        bm.faces.new((o0[k2], o0[k], i0[k], i0[k2]))
+        bm.faces.new((o1[k], o1[k2], i1[k2], i1[k]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    if M is not None:
+        bmesh.ops.transform(bm, matrix=M, verts=bm.verts)
+    ob = C.mesh_obj(name, bm, [mat])
+    if bevel:
+        C.add_bevel(ob, bevel, segments=2, angle=30)
+    return C.finalize(ob, angle=angle)
+
+
+def loft(name, mats, sections, cap=True):
+    """Skin closed sections [[Vector, ...], ...] (equal vertex counts) into a solid."""
+    bm = bmesh.new()
+    rings = [[bm.verts.new(p) for p in sec] for sec in sections]
+    n = len(rings[0])
+    for a, b in zip(rings[:-1], rings[1:]):
+        for k in range(n):
+            k2 = (k + 1) % n
+            bm.faces.new((a[k], a[k2], b[k2], b[k]))
+    if cap:
+        bm.faces.new(rings[0][::-1])
+        bm.faces.new(rings[-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return C.mesh_obj(name, bm, mats)
+
+
+def ribbed_rubber(name="RubberMat", pitch=0.004, axis=0, strength=0.5):
+    """Black rubber with fine parallel ribs (shader relief)."""
+    m = C.principled(name, (0.020, 0.020, 0.021), rough=0.72)
+    nt = m.node_tree
+    b = bsdf(m)
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(C._coord(nt), sep.inputs[0])
+    s = _math(nt, "SINE", _math(nt, "MULTIPLY", sep.outputs[axis], math.tau / pitch))
+    nz = nt.nodes.new("ShaderNodeTexNoise")
+    nt.links.new(C._coord(nt), nz.inputs["Vector"])
+    nz.inputs["Scale"].default_value = 500.0
+    h = _math(nt, "ADD", s, _math(nt, "MULTIPLY", nz.outputs["Fac"], 0.4))
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = strength
+    bump.inputs["Distance"].default_value = 0.0006
+    nt.links.new(h, bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
+    return m
+
+
+def soften_heather(m, lo=0.9, hi=1.1):
+    """Lower the yarn-colour contrast of a fabric() material (for light-grey fabrics)."""
+    b = bsdf(m)
+    base = None
+    for n in m.node_tree.nodes:
+        if n.type == "MIX" and getattr(n, "data_type", "") == "RGBA":
+            a = n.inputs["A"].default_value
+            base = [a[i] / 0.72 for i in range(3)]
+            n.inputs["A"].default_value = tuple(c * lo for c in base) + (1,)
+            n.inputs["B"].default_value = tuple(c * hi for c in base) + (1,)
+    return m
+
+
 # ================================================================== handle geometry
 FACE = Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))   # local z -> -Y, local y -> +Z
 BW, BH = 0.190, 0.060
@@ -480,9 +552,9 @@ def lever(satin):
             p.z *= 1 + 0.12 * k
         return p
     x0, x1 = PCX - PW / 2 + 0.008, PCX + PW / 2 - 0.004
-    ob = box_soft("Lever", [satin], (x0, -0.011, -0.0125), (x1, 0.003, 0.0125), n=(6, 2, 3), levels=2, shape=shape)
+    ob = box_soft("Lever", [satin], (x0, -0.0105, -0.0115), (x1, 0.000, 0.0115), n=(6, 2, 3), levels=2, shape=shape)
     piv = Vector((x1 - 0.006, -0.002, 0.0))
-    ob.matrix_world = Matrix.Translation(piv) @ Matrix.Rotation(math.radians(13), 4, "Z") @ Matrix.Translation(-piv)
+    ob.matrix_world = Matrix.Translation(piv) @ Matrix.Rotation(math.radians(16), 4, "Z") @ Matrix.Translation(-piv)
     # pivot boss at the front of the recess
     bo = C.lathe("PivotBoss", [(0.0, -PH / 2, 0), (0.0055, -PH / 2, 0), (0.0055, PH / 2, 0), (0.0, PH / 2, 0)],
                  [satin], steps=24)
@@ -523,7 +595,8 @@ def cable(sheath, zincm):
 def build():
     black = grained("EscutcheonPP", v=0.024, rough=0.52, scale=800.0)
     dark = grained("RecessPP", v=0.010, rough=0.7, scale=800.0)
-    satin = satin_silver("LeverSatin")
+    satin = C.principled("LeverSatin", (0.66, 0.665, 0.675), metallic=1.0, rough=0.24)
+    C.add_noise_bump(satin, scale=800, strength=0.04, distance=0.0003, rough_var=0.04)
     sheath = C.mat_black_plastic("CableSheath", rough=0.4, color=0.018)
     zincm = zinc("FerruleZinc")
     objs = escutcheon(black, dark)
@@ -534,7 +607,6 @@ def build():
 
 
 if __name__ == "__main__":
-    hide_floor_from_glossy()
     C.clear()
     objs = build()
     C.shoot("maniglia-interna", objs, "maniglia-interna.py",
