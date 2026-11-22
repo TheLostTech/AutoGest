@@ -16,6 +16,8 @@
 // (cartella DATI_DIR vuota = dati demo di riferimento; controllare che /api/demo-state dia version 0.
 //  next dev non parte due volte nella stessa cartella, per questo si usa una copia; node_modules va copiato, non collegato)
 
+// Script Node in CommonJS, lanciato a mano: qui require() è il modo giusto di importare
+/* eslint-disable @typescript-eslint/no-require-imports */
 const { chromium } = require("playwright-core");
 const fs = require("fs");
 const path = require("path");

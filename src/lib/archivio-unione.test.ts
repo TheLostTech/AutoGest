@@ -24,6 +24,11 @@ test("whole sostituito", () => {
   const r = unisciPush(base({ rules: [1] }), { schema: S, whole: { rules: [2, 3] } });
   assert.deepEqual(r.state!.rules, [2, 3]);
 });
+test("moduli dell'azienda sostituiti interi", () => {
+  const moduli = [{ id: "ambiente", attivo: false }];
+  const r = unisciPush(base({ moduli: [] }), { schema: S, whole: { moduli } });
+  assert.deepEqual(r.state!.moduli, moduli);
+});
 test("contatori al massimo", () => {
   const r = unisciPush(base({ counters: { order: 5, docs: { P: 1, FT: 9 } } }), { schema: S, counters: { order: 3, docs: { P: 4, FT: 2 } } });
   assert.deepEqual(r.state!.counters, { order: 5, docs: { P: 4, FT: 9 } });
