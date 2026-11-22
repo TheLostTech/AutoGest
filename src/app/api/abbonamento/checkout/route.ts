@@ -7,6 +7,7 @@ import type { Accesso } from "@/lib/accesso/regole";
 import { ruoliDaStringa } from "@/lib/accesso/ruoli";
 import { contesto, daAltroSito, errore, leggiJson } from "@/lib/piattaforma/server";
 import { chiaveCheckout } from "@/lib/stripe/chiavi";
+import { PREZZI_DIVERSI } from "@/lib/stripe/forma";
 import { origine, titolare } from "@/lib/stripe/richiesta";
 import { aliquotaIva, clientePer, esitoCheckout, modalitaStripe, preparaCheckout, prezziPer, STATI_IN_CORSO, stripe, sincronizza, unCheckoutAllaVolta } from "@/lib/stripe/server";
 
@@ -79,6 +80,7 @@ async function crea(req: Request, a: Accesso, scelta: NonNullable<ReturnType<typ
     return Response.json({ url: sessione.url }, { headers: NOSTORE });
   } catch (e) {
     if (e instanceof Error && e.message === ALTRO_AMBIENTE) return errore(409, ALTRO_AMBIENTE);
+    if (e instanceof Error && e.message === PREZZI_DIVERSI) return errore(502, PREZZI_DIVERSI);
     // Stessa chiave con parametri diversi (un'altra scheda, nello stesso minuto, partita da un'altra pagina): quella
     // sessione è ancora aperta, non se ne crea una seconda
     if ((e as { type?: unknown } | null)?.type === "StripeIdempotencyError") return errore(409, PAGAMENTO_IN_CORSO);

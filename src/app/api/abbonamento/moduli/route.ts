@@ -4,6 +4,7 @@
 import { connection } from "next/server";
 import { richiestaModuli } from "@/lib/abbonamento";
 import { daAltroSito, errore, leggiJson } from "@/lib/piattaforma/server";
+import { PREZZI_DIVERSI } from "@/lib/stripe/forma";
 import { titolare } from "@/lib/stripe/richiesta";
 import { cambiaModuli, modalitaStripe, unCambioAllaVolta } from "@/lib/stripe/server";
 
@@ -26,6 +27,7 @@ export async function POST(req: Request) {
     if ("errore" in esito) return errore(esito.stato, esito.errore);
     return Response.json(esito, { headers: NOSTORE });
   } catch (e) {
+    if (e instanceof Error && e.message === PREZZI_DIVERSI) return errore(502, PREZZI_DIVERSI);
     console.error("Cambio moduli Stripe non riuscito", a.azienda.id, r, e);
     return errore(502, "Stripe non risponde: riprova tra poco.");
   }

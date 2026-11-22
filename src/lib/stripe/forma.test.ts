@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { abbonamentoModificabile, importoSenzaTasse, pagamentoRifiutato, rifiutoAvanzamento, subMinima, voceDelModulo } from "./forma.ts";
+import { abbonamentoModificabile, differenzaDalListino, importoSenzaTasse, pagamentoRifiutato, risorsaMancante, rifiutoAvanzamento, subMinima, voceDelModulo } from "./forma.ts";
 
 const voce = (product: unknown, interval: string | null, fine = 1_800_000_000) => ({
   price: { recurring: interval ? { interval } : null, product },
@@ -52,11 +52,39 @@ test("voceDelModulo: la voce dell'abbonamento si trova da metadata.modulo del pr
   assert.equal(voceDelModulo([], "ambiente"), null);
 });
 
-test("importoSenzaTasse: quanto si paga subito meno le tasse, mai sotto zero", () => {
-  assert.equal(importoSenzaTasse({ amount_due: 1220, total_taxes: [{ amount: 220 }] }), 1000);
-  assert.equal(importoSenzaTasse({ amount_due: 1000, total_taxes: null }), 1000);
-  assert.equal(importoSenzaTasse({ amount_due: 1464, total_taxes: [{ amount: 200 }, { amount: 64 }] }), 1200);
-  assert.equal(importoSenzaTasse({ amount_due: 0, total_taxes: [{ amount: 220 }] }), 0);
+test("importoSenzaTasse: il totale della fattura IVA esclusa (total_excluding_tax), mai sotto zero", () => {
+  assert.equal(importoSenzaTasse({ total_excluding_tax: 1000 }), 1000);
+  // Rimborso proporzionale più grande dell'addebito: niente importi negativi
+  assert.equal(importoSenzaTasse({ total_excluding_tax: -300 }), 0);
+  assert.equal(importoSenzaTasse({ total_excluding_tax: null }), 0);
+});
+
+const prezzoStripe = (o: Partial<{ unit_amount: number | null; currency: string; recurring: { interval: string } | null; tax_behavior: string | null }> = {}) => ({
+  unit_amount: 1990, currency: "eur", recurring: { interval: "month" }, tax_behavior: "exclusive", ...o,
+});
+
+test("differenzaDalListino: il prezzo di Stripe va con il listino (importo, euro, periodo, IVA esclusa)", () => {
+  assert.equal(differenzaDalListino(prezzoStripe(), "accettazione", "mese"), null);
+  assert.equal(differenzaDalListino(prezzoStripe({ unit_amount: 319900, recurring: { interval: "year" } }), "magazzino", "anno"), null);
+  assert.match(differenzaDalListino(prezzoStripe({ unit_amount: 1999 }), "accettazione", "mese") ?? "", /importo 1999.*1990/);
+  assert.match(differenzaDalListino(prezzoStripe({ unit_amount: null }), "accettazione", "mese") ?? "", /importo/);
+  assert.match(differenzaDalListino(prezzoStripe({ currency: "usd" }), "accettazione", "mese") ?? "", /valuta usd/);
+  assert.match(differenzaDalListino(prezzoStripe({ recurring: { interval: "year" } }), "accettazione", "mese") ?? "", /periodo year/);
+  assert.match(differenzaDalListino(prezzoStripe({ recurring: null }), "accettazione", "mese") ?? "", /periodo/);
+  assert.match(differenzaDalListino(prezzoStripe({ tax_behavior: "inclusive" }), "accettazione", "mese") ?? "", /IVA inclusive/);
+  assert.match(differenzaDalListino(prezzoStripe({ tax_behavior: null }), "accettazione", "mese") ?? "", /IVA/);
+  // Più differenze insieme: tutte nel messaggio
+  const tutte = differenzaDalListino(prezzoStripe({ unit_amount: 1, currency: "usd" }), "accettazione", "mese") ?? "";
+  assert.match(tutte, /importo/);
+  assert.match(tutte, /valuta/);
+});
+
+test("risorsaMancante: solo resource_missing di Stripe (cliente o abbonamento cancellati)", () => {
+  assert.equal(risorsaMancante({ type: "StripeInvalidRequestError", code: "resource_missing", statusCode: 404 }), true);
+  assert.equal(risorsaMancante({ type: "StripeInvalidRequestError", code: "parameter_invalid_empty", statusCode: 400 }), false);
+  assert.equal(risorsaMancante({ type: "StripeConnectionError" }), false);
+  assert.equal(risorsaMancante(new Error("rete")), false);
+  assert.equal(risorsaMancante(null), false);
 });
 
 test("abbonamentoModificabile: i moduli si cambiano solo su un abbonamento active o trialing", () => {

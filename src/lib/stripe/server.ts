@@ -8,7 +8,7 @@ import type { Periodo } from "@/lib/listino";
 import type { Modulo } from "@/lib/moduli";
 import { azioneCliente, ESPANSIONI, modalitaDaChiave, pagamentoInCorso, sessioniDaScadere, sincronizzazioneLimitata, stessoAmbiente, type ModalitaStripe, type SessioneCheckout } from "./chiavi";
 import { creaFila, type Fila } from "./fila";
-import { abbonamentoModificabile, importoSenzaTasse, OROLOGIO_IN_AVANZAMENTO, pagamentoRifiutato, rifiutoAvanzamento, subMinima, TROPPI_PERIODI, voceDelModulo, type SubDaStripe } from "./forma";
+import { abbonamentoModificabile, differenzaDalListino, importoSenzaTasse, OROLOGIO_IN_AVANZAMENTO, PREZZI_DIVERSI, pagamentoRifiutato, rifiutoAvanzamento, subMinima, TROPPI_PERIODI, voceDelModulo, type SubDaStripe } from "./forma";
 
 // Versione dell'API fissata: quella che porta con sé stripe@23.2.0 (Stripe.API_VERSION). Si cambia insieme alla libreria.
 const VERSIONE_API = "2026-11-18.endive";
@@ -93,16 +93,25 @@ export function clientePer(aziendaId: string, nome: string, email: string): Prom
   return run;
 }
 
-/** I price id dei moduli per il periodo, cercati per lookup key (<nomeStripe>_mese / _anno), nello stesso ordine. */
+/**
+ * I price id dei moduli per il periodo, cercati per lookup key (<nomeStripe>_mese / _anno), nello stesso ordine.
+ * Ognuno deve andare con il listino (importo, euro, periodo, IVA esclusa): se no lancia PREZZI_DIVERSI e non si
+ * fa pagare un importo diverso da quello mostrato. Le route rispondono 502 con quel messaggio.
+ */
 export async function prezziPer(moduli: Modulo[], periodo: Periodo): Promise<string[]> {
   const chiavi = moduli.map((m) => lookupKey(m, periodo));
   if (!chiavi.length) return [];
   const r = await stripe().prices.list({ lookup_keys: chiavi, active: true, limit: 100 });
-  const perChiave = new Map(r.data.map((p) => [p.lookup_key, p.id]));
-  return chiavi.map((k) => {
-    const id = perChiave.get(k);
-    if (!id) throw new Error(`Prezzo Stripe mancante: lookup key ${k}`);
-    return id;
+  const perChiave = new Map(r.data.map((p) => [p.lookup_key, p]));
+  return chiavi.map((k, i) => {
+    const p = perChiave.get(k);
+    if (!p) throw new Error(`Prezzo Stripe mancante: lookup key ${k}`);
+    const no = differenzaDalListino(p, moduli[i], periodo);
+    if (no) {
+      console.error("Prezzo Stripe diverso dal listino", k, p.id, no);
+      throw new Error(PREZZI_DIVERSI);
+    }
+    return p.id;
   });
 }
 

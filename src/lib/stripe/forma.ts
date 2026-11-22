@@ -1,6 +1,7 @@
 // Da un abbonamento come lo restituisce Stripe (voci in items.data) alla forma minima SubStripe di abbonamento.ts.
 // Pura: i tipi sono strutturali, così il test non dipende dalla libreria.
 import { conDisdetta, type SubStripe } from "../abbonamento.ts";
+import { prezzo, type Periodo } from "../listino.ts";
 import type { Modulo } from "../moduli.ts";
 
 type ProdottoStripe = string | { id: string; deleted?: boolean; metadata?: Record<string, string> | null };
@@ -81,8 +82,33 @@ export function rifiutoAvanzamento(e: unknown): { stato: number; messaggio: stri
   return null;
 }
 
-// Anteprima della fattura: quanto si paga subito, IVA esclusa (in centesimi), mai sotto zero.
-export function importoSenzaTasse(f: { amount_due: number; total_taxes: { amount: number }[] | null }): number {
-  const tasse = (f.total_taxes ?? []).reduce((s, t) => s + t.amount, 0);
-  return Math.max(0, f.amount_due - tasse);
+// Anteprima della fattura: quanto costa subito, IVA esclusa (in centesimi), mai sotto zero. Il totale IVA esclusa
+// e non amount_due: un credito del cliente abbassa quello da pagare, non il costo del modulo.
+export function importoSenzaTasse(f: { total_excluding_tax: number | null }): number {
+  return Math.max(0, f.total_excluding_tax ?? 0);
+}
+
+export const PREZZI_DIVERSI = "Prezzi di Stripe diversi dal listino: avvisa l'assistenza";
+
+// Forma minima di un prezzo Stripe, così il test non dipende dalla libreria
+export type PrezzoStripe = { unit_amount: number | null; currency: string; recurring: { interval: string } | null; tax_behavior: string | null };
+
+// Il prezzo trovato su Stripe per lookup key va con il listino dell'app? Importo in centesimi, euro, periodo
+// (month/year) e IVA esclusa (l'aliquota del 22% si aggiunge sopra). null se va bene, altrimenti cosa non va.
+export function differenzaDalListino(p: PrezzoStripe, m: Modulo, periodo: Periodo): string | null {
+  const atteso = prezzo(m, periodo);
+  const intervallo = periodo === "anno" ? "year" : "month";
+  const no: string[] = [];
+  if (p.unit_amount !== atteso) no.push(`importo ${p.unit_amount ?? "assente"} invece di ${atteso}`);
+  if (p.currency !== "eur") no.push(`valuta ${p.currency} invece di eur`);
+  if (p.recurring?.interval !== intervallo) no.push(`periodo ${p.recurring?.interval ?? "assente"} invece di ${intervallo}`);
+  if (p.tax_behavior !== "exclusive") no.push(`IVA ${p.tax_behavior ?? "non indicata"} invece di exclusive`);
+  return no.length ? no.join(", ") : null;
+}
+
+// Stripe non trova il cliente o l'abbonamento (cancellati dalla dashboard, conto di prova ripulito).
+export function risorsaMancante(e: unknown): boolean {
+  if (!e || typeof e !== "object") return false;
+  const x = e as { type?: unknown; code?: unknown };
+  return x.type === "StripeInvalidRequestError" && x.code === "resource_missing";
 }
