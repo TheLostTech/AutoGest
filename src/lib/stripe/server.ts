@@ -6,7 +6,7 @@ import { aggiornaAbbonamento, leggiAbbonamento } from "@/lib/abbonamento-server"
 import { aggiungiEventi } from "@/lib/archivio-azienda";
 import type { Periodo } from "@/lib/listino";
 import type { Modulo } from "@/lib/moduli";
-import { azioneCliente, ESPANSIONI, modalitaDaChiave, sincronizzazioneLimitata, stessoAmbiente, type ModalitaStripe } from "./chiavi";
+import { azioneCliente, ESPANSIONI, modalitaDaChiave, pagamentoInCorso, sessioniDaScadere, sincronizzazioneLimitata, stessoAmbiente, type ModalitaStripe, type SessioneCheckout } from "./chiavi";
 import { creaFila, type Fila } from "./fila";
 import { subMinima, type SubDaStripe } from "./forma";
 
@@ -19,6 +19,7 @@ type Globali = typeof globalThis & {
   __filaSincronizzazioni?: Fila<Abbonamento>;
   __tentativiSincronizzazione?: Map<string, number>;
   __ivaStripe?: Promise<string>;
+  __checkoutInCorso?: Map<string, Promise<unknown>>;
 };
 const g = globalThis as Globali;
 
@@ -182,6 +183,50 @@ const salvato = async (aziendaId: string) => (await leggiAbbonamento(aziendaId))
 
 // Stati con un abbonamento in corso: niente nuovo Checkout (i moduli si aggiungono da Abbonamento)
 export const STATI_IN_CORSO = new Set<Abbonamento["stato"]>(["attivo", "in-ritardo", "disdetto"]);
+
+const checkoutInCorso = (g.__checkoutInCorso ??= new Map<string, Promise<unknown>>());
+
+/**
+ * Un Checkout per volta per azienda: due schede che pagano insieme non creano due sessioni aperte. Il lavoro dopo parte
+ * quando quello prima è finito, riuscito o no.
+ */
+export function unCheckoutAllaVolta<T>(aziendaId: string, lavoro: () => Promise<T>): Promise<T> {
+  const prima = checkoutInCorso.get(aziendaId) ?? Promise.resolve();
+  const run = prima.then(lavoro, lavoro);
+  const fine = run.catch(() => undefined);
+  checkoutInCorso.set(aziendaId, fine);
+  void fine.then(() => {
+    if (checkoutInCorso.get(aziendaId) === fine) checkoutInCorso.delete(aziendaId);
+  });
+  return run;
+}
+
+/**
+ * Prima di un nuovo Checkout, solo per questo cliente: fa scadere le sessioni aperte (altre schede, ritorni annullati),
+ * tranne quella con la stessa chiave di idempotenza, e dice se c'è già un pagamento in attesa di Stripe
+ * (abbonamento `incomplete` o sessione completata ma non pagata). Vedi pagamentoInCorso.
+ */
+export async function preparaCheckout(customerId: string, chiave: string): Promise<{ pagamentoInCorso: boolean }> {
+  const s = stripe();
+  const [aperte, complete, incompleti] = await Promise.all([
+    s.checkout.sessions.list({ customer: customerId, status: "open", limit: 100 }),
+    s.checkout.sessions.list({ customer: customerId, status: "complete", limit: 20, expand: [...ESPANSIONI.sessioni] }),
+    s.subscriptions.list({ customer: customerId, status: "incomplete", limit: 10 }),
+  ]);
+  const forma = (x: Stripe.Checkout.Session): SessioneCheckout => ({
+    id: x.id,
+    customer: typeof x.customer === "string" ? x.customer : (x.customer?.id ?? null),
+    status: x.status,
+    payment_status: x.payment_status,
+    subscription: typeof x.subscription === "string" || !x.subscription ? (x.subscription ?? null) : { status: x.subscription.status },
+    metadata: x.metadata,
+  });
+  for (const id of sessioniDaScadere(customerId, aperte.data.map(forma), chiave)) {
+    await s.checkout.sessions.expire(id);
+  }
+  const abbonamenti = incompleti.data.map((x) => ({ customer: typeof x.customer === "string" ? x.customer : x.customer.id, status: x.status }));
+  return { pagamentoInCorso: pagamentoInCorso(customerId, abbonamenti, complete.data.map(forma)) };
+}
 
 export type EsitoCheckout = { pagata: boolean; abbonamento: Abbonamento } | { errore: string; stato: number };
 

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ABBONAMENTO_NUOVO, type Abbonamento } from "../abbonamento.ts";
-import { azioneCliente, aziendaDaEvento, daSincronizzare, ESPANSIONI, espansioneValida, etichettaStripe, modalitaDaChiave, sincronizzazioneLimitata, stessoAmbiente } from "./chiavi.ts";
+import { azioneCliente, aziendaDaEvento, chiaveCheckout, daSincronizzare, pagamentoInCorso, sessioniDaScadere, type SessioneCheckout, ESPANSIONI, espansioneValida, etichettaStripe, modalitaDaChiave, sincronizzazioneLimitata, stessoAmbiente } from "./chiavi.ts";
 
 test("modalitaDaChiave: senza chiave è spenta", () => {
   assert.equal(modalitaDaChiave(undefined, undefined), "spenta");
@@ -114,4 +114,48 @@ test("sincronizzazioneLimitata: niente Stripe se l'ultimo tentativo è di meno d
   assert.equal(sincronizzazioneLimitata(100_000, 100_000), true);
   assert.equal(sincronizzazioneLimitata(100_000, 114_999), true);
   assert.equal(sincronizzazioneLimitata(100_000, 115_000), false);
+});
+
+const sess = (o: Partial<SessioneCheckout> = {}): SessioneCheckout => ({
+  id: "cs_1", customer: "cus_1", status: "open", payment_status: "unpaid", subscription: null, metadata: {}, ...o,
+});
+
+test("pagamentoInCorso: un abbonamento incomplete del cliente blocca un nuovo Checkout", () => {
+  assert.equal(pagamentoInCorso("cus_1", [{ customer: "cus_1", status: "incomplete" }], []), true);
+  assert.equal(pagamentoInCorso("cus_1", [{ customer: "cus_2", status: "incomplete" }], []), false);
+  assert.equal(pagamentoInCorso("cus_1", [{ customer: "cus_1", status: "incomplete_expired" }], []), false);
+  assert.equal(pagamentoInCorso("cus_1", [], []), false);
+});
+
+test("pagamentoInCorso: una sessione completa ma non pagata del cliente blocca", () => {
+  assert.equal(pagamentoInCorso("cus_1", [], [sess({ status: "complete", payment_status: "unpaid" })]), true);
+  assert.equal(pagamentoInCorso("cus_1", [], [sess({ status: "complete", payment_status: "unpaid", subscription: { status: "incomplete" } })]), true);
+  assert.equal(pagamentoInCorso("cus_1", [], [sess({ status: "complete", payment_status: "paid" })]), false);
+  assert.equal(pagamentoInCorso("cus_1", [], [sess({ status: "open", payment_status: "unpaid" })]), false);
+  assert.equal(pagamentoInCorso("cus_1", [], [sess({ customer: "cus_2", status: "complete", payment_status: "unpaid" })]), false);
+});
+
+test("pagamentoInCorso: un pagamento lento fallito (abbonamento finito) non blocca per sempre", () => {
+  for (const status of ["incomplete_expired", "canceled"]) {
+    assert.equal(pagamentoInCorso("cus_1", [], [sess({ status: "complete", payment_status: "unpaid", subscription: { status } })]), false);
+  }
+});
+
+test("sessioniDaScadere: solo le aperte del cliente, non quella con la stessa chiave", () => {
+  const s = [
+    sess({ id: "cs_a" }),
+    sess({ id: "cs_b", customer: "cus_2" }),
+    sess({ id: "cs_c", status: "complete" }),
+    sess({ id: "cs_d", metadata: { chiave: "k1" } }),
+    sess({ id: "cs_e", metadata: { chiave: "k0" } }),
+  ];
+  assert.deepEqual(sessioniDaScadere("cus_1", s, "k1"), ["cs_a", "cs_e"]);
+});
+
+test("chiaveCheckout: azienda, periodo, moduli in ordine e minuto", () => {
+  const m = Date.UTC(2026, 10, 22, 15, 30, 10);
+  assert.equal(chiaveCheckout("az1", "anno", ["vendite", "magazzino", "ambiente"], m), chiaveCheckout("az1", "anno", ["ambiente", "vendite", "magazzino"], m + 40_000));
+  assert.notEqual(chiaveCheckout("az1", "anno", ["magazzino"], m), chiaveCheckout("az1", "anno", ["magazzino"], m + 60_000));
+  assert.notEqual(chiaveCheckout("az1", "anno", ["magazzino"], m), chiaveCheckout("az1", "mese", ["magazzino"], m));
+  assert.notEqual(chiaveCheckout("az1", "anno", ["magazzino"], m), chiaveCheckout("az2", "anno", ["magazzino"], m));
 });

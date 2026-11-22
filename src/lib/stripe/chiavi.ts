@@ -63,6 +63,8 @@ export function espansioneValida(e: string): boolean {
 export const ESPANSIONI = {
   // subscriptions.retrieve dell'abbonamento scelto: i prodotti servono per metadata.modulo
   abbonamento: ["items.data.price.product"],
+  // checkout.sessions.list delle sessioni completate: lo stato dell'abbonamento dice se il pagamento lento è finito
+  sessioni: ["data.subscription"],
 } as const;
 
 /** Le aziende scritte con chiavi di prova non vanno con le chiavi vere (e viceversa): i loro id non esistono lì. Spento: nessuna. */
@@ -88,6 +90,42 @@ const QUINDICI_SECONDI = 15_000;
 /** Sincronizzazioni chieste dal browser: niente Stripe se l'ultimo tentativo per l'azienda è di meno di 15 secondi fa. */
 export function sincronizzazioneLimitata(ultimoTentativo: number | null, ora: number): boolean {
   return ultimoTentativo !== null && ora - ultimoTentativo < QUINDICI_SECONDI;
+}
+
+// Forma minima di una sessione Checkout (lista con data.subscription espanso), così il test non dipende dalla libreria
+export type SessioneCheckout = {
+  id: string;
+  customer: string | null;
+  status: string | null; // open, complete, expired
+  payment_status: string; // paid, unpaid, no_payment_required
+  subscription: string | { status: string } | null;
+  metadata: Record<string, string> | null;
+};
+
+// Abbonamenti finiti: un pagamento lento fallito lascia la sessione "complete" e "unpaid" per sempre, ma non è più in corso
+const FINITI = new Set(["incomplete_expired", "canceled"]);
+
+/**
+ * C'è già un pagamento del cliente in attesa di Stripe? Un abbonamento `incomplete` (primo addebito non ancora riuscito),
+ * oppure una sessione Checkout completata ma non ancora pagata (SEPA o simili) il cui abbonamento non è finito.
+ * Allora un secondo Checkout creerebbe un secondo abbonamento. Conta solo ciò che è di questo cliente.
+ */
+export function pagamentoInCorso(cliente: string, abbonamenti: { customer: string; status: string }[], sessioni: SessioneCheckout[]): boolean {
+  if (abbonamenti.some((a) => a.customer === cliente && a.status === "incomplete")) return true;
+  return sessioni.some((s) => {
+    if (s.customer !== cliente || s.status !== "complete" || s.payment_status !== "unpaid") return false;
+    return !(s.subscription && typeof s.subscription === "object" && FINITI.has(s.subscription.status));
+  });
+}
+
+/** Le sessioni Checkout aperte di questo cliente da far scadere prima di crearne una nuova, tranne quella con la stessa chiave (doppio clic). */
+export function sessioniDaScadere(cliente: string, sessioni: SessioneCheckout[], chiave: string): string[] {
+  return sessioni.filter((s) => s.customer === cliente && s.status === "open" && s.metadata?.chiave !== chiave).map((s) => s.id);
+}
+
+/** Chiave di idempotenza del Checkout: stessa azienda, stessa scelta e stesso minuto danno la stessa sessione. */
+export function chiaveCheckout(aziendaId: string, periodo: string, moduli: string[], ora: number): string {
+  return `checkout-${aziendaId}-${periodo}-${[...moduli].sort().join("+")}-${Math.floor(ora / 60_000)}`;
 }
 
 const UN_ORA = 3_600_000;
