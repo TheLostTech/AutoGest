@@ -123,5 +123,23 @@ Un componente, per esempio `<Bloccato modulo="accettazione">…</Bloccato>`, che
 - Elenco preciso delle voci di "Oggi" e dei tipi di risultato della ricerca per modulo.
 
 ## Da fornire da Alessandro
-- Il numero WhatsApp per le richieste d'attivazione.
 - I prezzi, quando vorrà mostrarli su `/scopri`.
+- ~~Il numero WhatsApp per le richieste d'attivazione.~~ Superato il 22/11/2026: vedi sotto.
+
+## Cambio di rotta del 22/11/2026: attivazione con Stripe
+Decisione di Alessandro: i moduli non si attivano più su richiesta WhatsApp ma **pagando con Stripe** (account Lostar srls, non quello di Futugrana). Registrazione e accesso partono dalla landing page; l'app resta tutta in cloud. Flusso voluto: registrazione → si entra nel gestionale → si inserisce il primo veicolo → l'app si blocca con un riquadro di pagamento al centro dello schermo che non lascia fare altro. Si paga il base oppure il base più gli add-on. Va progettato a parte (registrazione, prova, Stripe, attivazione automatica); il pulsante WhatsApp di oggi diventerà "Attiva" verso il pagamento.
+
+## Rimandato (aggiornato il 22/11/2026)
+Dalla revisione finale del ramo `moduli-a-pagamento`, cose minori lasciate per dopo:
+- In "Oggi", il riquadro "In numeri" mostra anche dati dei moduli spenti (pratiche aperte, bozze del registro, prossima trasmissione).
+- In "Oggi", il pulsante principale del ruolo vendite ("Nuova vendita al banco") e della consulente ("Periodo da trasmettere") apre la pagina bloccata se il modulo è spento.
+- Il test "ogni pagina ha un modulo" non si accorge di una pagina nuova di un modulo aggiuntivo dimenticata nella mappa: serve un elenco esplicito pagina → modulo.
+- Due dispositivi che cambiano due moduli diversi nello stesso istante: uno dei due cambi si perde (il server sostituisce l'elenco intero; andrebbe fuso per modulo). Con Stripe l'attivazione passerà dal server e il problema sparisce.
+- Barra del telefono: resta a 4–5 colonne anche quando le schede sono meno.
+- "Bonificato oggi" non chiede conferma e non si annulla.
+
+Altro rimandato, già noto:
+- Interruttori dei moduli in mano al cliente (Impostazioni → Moduli): con login e Stripe passano al server, il cliente non li tocca più.
+- Capitoli del manuale operativo da etichettare per modulo.
+- Prezzi su `/scopri`.
+- `setDatiRegistro` segna la presa in carico ma non la radiazione "da richiedere": se poi si attiva l'Accettazione, il passo della radiazione va controllato.
