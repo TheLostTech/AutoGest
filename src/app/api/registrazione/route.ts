@@ -10,6 +10,7 @@ import { creaAzienda, creaMembro, slugDa } from "@/lib/piattaforma/crea";
 import { usaInvito, verificaInvito } from "@/lib/piattaforma/inviti";
 import { contesto, daAltroSito, errore, leggiJson, ok, type Contesto } from "@/lib/piattaforma/server";
 import { DEFAULT_LISTINI } from "@/lib/pricing";
+import { modalitaStripe } from "@/lib/stripe/server";
 import { cartellaAzienda } from "@/lib/server-data";
 import { statoVuoto } from "@/lib/stato-iniziale";
 import { WAREHOUSES } from "@/lib/warehouse";
@@ -62,8 +63,8 @@ export async function POST(req: Request) {
     await creaStatoAzienda(org.id, statoVuoto({ listini: DEFAULT_LISTINI, warehouses: WAREHOUSES }));
     // creaMembro, se fallisce, toglie da sé l'utente che aveva creato
     userId = await creaMembro(c, org.id, { nome: d.nome, ruoli: ["responsabile"], email: d.email, password: d.password });
-    // prova: per ora sempre true; dal Task 6 vale modalitaStripe() === "prova"
-    await aggiornaAbbonamento(org.id, () => ABBONAMENTO_NUOVO(true, Date.now()));
+    // prova: vero salvo con le chiavi vere (anche senza chiave: un'azienda nata così non va sincronizzata col conto vero)
+    await aggiornaAbbonamento(org.id, () => ABBONAMENTO_NUOVO(modalitaStripe() !== "live", Date.now()));
     if (!(await usaInvito(c, d.invito, org.id))) {
       // Lo stesso codice usato da un'altra registrazione nel frattempo
       console.warn("Registrazione annullata: invito già usato", org.id);

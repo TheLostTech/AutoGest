@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "postinstall": "node -e \"require('fs').mkdirSync('public/zxing',{recursive:true});require('fs').copyFileSync('node_modules/zxing-wasm/dist/reader/zxing_reader.wasm','public/zxing/zxing_reader.wasm')\"",
-    "test": "node --import ./scripts/alias-ts.mjs --test src/lib/*.test.ts src/lib/ebay/*.test.ts src/lib/accesso/*.test.ts src/lib/auth/*.test.ts src/lib/accesso/server.prova.ts src/lib/abbonamento-server.prova.ts src/lib/piattaforma/inviti.prova.ts",
+    "test": "node --import ./scripts/alias-ts.mjs --test src/lib/*.test.ts src/lib/ebay/*.test.ts src/lib/accesso/*.test.ts src/lib/auth/*.test.ts src/lib/accesso/server.prova.ts src/lib/abbonamento-server.prova.ts src/lib/piattaforma/inviti.prova.ts src/lib/stripe/*.test.ts",
     "prova:accesso": "node --import ./scripts/alias-ts.mjs --test src/lib/accesso/server.prova.ts src/lib/abbonamento-server.prova.ts src/lib/piattaforma/inviti.prova.ts"
   },
   "dependencies": {
@@ -21,6 +21,7 @@
     "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "stripe": "^23.2.0",
     "zustand": "^5.1.0"
   },
   "devDependencies": {

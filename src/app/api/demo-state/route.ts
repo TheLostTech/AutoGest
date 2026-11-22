@@ -5,6 +5,7 @@ import { accessoDaRichiesta } from "@/lib/accesso/server";
 import { aggiornaStato, leggiStato } from "@/lib/archivio-azienda";
 import { leggiAbbonamento } from "@/lib/abbonamento-server";
 import { ABBONAMENTO_NUOVO, contaVeicoli, scritturaAzienda, statoPerBrowser } from "@/lib/abbonamento";
+import { modalitaStripe } from "@/lib/stripe/server";
 import { esitoPush, unisciPush, type Push, type Stored } from "@/lib/archivio-unione";
 
 const NOSTORE = { "Cache-Control": "no-store" };
@@ -23,7 +24,7 @@ export async function GET(req: Request) {
     // aziendaId: la scheda controlla che la risposta sia della sua azienda (mai applicare i dati di un'altra)
     const reg = a.azienda.registrata;
     // Senza file un'azienda registrata è "nuovo", come per il PUT: GET e PUT devono dire la stessa cosa
-    const ab = reg ? ((await leggiAbbonamento(a.azienda.id)) ?? ABBONAMENTO_NUOVO(true, Date.now())) : null;
+    const ab = reg ? ((await leggiAbbonamento(a.azienda.id)) ?? ABBONAMENTO_NUOVO(modalitaStripe() !== "live", Date.now())) : null;
     return Response.json({ ...s, state: statoPerBrowser(reg, ab, s.state), abbonamento: ab, demo: a.azienda.demo, aziendaId: a.azienda.id }, { headers: NOSTORE });
   } catch (e) {
     return erroreArchivio(e);
@@ -41,7 +42,7 @@ export async function PUT(req: Request) {
   let r: Stored | 402 | 403 | 409;
   try {
     const reg = a.azienda.registrata;
-    const ab = reg ? ((await leggiAbbonamento(a.azienda.id)) ?? ABBONAMENTO_NUOVO(true, Date.now())) : null;
+    const ab = reg ? ((await leggiAbbonamento(a.azienda.id)) ?? ABBONAMENTO_NUOVO(modalitaStripe() !== "live", Date.now())) : null;
     r = await aggiornaStato<Stored | 402 | 403 | 409>(a.azienda.id, (cur) => {
       // In prova passa solo il primo salvataggio: si contano i veicoli prima e dopo la fusione (le altre aziende non fondono qui)
       const veicoli = reg ? { prima: contaVeicoli(cur.state), dopo: contaVeicoli(unisciPush(cur, body).state) } : { prima: 0, dopo: 0 };

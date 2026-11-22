@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { LifeBuoy, Plus } from "lucide-react";
 import { Button, ButtonLink, Empty, Field, Notice, PageTitle, Panel } from "@/components/ui";
+import { etichettaStripe } from "@/lib/stripe/chiavi";
 import { chiama, usePiattaforma } from "./comune";
 
 type Azienda = { id: string; nome: string; demo: boolean; utenti: number; ultimoAccesso: string | null };
@@ -61,6 +62,7 @@ export default function ElencoAziende() {
           </ButtonLink>
         }
       />
+      <p className="mb-4 text-sm text-ink-2">{etichettaStripe(stato.stripe)}</p>
       {errore && (
         <div role="alert" className="mb-4">
           <Notice tone="danger">{errore}</Notice>

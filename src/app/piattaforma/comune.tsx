@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Building2, LogOut, Mail, ShieldCheck } from "lucide-react";
 import { authClient } from "@/lib/auth/client";
+import type { ModalitaStripe } from "@/lib/stripe/chiavi";
 import { Button, Notice } from "@/components/ui";
 
 export type StatoPiattaforma = {
@@ -14,6 +15,7 @@ export type StatoPiattaforma = {
   dueFattoriVerificato: boolean;
   aziendaAttiva: string | null;
   assistenzaMinuti: number;
+  stripe: ModalitaStripe;
 };
 
 const Contesto = createContext<{ stato: StatoPiattaforma; ricarica: () => Promise<void> } | null>(null);
