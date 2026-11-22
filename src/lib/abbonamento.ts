@@ -151,11 +151,13 @@ export function contaVeicoli(state: Record<string, unknown> | null | undefined):
 
 // Un salvataggio dal browser. Per le aziende registrate i moduli non li decide il browser (li decide l'abbonamento)
 // e, se l'abbonamento non è in regola, non si scrive nulla.
-// veicoliDopo: i veicoli dell'archivio DOPO la fusione del salvataggio (vedi contaVeicoli): in prova passa solo chi ne ha al massimo uno.
-export function scritturaAzienda(registrata: boolean, a: Abbonamento | null, veicoliDopo: number, corpo: Push): Scrittura {
+// veicoli: quelli dell'archivio prima e dopo la fusione del salvataggio (vedi contaVeicoli). In prova (nuovo) passa solo
+// il primo salvataggio: archivio senza veicoli e, dopo la fusione, al massimo uno. Poi tutto aspetta il pagamento.
+export function scritturaAzienda(registrata: boolean, a: Abbonamento | null, veicoli: { prima: number; dopo: number }, corpo: Push): Scrittura {
   if (!registrata) return { esito: "ok", corpo };
-  // bloccato() conta i veicoli già caricati (da 1 in su si blocca): dopo la fusione uno solo è ancora il primo
-  if (bloccato(a ?? ABBONAMENTO_NUOVO(true, 0), Math.max(0, veicoliDopo - 1))) return { esito: "bloccato" };
+  const ab = a ?? ABBONAMENTO_NUOVO(true, 0);
+  if (bloccato(ab, veicoli.prima)) return { esito: "bloccato" };
+  if (ab.stato === "nuovo" && veicoli.dopo > 1) return { esito: "bloccato" };
   if (!corpo.whole) return { esito: "ok", corpo };
   const whole = { ...corpo.whole };
   delete whole.moduli;

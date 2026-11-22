@@ -43,8 +43,9 @@ export async function PUT(req: Request) {
     const reg = a.azienda.registrata;
     const ab = reg ? ((await leggiAbbonamento(a.azienda.id)) ?? ABBONAMENTO_NUOVO(true, Date.now())) : null;
     r = await aggiornaStato<Stored | 402 | 403 | 409>(a.azienda.id, (cur) => {
-      // In prova conta lo stato DOPO la fusione: un solo invio non può portare più di un veicolo
-      const scr = scritturaAzienda(reg, ab, contaVeicoli(unisciPush(cur, body).state), body);
+      // In prova passa solo il primo salvataggio: si contano i veicoli prima e dopo la fusione (le altre aziende non fondono qui)
+      const veicoli = reg ? { prima: contaVeicoli(cur.state), dopo: contaVeicoli(unisciPush(cur, body).state) } : { prima: 0, dopo: 0 };
+      const scr = scritturaAzienda(reg, ab, veicoli, body);
       if (scr.esito === "bloccato") return { stored: cur, risultato: 402, nonScrivere: true };
       const esito = esitoPush(cur, scr.corpo, ctx);
       if (esito === 403 || esito === 409) return { stored: cur, risultato: esito, nonScrivere: true };

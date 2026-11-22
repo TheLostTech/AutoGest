@@ -107,36 +107,43 @@ test("righeCambio", () => {
 
 test("scritturaAzienda toglie i moduli mandati dal browser", () => {
   const corpo = { schema: "s", whole: { moduli: [{ id: "vendite", attivo: true }], rules: [1] }, counters: { a: 1 } };
-  const r = scritturaAzienda(true, ab(), 0, corpo);
+  const r = scritturaAzienda(true, ab(), { prima: 0, dopo: 0 }, corpo);
   assert.equal(r.esito, "ok");
   if (r.esito === "ok") assert.deepEqual(r.corpo, { schema: "s", whole: { rules: [1] }, counters: { a: 1 } });
-  const n = scritturaAzienda(false, null, 5, corpo);
+  const n = scritturaAzienda(false, null, { prima: 5, dopo: 5 }, corpo);
   assert.deepEqual(n, { esito: "ok", corpo });
 });
 
 test("scritturaAzienda: blocco per stato e veicoli", () => {
   const c = { schema: "s", changes: { vehicles: [{ id: "V1" }] } };
-  assert.equal(scritturaAzienda(true, ab(), 0, c).esito, "ok");
-  assert.equal(scritturaAzienda(true, null, 0, c).esito, "ok");
-  assert.equal(scritturaAzienda(true, ab(), 2, c).esito, "bloccato");
-  assert.equal(scritturaAzienda(true, ab(), 1, c).esito, "ok");
-  assert.equal(scritturaAzienda(true, ab({ stato: "attivo" }), 9, c).esito, "ok");
-  assert.equal(scritturaAzienda(false, ab({ stato: "scaduto" }), 9, c).esito, "ok");
+  assert.equal(scritturaAzienda(true, ab(), { prima: 0, dopo: 1 }, c).esito, "ok");
+  assert.equal(scritturaAzienda(true, null, { prima: 0, dopo: 1 }, c).esito, "ok");
+  assert.equal(scritturaAzienda(true, ab(), { prima: 0, dopo: 2 }, c).esito, "bloccato");
+  assert.equal(scritturaAzienda(true, ab(), { prima: 0, dopo: 1 }, c).esito, "ok");
+  assert.equal(scritturaAzienda(true, ab({ stato: "attivo" }), { prima: 9, dopo: 9 }, c).esito, "ok");
+  assert.equal(scritturaAzienda(false, ab({ stato: "scaduto" }), { prima: 9, dopo: 9 }, c).esito, "ok");
 });
 
 test("scritturaAzienda blocca un primo invio con più veicoli", () => {
   const c = { schema: "s", changes: { vehicles: [{ id: "V1" }, { id: "V2" }, { id: "V3" }] } };
-  assert.equal(scritturaAzienda(true, ab(), 3, c).esito, "bloccato");
-  assert.equal(scritturaAzienda(true, ab({ stato: "in-ritardo" }), 3, c).esito, "ok");
-  assert.equal(scritturaAzienda(true, ab({ stato: "disdetto" }), 3, c).esito, "ok");
-  assert.equal(scritturaAzienda(true, ab({ stato: "scaduto" }), 0, c).esito, "bloccato");
+  assert.equal(scritturaAzienda(true, ab(), { prima: 0, dopo: 3 }, c).esito, "bloccato");
+  assert.equal(scritturaAzienda(true, ab({ stato: "in-ritardo" }), { prima: 1, dopo: 3 }, c).esito, "ok");
+  assert.equal(scritturaAzienda(true, ab({ stato: "disdetto" }), { prima: 1, dopo: 3 }, c).esito, "ok");
+  assert.equal(scritturaAzienda(true, ab({ stato: "scaduto" }), { prima: 0, dopo: 0 }, c).esito, "bloccato");
+});
+
+test("scritturaAzienda blocca le scritture dopo il primo veicolo", () => {
+  const c = { schema: "s", changes: { parts: [{ id: "P1" }] } };
+  assert.equal(scritturaAzienda(true, ab(), { prima: 1, dopo: 1 }, c).esito, "bloccato");
+  assert.equal(scritturaAzienda(true, ab(), { prima: Infinity, dopo: 1 }, c).esito, "bloccato");
+  assert.equal(scritturaAzienda(true, ab({ stato: "attivo" }), { prima: 1, dopo: 1 }, c).esito, "ok");
 });
 
 test("contaVeicoli: lista, assente, valore non valido (blocca)", () => {
   assert.equal(contaVeicoli(null), 0);
   assert.equal(contaVeicoli({}), 0);
   assert.equal(contaVeicoli({ vehicles: [1, 2] }), 2);
-  assert.equal(scritturaAzienda(true, ab(), contaVeicoli({ vehicles: "x" }), { schema: "s" }).esito, "bloccato");
+  assert.equal(scritturaAzienda(true, ab(), { prima: 0, dopo: contaVeicoli({ vehicles: "x" }) }, { schema: "s" }).esito, "bloccato");
 });
 
 test("statoPerBrowser mette i moduli dell'abbonamento", () => {
