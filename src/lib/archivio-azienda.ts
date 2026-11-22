@@ -4,6 +4,7 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { leggiStatoDaFile } from "@/lib/archivio-file";
+import { creaUnaVolta } from "@/lib/file-una-volta";
 import { cartellaAzienda } from "@/lib/server-data";
 import { STORE_SCHEMA } from "@/lib/schema";
 import type { Rec, Stored } from "@/lib/archivio-unione";
@@ -26,7 +27,8 @@ async function scrivi(aziendaId: string, s: Stored, soloSeNuovo = false) {
   await mkdir(dir, { recursive: true });
   const file = path.join(dir, "state.json");
   if (soloSeNuovo) {
-    await writeFile(file, JSON.stringify(s), { flag: "wx" });
+    // Già completo quando compare: chi legge in quel momento non lo trova a metà (e non lo crede corrotto)
+    if (!(await creaUnaVolta(file, JSON.stringify(s), 0o644))) throw Object.assign(new Error("Archivio già presente"), { code: "EEXIST" });
     return;
   }
   const tmp = `${file}.${process.pid}.tmp`;
