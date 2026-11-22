@@ -129,6 +129,18 @@ Un componente, per esempio `<Bloccato modulo="accettazione">…</Bloccato>`, che
 ## Cambio di rotta del 22/11/2026: attivazione con Stripe
 Decisione di Alessandro: i moduli non si attivano più su richiesta WhatsApp ma **pagando con Stripe** (account Lostar srls, non quello di Futugrana). Registrazione e accesso partono dalla landing page; l'app resta tutta in cloud. Flusso voluto: registrazione → si entra nel gestionale → si inserisce il primo veicolo → l'app si blocca con un riquadro di pagamento al centro dello schermo che non lascia fare altro. Si paga il base oppure il base più gli add-on. Va progettato a parte (registrazione, prova, Stripe, attivazione automatica); il pulsante WhatsApp di oggi diventerà "Attiva" verso il pagamento.
 
+## Listino (22/11/2026)
+Abbonamento mensile o annuale a scelta del cliente; l'annuale si paga in un'unica soluzione con circa il 10% di sconto. Regola di Alessandro: i prezzi finiscono in 9 (49,90, 99,90…), mai cifre tonde come 50 o 100. Prezzi IVA esclusa (da confermare).
+
+| Modulo | Nome commerciale | Mensile | Annuale |
+|---|---|---|---|
+| Magazzino (base) | AutoLost Magazzino | 299,90 € | 3.199 € (deciso da Alessandro) |
+| Accettazione | AutoLost Pratiche | 49,90 € | 539 € |
+| Ambiente | AutoLost Ambiente | 99,90 € | 1.079 € |
+| Vendite | AutoLost Banco | 49,90 € | 539 € |
+
+Annuali dei moduli aggiuntivi: 12 mesi meno 10% (538,92 € e 1.078,92 €) arrotondati al 9.
+
 ## Rimandato (aggiornato il 22/11/2026)
 Dalla revisione finale del ramo `moduli-a-pagamento`, cose minori lasciate per dopo:
 - In "Oggi", il riquadro "In numeri" mostra anche dati dei moduli spenti (pratiche aperte, bozze del registro, prossima trasmissione).
