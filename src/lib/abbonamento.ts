@@ -64,6 +64,11 @@ export function bloccato(a: Abbonamento, veicoli: number): boolean {
   return false;
 }
 
+// Il negozio online di un'azienda registrata chiude quando è bloccata; le altre aziende non sono toccate.
+export function negozioAperto(registrata: boolean, a: Abbonamento | null, veicoli: number): boolean {
+  return !registrata || !bloccato(a ?? ABBONAMENTO_NUOVO(true, 0), veicoli);
+}
+
 // Forma minima di un abbonamento Stripe, così il test non dipende dalla libreria
 export type SubStripe = {
   id: string; status: string; cancel_at_period_end: boolean; created: number;

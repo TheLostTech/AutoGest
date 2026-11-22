@@ -3,6 +3,9 @@ import type { AuthContext } from "better-auth";
 import { auth } from "@/lib/auth/server";
 import { rispostaNonPronta } from "@/lib/accesso/pronta";
 import { idAziendaValido } from "@/lib/accesso/id-azienda";
+import { leggiStato } from "@/lib/archivio-azienda";
+import { leggiAbbonamento } from "@/lib/abbonamento-server";
+import { contaVeicoli, negozioAperto } from "@/lib/abbonamento";
 import { richiestaDellApp } from "@/lib/collegamenti-server";
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -54,6 +57,35 @@ export async function datiNegozio(): Promise<DatiNegozio | null> {
 
 export async function aziendaNegozio(): Promise<string | null> {
   return (await datiNegozio())?.id ?? null;
+}
+
+const eRegistrata = (metadata: unknown): boolean => {
+  try {
+    const m = typeof metadata === "string" ? JSON.parse(metadata) : metadata;
+    return typeof m === "object" && m !== null && (m as { registrata?: unknown }).registrata === true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Il negozio vende? Un'azienda registrata e bloccata (abbonamento scaduto, o prova finita) chiude il negozio.
+ * Le altre aziende sono sempre aperte. Se non si riesce a leggere: aperto per le non registrate, chiuso per le registrate.
+ * Si legge a ogni richiesta (niente cache): il blocco deve valere subito.
+ */
+export async function negozioAttivo(aziendaId: string): Promise<boolean> {
+  let registrata = false;
+  try {
+    const ctx = (await auth.$context) as unknown as AuthContext;
+    const o = await ctx.adapter.findOne<{ id: string; metadata?: unknown }>({ model: "organization", where: [{ field: "id", value: aziendaId }] });
+    registrata = o ? eRegistrata(o.metadata) : false;
+    if (!registrata) return true;
+    const [a, s] = await Promise.all([leggiAbbonamento(aziendaId), leggiStato(aziendaId)]);
+    return negozioAperto(true, a, contaVeicoli(s.state as Record<string, unknown> | null | undefined));
+  } catch (e) {
+    console.error("Stato del negozio non leggibile", e);
+    return !registrata;
+  }
 }
 
 const troppoGrande = () => risposta({ error: "Richiesta troppo grande." }, 413);

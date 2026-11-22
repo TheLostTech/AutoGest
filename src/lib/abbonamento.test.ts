@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   ABBONAMENTO_NUOVO, lookupKey, nomeStripe, moduliDaAbbonamento, bloccato,
   abbonamentoDaStripe, contoAllaRovescia, righeCambio, scritturaAzienda, statoPerBrowser, contaVeicoli, sceltaValida,
-  fasciaDaMostrare, richiestaModuli, rifiutoCambio, nuovaOraOrologio, avanzamentoPermesso, passoValido,
+  fasciaDaMostrare, negozioAperto, richiestaModuli, rifiutoCambio, nuovaOraOrologio, avanzamentoPermesso, passoValido,
   type Abbonamento, type SubStripe,
 } from "./abbonamento.ts";
 
@@ -262,4 +262,15 @@ test("passoValido: solo i quattro passi", () => {
   assert.equal(passoValido({}), null);
   assert.equal(passoValido(null), null);
   assert.equal(passoValido("mese"), null);
+});
+
+test("negozioAperto: non registrata sempre aperto; registrata chiude solo quando è bloccata", () => {
+  const ab = (stato: Abbonamento["stato"]): Abbonamento => ({ ...ABBONAMENTO_NUOVO(false, ORA), stato });
+  assert.equal(negozioAperto(false, ab("scaduto"), 50), true);
+  assert.equal(negozioAperto(false, null, 50), true);
+  assert.equal(negozioAperto(true, ab("scaduto"), 0), false);
+  assert.equal(negozioAperto(true, ab("in-ritardo"), 50), true);
+  assert.equal(negozioAperto(true, ab("attivo"), 50), true);
+  assert.equal(negozioAperto(true, null, 0), true); // file assente: in prova
+  assert.equal(negozioAperto(true, null, 3), false); // in prova con veicoli: bloccata
 });

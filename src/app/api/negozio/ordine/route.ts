@@ -7,7 +7,7 @@ import { connection } from "next/server";
 import { aggiornaStato } from "@/lib/archivio-azienda";
 import { nelArchivio, ordineNegozio, rilasciaScaduti, type StatoCondiviso } from "@/lib/negozio-ordine";
 import { archivioNegozioValido, decidiOrdine, decidiPagamento } from "@/lib/negozio-regole";
-import { corpoPubblico, datiNegozio, risposta } from "@/lib/negozio-server";
+import { corpoPubblico, datiNegozio, negozioAttivo, risposta } from "@/lib/negozio-server";
 
 const MAX_ANNUNCI = 10;
 
@@ -25,6 +25,7 @@ export async function POST(req: Request) {
   const consegna = corpo.consegna === "ritiro" ? "ritiro" : "corriere";
   const negozio = await datiNegozio();
   if (!negozio) return risposta({ error: "Il negozio non è disponibile in questo momento." }, 503);
+  if (!(await negozioAttivo(negozio.id))) return risposta({ error: "Negozio momentaneamente chiuso" }, 403);
   // Senza pagamento attivo non si riserva nulla: un ordine non pagabile bloccherebbe i pezzi per altri
   const dp = decidiPagamento(negozio.demo);
   if (!dp.ok) return risposta({ error: dp.error }, dp.stato);

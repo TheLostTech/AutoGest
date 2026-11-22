@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { PART_TYPES, PLATFORMS, CONDITIONS, typeById } from "@/lib/catalog";
@@ -15,6 +15,14 @@ const CATS = PART_TYPES.filter((t) => t.render);
 
 export default function Negozio() {
   const { parts, vehicles, annunci } = useStore();
+  // Negozio chiuso (azienda bloccata): il server lo dice nel catalogo
+  const [chiuso, setChiuso] = useState(false);
+  useEffect(() => {
+    fetch("/api/negozio/catalogo", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j: { chiuso?: boolean }) => setChiuso(j.chiuso === true))
+      .catch(() => undefined);
+  }, []);
   const [make, setMake] = useState("");
   const [platform, setPlatform] = useState("");
   const [type, setType] = useState("");
@@ -73,6 +81,15 @@ export default function Negozio() {
       </li>
     );
   };
+
+  if (chiuso) {
+    return (
+      <div className="mx-auto max-w-xl py-16 text-center" role="status">
+        <h1 className="text-[28px] font-bold tracking-tight">Negozio momentaneamente chiuso</h1>
+        <p className="mt-3 text-ink-2">Il catalogo non è disponibile in questo momento. Torna a trovarci tra poco.</p>
+      </div>
+    );
+  }
 
   return (
     <div>

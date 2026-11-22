@@ -3,12 +3,14 @@
 import { connection } from "next/server";
 import { leggiStato } from "@/lib/archivio-azienda";
 import { catalogoPubblico } from "@/lib/catalogo-pubblico";
-import { datiNegozio, risposta } from "@/lib/negozio-server";
+import { datiNegozio, negozioAttivo, risposta } from "@/lib/negozio-server";
 
 export async function GET() {
   await connection();
   const negozio = await datiNegozio();
   if (!negozio) return risposta({ annunci: [], parts: [], vehicles: [], pagamentoAttivo: false });
+  // Azienda bloccata: stesse chiavi di sempre ma vuote, più chiuso: true
+  if (!(await negozioAttivo(negozio.id))) return risposta({ chiuso: true, annunci: [], parts: [], vehicles: [], pezzi: [], pagamentoAttivo: false });
   try {
     const s = await leggiStato(negozio.id);
     return risposta({ ...catalogoPubblico((s.state ?? {}) as Parameters<typeof catalogoPubblico>[0]), pagamentoAttivo: negozio.demo });
