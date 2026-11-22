@@ -1,17 +1,20 @@
 // Modifica di una persona dell'azienda: ruoli, nuova password, nuovo PIN, sospendi o riattiva. Solo il titolare
 // (o il super admin in assistenza), solo sulle persone dell'azienda della sessione; ogni modifica va nel registro.
 import { accessoDaRichiesta, soloRuoli } from "@/lib/accesso/server";
-import { cambioRuoliPermesso, EMAIL_USATA, modificheDaCorpo, SERVE_RESPONSABILE } from "@/lib/accesso/persone-regole";
+import { cambiNegatiAltraAzienda, cambioRuoliPermesso, EMAIL_USATA, modificheDaCorpo, scritturaPersoneNegata, SERVE_RESPONSABILE } from "@/lib/accesso/persone-regole";
 import { PASSWORD_MIN } from "@/lib/accesso/registrazione";
 import { ruoliDaStringa } from "@/lib/accesso/ruoli";
 import { AVVISO_REGISTRO, contesto, daAltroSito, errore, leggiJson, ok } from "@/lib/piattaforma/server";
-import { applicaModifiche, membroDellAzienda, registraDaAccesso, righeMembri, utenteSuperadmin } from "@/lib/piattaforma/utenti";
+import { altreAziende, applicaModifiche, membroDellAzienda, registraDaAccesso, righeMembri, utenteSuperadmin } from "@/lib/piattaforma/utenti";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ userId: string }> }) {
   const a = await accessoDaRichiesta(req);
   if (a instanceof Response) return a;
   const no = soloRuoli(a, "responsabile");
   if (no) return no;
+  // Con il PIN di un dispositivo condiviso non si cambiano ruoli, password o PIN di nessuno
+  const pin = scritturaPersoneNegata(a.tipo);
+  if (pin) return errore(403, pin, "serve-password");
   const x = daAltroSito(req, true);
   if (x) return x;
   const { userId } = await params;
@@ -28,8 +31,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ userId
   if ("errore" in m) return errore(400, m.errore);
   const { cambi } = m;
   if (cambi.attivo === false && userId === a.utente.id) return errore(400, "Non puoi sospendere il tuo accesso.");
+  // Password, email, PIN e sospensione valgono per tutto l'utente: se lavora anche altrove, solo l'assistenza
+  const altrove = cambiNegatiAltraAzienda(cambi, await altreAziende(c, trovato));
+  if (altrove) return errore(403, altrove, "altra-azienda");
 
-  // L'azienda non resta mai senza un responsabile attivo
+  // L'azienda non resta mai senza un responsabile attivo.
+  // Non atomico: due titolari che si tolgono il ruolo nello stesso istante possono lasciarla senza; rimedia il super admin.
   if (cambi.ruoli || cambi.attivo === false) {
     const membri = (await righeMembri(c, a.azienda.id)).map((p) => ({ userId: p.id, ruoli: p.ruoli, sospeso: !p.attivo }));
     const ruoli = cambi.ruoli ?? ruoliDaStringa(trovato.membro.role);

@@ -1,7 +1,26 @@
 // Regole delle persone dell'azienda (accessi dei dipendenti). Si eseguono con: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cambioRuoliPermesso, modificheDaCorpo, nuovoMembroDaCorpo, ruoliDaCorpo } from "./persone-regole.ts";
+import { ALTRA_AZIENDA, cambiNegatiAltraAzienda, cambioRuoliPermesso, modificheDaCorpo, nuovoMembroDaCorpo, ruoliDaCorpo, scritturaPersoneNegata, SERVE_PASSWORD } from "./persone-regole.ts";
+
+test("scritture sulle persone: solo con la sessione email e password", () => {
+  assert.equal(scritturaPersoneNegata("password"), null);
+  assert.equal(scritturaPersoneNegata("pin"), SERVE_PASSWORD);
+  assert.equal(SERVE_PASSWORD, "Serve l'accesso con email e password.");
+});
+
+test("chi lavora anche per un'altra azienda: solo i ruoli di questa", () => {
+  assert.equal(ALTRA_AZIENDA, "Questa persona lavora anche per un'altra azienda: chiedi all'assistenza.");
+  assert.equal(cambiNegatiAltraAzienda({ ruoli: ["vendite"] }, 1), null);
+  assert.equal(cambiNegatiAltraAzienda({ password: "1234567890" }, 1), ALTRA_AZIENDA);
+  assert.equal(cambiNegatiAltraAzienda({ password: "1234567890", email: "a@b.it" }, 2), ALTRA_AZIENDA);
+  assert.equal(cambiNegatiAltraAzienda({ pin: "1234" }, 1), ALTRA_AZIENDA);
+  assert.equal(cambiNegatiAltraAzienda({ attivo: false }, 1), ALTRA_AZIENDA);
+  assert.equal(cambiNegatiAltraAzienda({ attivo: true }, 1), ALTRA_AZIENDA);
+  assert.equal(cambiNegatiAltraAzienda({ ruoli: ["vendite"], pin: "1234" }, 1), ALTRA_AZIENDA);
+  // Solo in questa azienda: tutto si può
+  assert.equal(cambiNegatiAltraAzienda({ password: "1234567890", pin: "1234", attivo: false }, 0), null);
+});
 import type { Role } from "../types.ts";
 
 const m = (userId: string, ruoli: Role[], sospeso = false) => ({ userId, ruoli, sospeso });

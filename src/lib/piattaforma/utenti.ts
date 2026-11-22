@@ -68,6 +68,12 @@ export async function membroDellAzienda(c: Contesto, aziendaId: string, userId: 
   return membro && utente ? { aziendaId, membro, utente: utente as MembroTrovato["utente"] } : null;
 }
 
+/** In quante altre aziende (oltre a quella di `t`) la persona è membro. */
+export async function altreAziende(c: Contesto, t: MembroTrovato): Promise<number> {
+  const tutte = await c.adapter.findMany<{ organizationId: string }>({ model: "member", where: [{ field: "userId", value: t.utente.id }] });
+  return tutte.filter((m) => m.organizationId !== t.aziendaId).length;
+}
+
 /** Un super admin non si modifica dalle schermate delle aziende. */
 export const utenteSuperadmin = (t: MembroTrovato) => eSuperadmin(t.utente.role);
 
@@ -140,7 +146,8 @@ export const descrizioneAccesso = (n: { email?: string; pin?: string }) => [n.em
 /** Una riga nel registro attività firmata da chi è entrato nell'azienda (il titolare, o il super admin in assistenza). Best-effort. */
 export async function registraDaAccesso(a: Accesso, e: Omit<NuovoEvento, "user" | "role" | "device">): Promise<boolean> {
   try {
-    await aggiungiEventi(a.azienda.id, [{ user: a.assistenza ? `${a.utente.nome} (assistenza)` : a.utente.nome, role: "responsabile", device: a.dispositivo?.nome || "Browser", ...e }]);
+    // Come le righe dei dispositivi (pin-dispositivo.ts): l'assistenza firma con il ruolo "sistema"
+    await aggiungiEventi(a.azienda.id, [{ user: a.assistenza ? `${a.utente.nome} (assistenza)` : a.utente.nome, role: a.assistenza ? "sistema" : "responsabile", device: a.dispositivo?.nome || "Browser", ...e }]);
     return true;
   } catch (err) {
     console.error("Registro attività non aggiornato", a.azienda.id, err);

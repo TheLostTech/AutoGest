@@ -3,7 +3,7 @@
 import { connection } from "next/server";
 import { accessoDaRichiesta, soloRuoli } from "@/lib/accesso/server";
 import { RUOLO_LABEL } from "@/lib/accesso/ruoli";
-import { EMAIL_USATA, nuovoMembroDaCorpo } from "@/lib/accesso/persone-regole";
+import { EMAIL_USATA, nuovoMembroDaCorpo, scritturaPersoneNegata } from "@/lib/accesso/persone-regole";
 import { PASSWORD_MIN } from "@/lib/accesso/registrazione";
 import { creaMembro } from "@/lib/piattaforma/crea";
 import { AVVISO_REGISTRO, contesto, daAltroSito, errore, leggiJson, ok } from "@/lib/piattaforma/server";
@@ -24,6 +24,9 @@ export async function POST(req: Request) {
   if (a instanceof Response) return a;
   const no = soloRuoli(a, "responsabile");
   if (no) return no;
+  // Con il PIN di un dispositivo condiviso si legge l'elenco, ma non si creano accessi
+  const pin = scritturaPersoneNegata(a.tipo);
+  if (pin) return errore(403, pin, "serve-password");
   const x = daAltroSito(req, true);
   if (x) return x;
   const corpo = await leggiJson(req);

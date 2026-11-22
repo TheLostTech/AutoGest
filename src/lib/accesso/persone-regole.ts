@@ -7,6 +7,27 @@ import { RUOLI, ruoliDaStringa } from "./ruoli.ts";
 export const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** Al titolare un'email già usata (anche da un'altra azienda) non si conferma: messaggio generico. */
 export const EMAIL_USATA = "Non è stato possibile usare questa email.";
+export const SERVE_PASSWORD = "Serve l'accesso con email e password.";
+export const ALTRA_AZIENDA = "Questa persona lavora anche per un'altra azienda: chiedi all'assistenza.";
+
+/**
+ * Creare o modificare un accesso solo da una sessione con email e password (come registrare i dispositivi):
+ * con il PIN di 4 cifre di un dispositivo condiviso si legge l'elenco, ma non si danno password o ruoli.
+ */
+export function scritturaPersoneNegata(tipo: "password" | "pin"): string | null {
+  return tipo === "password" ? null : SERVE_PASSWORD;
+}
+
+/**
+ * Password, email, PIN e sospensione valgono per tutto l'utente, non solo per questa azienda: se la persona è
+ * membro anche di altre aziende li cambia solo l'assistenza. I ruoli sono di questa azienda e restano permessi.
+ */
+export function cambiNegatiAltraAzienda(cambi: ModificheIn, altreAziende: number): string | null {
+  if (altreAziende === 0) return null;
+  const tuttoLUtente = cambi.password !== undefined || cambi.email !== undefined || cambi.pin !== undefined || cambi.attivo !== undefined;
+  return tuttoLUtente ? ALTRA_AZIENDA : null;
+}
+
 /** Il vincolo di cambioRuoliPermesso, detto al titolare. */
 export const SERVE_RESPONSABILE = "L'azienda deve avere almeno un responsabile attivo: prima dai il ruolo Responsabile a un'altra persona.";
 // Come Better Auth: oltre non si accetta (creaMembro fa l'hash senza passare dai suoi controlli)

@@ -7,6 +7,7 @@ import { useSessione } from "@/lib/accesso/client";
 import { fetchAzienda } from "@/lib/accesso/azienda-client";
 import { RUOLI, RUOLO_LABEL } from "@/lib/accesso/ruoli";
 import { PASSWORD_MIN } from "@/lib/accesso/registrazione";
+import { scritturaPersoneNegata } from "@/lib/accesso/persone-regole";
 import type { Role } from "@/lib/types";
 
 type Persona = { id: string; nome: string; email: string | null; ruoli: Role[]; conPassword: boolean; conPin: boolean; attivo: boolean };
@@ -55,6 +56,8 @@ export default function Persone() {
   const [modifica, setModifica] = useState<string | null>(null);
 
   const titolare = !!accesso?.ruoli.includes("responsabile");
+  // Entrati con il PIN: l'elenco si vede, ma creare o cambiare un accesso chiede email e password
+  const negata = accesso ? scritturaPersoneNegata(accesso.tipo) : null;
 
   const carica = useCallback(async () => {
     const r = await chiama("/api/azienda/persone");
@@ -91,13 +94,16 @@ export default function Persone() {
         title="Persone"
         sub="Chi lavora in azienda, con quali ruoli e come entra: con email e password da qualunque dispositivo, o solo con il PIN dai dispositivi dell'azienda."
         actions={
-          <Button onClick={() => { setNuova(true); setModifica(null); setFatto(""); }}>
-            <UserPlus className="size-5" aria-hidden />
-            Aggiungi persona
-          </Button>
+          !negata && (
+            <Button onClick={() => { setNuova(true); setModifica(null); setFatto(""); }}>
+              <UserPlus className="size-5" aria-hidden />
+              Aggiungi persona
+            </Button>
+          )
         }
       />
       <div className="mb-4 space-y-3">
+        {negata && <Notice tone="info">{negata}</Notice>}
         {errore && (
           <div role="alert">
             <Notice tone="danger">{errore}</Notice>
@@ -110,7 +116,7 @@ export default function Persone() {
         )}
       </div>
 
-      {nuova && <NuovaPersona onChiudi={() => setNuova(false)} onFatto={fine} />}
+      {nuova && !negata && <NuovaPersona onChiudi={() => setNuova(false)} onFatto={fine} />}
 
       {!persone && !errore && (
         <p className="flex items-center gap-2 text-ink-2">
@@ -133,11 +139,13 @@ export default function Persone() {
                       {p.ruoli.map((r) => RUOLO_LABEL[r]).join(", ") || "nessun ruolo"} · accesso: {accessoDi(p)}
                     </span>
                   </span>
-                  <Button size="sm" variant="secondary" onClick={() => { setModifica(modifica === p.id ? null : p.id); setNuova(false); setFatto(""); }}>
-                    {modifica === p.id ? "Chiudi" : "Modifica"}
-                  </Button>
+                  {!negata && (
+                    <Button size="sm" variant="secondary" onClick={() => { setModifica(modifica === p.id ? null : p.id); setNuova(false); setFatto(""); }}>
+                      {modifica === p.id ? "Chiudi" : "Modifica"}
+                    </Button>
+                  )}
                 </div>
-                {modifica === p.id && <ModificaPersona persona={p} io={p.id === io} onFatto={fine} />}
+                {modifica === p.id && !negata && <ModificaPersona persona={p} io={p.id === io} onFatto={fine} />}
               </li>
             ))}
           </ul>
