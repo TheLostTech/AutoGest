@@ -139,7 +139,7 @@ Abbonamento mensile o annuale a scelta del cliente; l'annuale si paga in un'unic
 | Ambiente | AutoLost Ambiente | 49,90 € | 539 € |
 | Vendite | AutoLost Banco | 49,90 € | 539 € |
 
-Prezzi rivisti da Alessandro il 22/11/2026 (prima: Pratiche 49,90/539, Ambiente 99,90/1.079); fonte unica nel codice: `src/lib/listino.ts` (ramo `offerta-prezzi`).
+Prezzi rivisti da Alessandro il 22/11/2026 (prima: Pratiche 49,90/539, Ambiente 99,90/1.079; Pratiche detta "20 €", messa a 19,90 € per la regola del 9). Annuali: 12 mesi meno circa il 10%, arrotondati al 9. Fonte unica nel codice: `src/lib/listino.ts`, usata dalla sezione prezzi di `/scopri`.
 
 ## Stripe: sandbox AutoLost demo (22/11/2026)
 Account Lostar srls (`acct_1TT0kgAq3HCB9mJS`), sandbox **AutoLost demo** `acct_1UeZEhPHwF2v5yEU`, separata dalle altre ("Sandbox di Lostar srls", "Modalità di test"). Prezzi in EUR, IVA esclusa (`tax_behavior=exclusive`), ricorrenti; ogni prodotto ha `metadata.modulo` uguale all'identificativo del modulo nel codice. Il gestionale trova i prezzi per **lookup key**, non per ID.
@@ -165,5 +165,4 @@ Dalla revisione finale del ramo `moduli-a-pagamento`, cose minori lasciate per d
 Altro rimandato, già noto:
 - Interruttori dei moduli in mano al cliente (Impostazioni → Moduli): con login e Stripe passano al server, il cliente non li tocca più.
 - Capitoli del manuale operativo da etichettare per modulo.
-- Prezzi su `/scopri`.
 - `setDatiRegistro` segna la presa in carico ma non la radiazione "da richiedere": se poi si attiva l'Accettazione, il passo della radiazione va controllato.
