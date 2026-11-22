@@ -135,11 +135,11 @@ Abbonamento mensile o annuale a scelta del cliente; l'annuale si paga in un'unic
 | Modulo | Nome commerciale | Mensile | Annuale |
 |---|---|---|---|
 | Magazzino (base) | AutoLost Magazzino | 299,90 € | 3.199 € (deciso da Alessandro) |
-| Accettazione | AutoLost Pratiche | 49,90 € | 539 € |
-| Ambiente | AutoLost Ambiente | 99,90 € | 1.079 € |
+| Accettazione | AutoLost Pratiche | 19,90 € (abbassato il 22/11) | 219 € |
+| Ambiente | AutoLost Ambiente | 49,90 € (abbassato il 22/11) | 539 € |
 | Vendite | AutoLost Banco | 49,90 € | 539 € |
 
-Annuali dei moduli aggiuntivi: 12 mesi meno 10% (538,92 € e 1.078,92 €) arrotondati al 9.
+Annuali dei moduli aggiuntivi: 12 mesi meno 10% (214,92 € e 538,92 €) arrotondati al 9. Pratiche era a 49,90 € e Ambiente a 99,90 €: abbassati da Alessandro il 22/11 (Pratiche detta "20 €", messa a 19,90 € per la regola del 9).
 
 ## Rimandato (aggiornato il 22/11/2026)
 Dalla revisione finale del ramo `moduli-a-pagamento`, cose minori lasciate per dopo:
@@ -153,5 +153,4 @@ Dalla revisione finale del ramo `moduli-a-pagamento`, cose minori lasciate per d
 Altro rimandato, già noto:
 - Interruttori dei moduli in mano al cliente (Impostazioni → Moduli): con login e Stripe passano al server, il cliente non li tocca più.
 - Capitoli del manuale operativo da etichettare per modulo.
-- Prezzi su `/scopri`.
 - `setDatiRegistro` segna la presa in carico ma non la radiazione "da richiedere": se poi si attiva l'Accettazione, il passo della radiazione va controllato.
