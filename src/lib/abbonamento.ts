@@ -113,7 +113,7 @@ export function contoAllaRovescia(a: Abbonamento, oraMac: number): Conto | null 
   const ora = a.oraOrologio ?? oraMac;
   if (a.stato === "nuovo" || a.stato === "scaduto") return null;
   if (a.stato === "in-ritardo") {
-    return { tono: "errore", testo: "Pagamento non riuscito. Aggiorna il metodo di pagamento: Stripe riprova per qualche giorno, poi l'abbonamento finisce.", giorni: null };
+    return { tono: "errore", testo: "Pagamento non riuscito: aggiorna la carta. Stripe riprova da solo.", giorni: null };
   }
   if (a.rinnovo == null) return null;
   const giorni = Math.max(0, Math.ceil((a.rinnovo - ora) / 86_400_000));

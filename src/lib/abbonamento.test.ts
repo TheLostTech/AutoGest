@@ -78,8 +78,7 @@ test("contoAllaRovescia", () => {
   assert.equal(d?.testo, "Finisce il 22/12/2026 · tra 30 giorni. Poi il gestionale si blocca, i dati restano.");
   assert.equal(d?.tono, "avviso");
   const r = contoAllaRovescia(ab({ stato: "in-ritardo", rinnovo: RINNOVO }), ORA);
-  assert.ok(r?.testo.startsWith("Pagamento non riuscito"));
-  assert.equal(r?.tono, "errore");
+  assert.deepStrictEqual(r, { tono: "errore", testo: "Pagamento non riuscito: aggiorna la carta. Stripe riprova da solo.", giorni: null });
   assert.equal(contoAllaRovescia(ab({ stato: "scaduto" }), ORA), null);
   assert.equal(contoAllaRovescia(ab({ stato: "nuovo" }), ORA), null);
 });
