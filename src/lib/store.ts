@@ -41,7 +41,7 @@ import type {
 import { euro, publishChecks } from "./logic";
 import { assestaPezzi, collocaPezzoInAnnuncio, ordineNegozio, pagaOrdine, ricalcolaAnnuncio } from "./negozio-ordine";
 import { canTransmit, firNumberTaken, isDraft, missingFields, monthLabel, nextRegisterNumber, periodsOf } from "./periodo";
-import { MODULI, ORDINE_MODULI, type Modulo, type StatoModulo } from "./moduli";
+import { MODULI, moduliIniziali, ORDINE_MODULI, type Modulo, type StatoModulo } from "./moduli";
 import { bonificaRegistrabile, datiRegistroErrori, normCf, statoDatiRegistro, type DatiRegistro } from "./dati-registro";
 
 // Chi sta usando questo dispositivo: arriva dalla sessione (mai dai dati salvati nel browser).
@@ -92,7 +92,8 @@ interface Actions {
   setRole: (r: Role) => void;
   /** Dalla sessione: chi è, quali ruoli può usare. Il ruolo attivo resta uno di quelli permessi. */
   /** Azienda vera: parte da un archivio vuoto, mai dai dati demo. */
-  avviaVuoto: () => void;
+  /** Archivio vuoto di un'azienda vera, prima della prima lettura: `registrata` parte con il solo Magazzino */
+  avviaVuoto: (registrata?: boolean) => void;
   setSessione: (operatore: Operatore | null, ruoliPermessi: Role[]) => void;
   setActiveVehicle: (id?: string) => void;
   addVehicle: (v: Omit<Vehicle, "id" | "createdBy" | "intakeAt">) => string;
@@ -353,7 +354,8 @@ export const useStore = create<State & Actions>()(
       return {
         ...initial(),
         setRole: (role) => set((s) => (s.ruoliPermessi.includes(role) ? { role } : s)),
-        avviaVuoto: () => set({ ...(statoVuoto({ listini: DEFAULT_LISTINI, warehouses: WAREHOUSES }) as unknown as Partial<State>), activeVehicleId: undefined }),
+        avviaVuoto: (registrata = false) =>
+          set({ ...(statoVuoto({ listini: DEFAULT_LISTINI, warehouses: WAREHOUSES }) as unknown as Partial<State>), moduli: moduliIniziali(registrata), activeVehicleId: undefined }),
         setSessione: (operatore, ruoliPermessi) =>
           set((s) => ({ operatore, ruoliPermessi, role: ruoliPermessi.includes(s.role) || ruoliPermessi.length === 0 ? s.role : ruoliPermessi[0] })),
         setActiveVehicle: (id) => set({ activeVehicleId: id }),

@@ -105,7 +105,8 @@ export function Hydrator({ children }: { children: React.ReactNode }) {
       useStore.getState().setSessione(operatoreDa(e.accesso), e.accesso.ruoli);
       // Azienda vera senza copia locale: si parte da un archivio vuoto, mai dai dati demo
       // (solo prima che la sincronizzazione parta: dopo, un archivio vuoto locale finirebbe sul server)
-      if (!e.accesso.azienda.demo && !copiaLocale) avviaVuotoPrimaDelSync();
+      // Azienda registrata: solo il Magazzino finché la lettura non porta i moduli dell'abbonamento
+      if (!e.accesso.azienda.demo && !copiaLocale) avviaVuotoPrimaDelSync(e.accesso.azienda.registrata);
       // Prima i dati salvati nel browser, poi l'allineamento con gli altri dispositivi (al massimo 2 secondi)
       const done = () => void startSync().finally(() => attivo && setReady(true));
       unsub = useStore.persist.onFinishHydration(done);

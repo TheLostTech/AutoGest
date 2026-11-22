@@ -3,7 +3,7 @@
 // così l'ordine degli eventi e gli eventi doppi non contano. Spec registrazione-pagamento, sezione 5.
 import Stripe from "stripe";
 import { idAziendaValido } from "@/lib/accesso/id-azienda";
-import { aziendaDaEvento, type EventoMinimo } from "@/lib/stripe/chiavi";
+import { aziendaDaEvento, eventoDiUnAltroAmbiente, type EventoMinimo } from "@/lib/stripe/chiavi";
 import { modalitaStripe, sincronizzaOLancia, stripe } from "@/lib/stripe/server";
 
 const NOSTORE = { "Cache-Control": "no-store" };
@@ -40,6 +40,11 @@ export async function POST(req: Request) {
   if (modalitaStripe() === "spenta") {
     console.error("Avviso Stripe ricevuto, ma Stripe non è configurato", evento.id, evento.type);
     return risposta(503, { error: "Stripe non configurato" });
+  }
+  // Avviso di un altro ambiente (prova ↔ live): i suoi id non esistono con questa chiave. Nel log e 200, niente ritenti.
+  if (eventoDiUnAltroAmbiente(evento.livemode, modalitaStripe())) {
+    console.warn("Avviso Stripe di un altro ambiente: ignorato", evento.id, evento.type, { livemode: evento.livemode, modalita: modalitaStripe() });
+    return risposta(200, { ricevuto: true });
   }
   const s = stripe();
   let aziendaId: string | null;

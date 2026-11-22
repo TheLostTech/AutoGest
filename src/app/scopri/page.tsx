@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import { connection } from "next/server";
+import { Suspense } from "react";
 import { BRAND, PRODUTTORE } from "@/lib/config";
 import { MODULI, ORDINE_MODULI } from "@/lib/moduli";
 import { DEMO, Piede, Testata } from "@/components/sito/Sito";
+import { modalitaStripe } from "@/lib/stripe/server";
 import { EtichettaStampata, EtichettaPiccola, Percorso } from "./parti";
 import "./scopri.css";
 
@@ -11,6 +14,13 @@ export const metadata: Metadata = {
   description:
     "Dalla targa allo scontrino: accettazione, smontaggio guidato dalle scorte, etichette QR, magazzino, vendita al banco e online, registro rifiuti. Ogni ricambio sa da che macchina viene.",
 };
+
+// Solo con le chiavi di prova di Stripe. Si legge alla richiesta (connection): il resto della pagina resta preparato.
+async function AvvisoProva() {
+  await connection();
+  if (modalitaStripe() !== "prova") return null;
+  return <p className="mt-2 text-[14px] text-ink-3">Ambiente di prova: nessun addebito vero</p>;
+}
 
 const FERMATE = [
   {
@@ -83,7 +93,9 @@ export default function ScopriPage() {
               <p className="mt-6 max-w-[52ch] text-[15px] text-ink-3">
                 Gira nel browser: telefono in piazzale, computer al banco, pistola laser in magazzino. Niente da installare sui telefoni.
               </p>
-              <p className="mt-2 text-[14px] text-ink-3">Ambiente di prova: nessun addebito vero</p>
+              <Suspense fallback={null}>
+                <AvvisoProva />
+              </Suspense>
             </div>
 
             <div className="order-1 md:order-2">

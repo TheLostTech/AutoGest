@@ -334,7 +334,12 @@ function Riquadro({ c, a, periodo, onConferma, onAnnulla }: { c: Conferma; a: Ab
               </ul>
             </div>
           )}
-          <p className="mt-1 text-[15px] text-ink-2">Il modulo si spegne subito e i giorni non usati diventano credito sulla prossima fattura. I dati restano salvati.</p>
+          <p className="mt-1 text-[15px] text-ink-2">
+            {a.stato === "disdetto"
+              ? "Il modulo si spegne subito. L'abbonamento è già disdetto, quindi non ci sarà una prossima fattura su cui scalare i giorni non usati."
+              : "Il modulo si spegne subito e i giorni non usati diventano credito sulla prossima fattura."}{" "}
+            I dati restano salvati.
+          </p>
         </>
       )}
       {c.errore && (

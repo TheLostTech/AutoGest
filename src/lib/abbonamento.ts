@@ -64,6 +64,19 @@ export function bloccato(a: Abbonamento, veicoli: number): boolean {
   return false;
 }
 
+// Modifiche rimaste in attesa del pagamento (rifiuto 402): ripartono solo con un abbonamento in corso, o per un'azienda
+// senza abbonamento. In prova (nuovo) o scaduto il server le rifiuterebbe di nuovo: niente giro di 402.
+export function riprendeDopoPagamento(a: Abbonamento | null | undefined): boolean {
+  return a == null || a.stato === "attivo" || a.stato === "in-ritardo" || a.stato === "disdetto";
+}
+
+// Il cliente Stripe non c'è più (cancellato dalla dashboard, conto di prova ripulito): si dimenticano i suoi id, così
+// lo stato diventa "senza abbonamenti" (scaduto se aveva pagato, altrimenti nuovo) e il prossimo Checkout crea un
+// cliente nuovo invece di sbagliare per sempre.
+export function senzaCliente(a: Abbonamento): Abbonamento {
+  return { ...a, customerId: null, subscriptionId: null, orologioId: null, oraOrologio: null };
+}
+
 // Il negozio online di un'azienda registrata chiude quando è bloccata; le altre aziende non sono toccate.
 export function negozioAperto(registrata: boolean, a: Abbonamento | null, veicoli: number): boolean {
   return !registrata || !bloccato(a ?? ABBONAMENTO_NUOVO(true, 0), veicoli);

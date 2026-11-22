@@ -13,6 +13,14 @@ export interface StatoModulo {
 
 export const ORDINE_MODULI: Modulo[] = ["magazzino", "accettazione", "ambiente", "vendite"];
 
+/**
+ * Moduli di un archivio nuovo nel dispositivo, prima della prima lettura dal server: per un'azienda registrata solo il
+ * Magazzino (gli altri li dà l'abbonamento, che arriva con la lettura); per le altre tutti accesi, come sempre.
+ */
+export function moduliIniziali(registrata: boolean): StatoModulo[] {
+  return ORDINE_MODULI.map((id) => ({ id, attivo: !registrata || id === "magazzino" }));
+}
+
 export const MODULI: Record<Modulo, { nome: string; frase: string; punti: string[] }> = {
   magazzino: {
     nome: "Magazzino",

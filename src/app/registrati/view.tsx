@@ -17,7 +17,7 @@ async function entra(email: string, password: string) {
   if (a.error) throw new Error("accesso");
 }
 
-export function RegistratiView({ invito: invitoIniziale }: { invito: string }) {
+export function RegistratiView({ invito: invitoIniziale, prova }: { invito: string; prova: boolean }) {
   const [azienda, setAzienda] = useState("");
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
@@ -124,7 +124,7 @@ export function RegistratiView({ invito: invitoIniziale }: { invito: string }) {
             <Button type="submit" size="lg" className="w-full" disabled={attesa || !azienda || !nome || !email || !password || !invito || !condizioni}>
               {attesa ? "Registrazione…" : "Registrati"}
             </Button>
-            <p className="text-center text-[13px] text-ink-3">Ambiente di prova: nessun addebito vero</p>
+            {prova && <p className="text-center text-[13px] text-ink-3">Ambiente di prova: nessun addebito vero</p>}
           </form>
         )}
         <div className="mt-4 text-center">

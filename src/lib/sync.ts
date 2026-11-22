@@ -10,7 +10,7 @@ import { intestazioniPassive } from "./accesso/attivita";
 import { aggiungiInSospeso, corpoDaRiprendere } from "./sync-in-sospeso";
 import { aziendaFissata, fetchAzienda, segnalaAziendaCambiata, suAziendaCambiata } from "./accesso/azienda-client";
 import { MOTIVO_AZIENDA_CAMBIATA } from "./accesso/regole";
-import { bloccato, type Abbonamento } from "./abbonamento";
+import { riprendeDopoPagamento } from "./abbonamento";
 
 const PREPEND = ["vehicles", "parts", "annunci", "orders", "docs", "firs"] as const;
 const APPEND = ["audit", "wasteMoves", "inventory"] as const;
@@ -256,7 +256,7 @@ async function pull() {
     // Risposta di un'altra azienda (la sessione è cambiata): mai applicarla a questa scheda
     if (typeof res.aziendaId === "string" && aziendaFissata() && res.aziendaId !== aziendaFissata()) return segnalaAziendaCambiata();
     demoAzienda = res.demo === true;
-    if (attesaPagamento && !bloccatoDalServer(res)) {
+    if (attesaPagamento && riprendeDopoPagamento(res.abbonamento)) {
       // Pagato: partono le modifiche rimaste in attesa, poi il giro normale manda quelle ancora da inviare.
       // Se l'invio non riesce (rete, di nuovo 402) attesaPagamento torna vero e il giro normale non parte.
       // La risposta di adesso non contiene le modifiche appena inviate: la prossima lettura scarica l'archivio unito.
@@ -300,13 +300,6 @@ async function pull() {
   } catch (e) {
     gestisciRifiuto(e); // altrimenti server non raggiungibile: si continua in locale
   }
-}
-
-// L'azienda è ancora bloccata secondo l'ultima lettura (i veicoli contati sono quelli del server, non del dispositivo)
-function bloccatoDalServer(res: { abbonamento?: Abbonamento | null; state?: { vehicles?: unknown } | null }): boolean {
-  if (res.abbonamento == null) return false;
-  const veicoli = Array.isArray(res.state?.vehicles) ? res.state.vehicles.length : 0;
-  return bloccato(res.abbonamento, veicoli);
 }
 
 // Modifiche rimaste da inviare all'uscita: si salvano accanto alla copia locale della stessa azienda
@@ -419,10 +412,10 @@ export const syncAvviata = (): boolean => started;
  * Azienda vera senza copia locale: si parte da un archivio vuoto. Solo prima che la sincronizzazione parta, e come
  * stato già "noto": regole, listini, magazzini e soggetti vuoti di partenza non si mandano mai al server.
  */
-export function avviaVuotoPrimaDelSync(): boolean {
+export function avviaVuotoPrimaDelSync(registrata = false): boolean {
   if (started) return false;
   applying = true;
-  useStore.getState().avviaVuoto();
+  useStore.getState().avviaVuoto(registrata);
   applying = false;
   synced = pick(useStore.getState());
   return true;

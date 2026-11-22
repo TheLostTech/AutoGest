@@ -1,14 +1,14 @@
 // Stripe sul server: chiave, cliente (in prova dentro un orologio di prova), prezzi, IVA e sincronizzazione
 // dell'abbonamento. Solo server. Spec registrazione-pagamento, sezioni 4, 5, 7, 9.
 import Stripe from "stripe";
-import { ABBONAMENTO_NUOVO, abbonamentoDaStripe, avanzamentoPermesso, lookupKey, nuovaOraOrologio, rifiutoCambio, righeCambio, scegli, type Abbonamento, type Passo, type RichiestaModuli } from "@/lib/abbonamento";
+import { ABBONAMENTO_NUOVO, abbonamentoDaStripe, avanzamentoPermesso, lookupKey, nuovaOraOrologio, rifiutoCambio, righeCambio, scegli, senzaCliente, type Abbonamento, type Passo, type RichiestaModuli } from "@/lib/abbonamento";
 import { aggiornaAbbonamento, leggiAbbonamento } from "@/lib/abbonamento-server";
 import { aggiungiEventi } from "@/lib/archivio-azienda";
 import type { Periodo } from "@/lib/listino";
 import type { Modulo } from "@/lib/moduli";
 import { azioneCliente, ESPANSIONI, modalitaDaChiave, pagamentoInCorso, sessioniDaScadere, sincronizzazioneLimitata, stessoAmbiente, type ModalitaStripe, type SessioneCheckout } from "./chiavi";
 import { creaFila, type Fila } from "./fila";
-import { abbonamentoModificabile, differenzaDalListino, importoSenzaTasse, OROLOGIO_IN_AVANZAMENTO, PREZZI_DIVERSI, pagamentoRifiutato, rifiutoAvanzamento, subMinima, TROPPI_PERIODI, voceDelModulo, type SubDaStripe } from "./forma";
+import { abbonamentoModificabile, differenzaDalListino, importoSenzaTasse, OROLOGIO_IN_AVANZAMENTO, PREZZI_DIVERSI, pagamentoRifiutato, risorsaMancante, rifiutoAvanzamento, subMinima, TROPPI_PERIODI, voceDelModulo, type SubDaStripe } from "./forma";
 
 // Versione dell'API fissata: quella che porta con sé stripe@23.2.0 (Stripe.API_VERSION). Si cambia insieme alla libreria.
 const VERSIONE_API = "2026-11-18.endive";
@@ -142,6 +142,18 @@ export function aliquotaIva(): Promise<string> {
   return run;
 }
 
+// Una lettura da Stripe di qualcosa che può non esserci più (cliente, abbonamento, orologio cancellati): null al posto
+// di un errore che si ripeterebbe a ogni sincronizzazione. Gli altri errori passano.
+async function seCe<T>(lettura: Promise<T>, cosa: string, aziendaId: string): Promise<T | null> {
+  try {
+    return await lettura;
+  } catch (e) {
+    if (!risorsaMancante(e)) throw e;
+    console.warn(`Stripe: ${cosa} non trovato, si considera senza abbonamenti`, aziendaId, (e as { message?: unknown }).message);
+    return null;
+  }
+}
+
 async function rileggi(aziendaId: string): Promise<Abbonamento> {
   const prima = await leggiAbbonamento(aziendaId);
   if (!prima) return ABBONAMENTO_NUOVO(modalitaStripe() !== "live", Date.now());
@@ -151,16 +163,22 @@ async function rileggi(aziendaId: string): Promise<Abbonamento> {
   // Elenco senza espansioni (data.items.data.price.product sarebbero 5 livelli: Stripe ne accetta 4), poi si rilegge
   // solo l'abbonamento scelto con i prodotti, che servono per metadata.modulo. Gli altri non contano per lo stato.
   const [subs, orologio] = await Promise.all([
-    s.subscriptions.list({ customer: prima.customerId, status: "all", limit: 100 }),
-    prima.orologioId ? s.testHelpers.testClocks.retrieve(prima.orologioId) : Promise.resolve(null),
+    seCe(s.subscriptions.list({ customer: prima.customerId, status: "all", limit: 100 }), "cliente", aziendaId),
+    prima.orologioId ? seCe(s.testHelpers.testClocks.retrieve(prima.orologioId), "orologio di prova", aziendaId) : Promise.resolve(null),
   ]);
-  const scelto = scegli(subs.data.map((x) => subMinima(x as unknown as SubDaStripe)));
+  // Cliente sparito: nessun abbonamento, e i suoi id si dimenticano (il prossimo Checkout crea un cliente nuovo).
+  // Anche l'orologio di prova sparito: cancellandolo Stripe cancella i clienti che ci stanno dentro.
+  const clienteSparito = subs === null || (!!prima.orologioId && orologio === null);
+  const scelto = clienteSparito ? null : scegli((subs?.data ?? []).map((x) => subMinima(x as unknown as SubDaStripe)));
   // Allo stato si passa solo l'abbonamento riletto: lo stesso che sceglie scegli, ora con i prodotti espansi
-  const pieno = scelto ? subMinima((await s.subscriptions.retrieve(scelto.id, { expand: [...ESPANSIONI.abbonamento] })) as unknown as SubDaStripe) : null;
+  const riletto = scelto ? await seCe(s.subscriptions.retrieve(scelto.id, { expand: [...ESPANSIONI.abbonamento] }), "abbonamento", aziendaId) : null;
+  const pieno = riletto ? subMinima(riletto as unknown as SubDaStripe) : null;
   let righe: string[] = [];
   const dopo = await aggiornaAbbonamento(aziendaId, (cur) => {
-    const base = cur ?? prima;
-    const nuovo = abbonamentoDaStripe(pieno ? [pieno] : [], base, Date.now(), orologio ? orologio.frozen_time * 1000 : null);
+    const letto = cur ?? prima;
+    // Solo se nel frattempo nessuno ha scritto un altro cliente
+    const base = clienteSparito && letto.customerId === prima.customerId ? senzaCliente(letto) : letto;
+    const nuovo = abbonamentoDaStripe(pieno ? [pieno] : [], base, Date.now(), orologio && base.orologioId ? orologio.frozen_time * 1000 : null);
     righe = righeCambio(base, nuovo);
     return nuovo;
   });
@@ -306,10 +324,10 @@ export async function cambiaModuli(aziendaId: string, r: RichiestaModuli): Promi
   if (!stessoAmbiente(ab, modalitaStripe())) return { errore: ALTRO_AMBIENTE, stato: 409 };
   if (!ab.subscriptionId || !ab.customerId) return { errore: "Abbonamento non attivo", stato: 409 };
   const s = stripe();
-  const sub = await s.subscriptions.retrieve(ab.subscriptionId, { expand: [...ESPANSIONI.abbonamento] });
-  // Il file salvato può essere vecchio (avviso di Stripe non ancora arrivato): conta l'abbonamento appena riletto,
-  // e il file si rimette in pari subito
-  if (!abbonamentoModificabile(sub, r.azione)) {
+  const sub = await seCe(s.subscriptions.retrieve(ab.subscriptionId, { expand: [...ESPANSIONI.abbonamento] }), "abbonamento", aziendaId);
+  // Il file salvato può essere vecchio (avviso di Stripe non ancora arrivato, abbonamento cancellato): conta
+  // l'abbonamento appena riletto, e il file si rimette in pari subito
+  if (!sub || !abbonamentoModificabile(sub, r.azione)) {
     await sincronizza(aziendaId);
     return { errore: "Abbonamento non attivo", stato: 409 };
   }

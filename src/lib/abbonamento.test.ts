@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   ABBONAMENTO_NUOVO, lookupKey, nomeStripe, moduliDaAbbonamento, bloccato,
   abbonamentoDaStripe, contoAllaRovescia, righeCambio, scritturaAzienda, statoPerBrowser, contaVeicoli, sceltaValida,
-  fasciaDaMostrare, negozioAperto, richiestaModuli, rifiutoCambio, nuovaOraOrologio, avanzamentoPermesso, passoValido,
+  fasciaDaMostrare, negozioAperto, riprendeDopoPagamento, senzaCliente, richiestaModuli, rifiutoCambio, nuovaOraOrologio, avanzamentoPermesso, passoValido,
   type Abbonamento, type SubStripe,
 } from "./abbonamento.ts";
 
@@ -294,4 +294,33 @@ test("negozioAperto: non registrata sempre aperto; registrata chiude solo quando
   assert.equal(negozioAperto(true, ab("attivo"), 50), true);
   assert.equal(negozioAperto(true, null, 0), true); // file assente: in prova
   assert.equal(negozioAperto(true, null, 3), false); // in prova con veicoli: bloccata
+});
+
+test("senzaCliente: cliente sparito da Stripe, si riparte senza abbonamenti (scaduto se pagato, altrimenti nuovo)", () => {
+  const pagato = ab({ stato: "attivo", periodo: "mese", moduli: ["magazzino", "ambiente"], rinnovo: RINNOVO, customerId: "cus_1", subscriptionId: "sub_1", orologioId: "clock_1", oraOrologio: ORA, pagatoAlmenoUnaVolta: true });
+  const via = senzaCliente(pagato);
+  assert.equal(via.customerId, null);
+  assert.equal(via.subscriptionId, null);
+  assert.equal(via.orologioId, null);
+  assert.equal(via.oraOrologio, null);
+  assert.equal(via.pagatoAlmenoUnaVolta, true);
+  const r = abbonamentoDaStripe([], via, ORA, null);
+  assert.equal(r.stato, "scaduto");
+  assert.deepEqual(r.moduli, []);
+  assert.equal(r.customerId, null); // il prossimo Checkout crea un cliente nuovo
+  assert.equal(r.oraOrologio, null);
+  const mai = abbonamentoDaStripe([], senzaCliente(ab({ stato: "nuovo", customerId: "cus_2" })), ORA, null);
+  assert.equal(mai.stato, "nuovo");
+  assert.equal(mai.customerId, null);
+});
+
+test("riprendeDopoPagamento: le modifiche in attesa ripartono solo con un abbonamento in corso (o senza abbonamento)", () => {
+  assert.equal(riprendeDopoPagamento(null), true); // azienda non registrata
+  assert.equal(riprendeDopoPagamento(undefined), true);
+  assert.equal(riprendeDopoPagamento(ab({ stato: "attivo" })), true);
+  assert.equal(riprendeDopoPagamento(ab({ stato: "in-ritardo" })), true);
+  assert.equal(riprendeDopoPagamento(ab({ stato: "disdetto" })), true);
+  // In prova il server rifiuta di nuovo dal secondo veicolo: niente giro di 402
+  assert.equal(riprendeDopoPagamento(ab({ stato: "nuovo" })), false);
+  assert.equal(riprendeDopoPagamento(ab({ stato: "scaduto" })), false);
 });

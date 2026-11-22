@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import { SERVIZI } from "./collegamenti.ts";
-import { azioneVendi, filtraAgenda, hrefOrdine, linkAttivazione, ordineBancoDaLiberare, moduliAttivi, moduliDaArchivio, moduloDi, moduloDoc, ORDINE_MODULI, tabsAttive } from "./moduli.ts";
+import { azioneVendi, filtraAgenda, hrefOrdine, linkAttivazione, ordineBancoDaLiberare, moduliAttivi, moduliDaArchivio, moduliIniziali, moduloDi, moduloDoc, ORDINE_MODULI, tabsAttive } from "./moduli.ts";
 
 test("moduloDi: ogni percorso al suo modulo", () => {
   assert.equal(moduloDi("/ambiente/periodo?mese=2026-10"), "ambiente");
@@ -171,4 +171,10 @@ test("tabsAttive: consulente senza ambiente", () => {
   const tabs: T[] = [{ area: "oggi" }, { href: "/ambiente/periodo" }, { href: "/ambiente" }, { href: "/ambiente/formulari" }];
   const r = tabsAttive(tabs, [{ area: "oggi" }], aperta(["/ambiente/periodo", "/ambiente", "/ambiente/formulari"]));
   assert.deepEqual(r, [{ area: "oggi" }]);
+});
+
+test("moduliIniziali: azienda registrata solo Magazzino finché non arriva lo stato del server, le altre tutti accesi", () => {
+  assert.deepEqual([...moduliAttivi(moduliIniziali(true))], ["magazzino"]);
+  assert.deepEqual([...moduliAttivi(moduliIniziali(false))], ORDINE_MODULI);
+  assert.deepEqual(moduliIniziali(true).map((m) => m.id), ORDINE_MODULI);
 });
