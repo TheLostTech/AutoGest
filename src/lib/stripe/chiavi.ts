@@ -103,7 +103,7 @@ export type SessioneCheckout = {
 };
 
 // Abbonamenti finiti: un pagamento lento fallito lascia la sessione "complete" e "unpaid" per sempre, ma non è più in corso
-const FINITI = new Set(["incomplete_expired", "canceled"]);
+const FINITI = new Set(["incomplete_expired", "canceled", "unpaid"]);
 
 /**
  * C'è già un pagamento del cliente in attesa di Stripe? Un abbonamento `incomplete` (primo addebito non ancora riuscito),

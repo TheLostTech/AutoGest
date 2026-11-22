@@ -136,7 +136,7 @@ test("pagamentoInCorso: una sessione completa ma non pagata del cliente blocca",
 });
 
 test("pagamentoInCorso: un pagamento lento fallito (abbonamento finito) non blocca per sempre", () => {
-  for (const status of ["incomplete_expired", "canceled"]) {
+  for (const status of ["incomplete_expired", "canceled", "unpaid"]) {
     assert.equal(pagamentoInCorso("cus_1", [], [sess({ status: "complete", payment_status: "unpaid", subscription: { status } })]), false);
   }
 });
