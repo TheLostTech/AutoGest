@@ -28,7 +28,7 @@ function base(): Input {
       creata: ORA - 1000,
       ultimaAttivita: ORA - 1000,
     },
-    azienda: { id: "a1", nome: "Rossi Demolizioni", demo: false },
+    azienda: { id: "a1", nome: "Rossi Demolizioni", demo: false, registrata: false },
     ruoliMembro: "accettazione,smontatore",
     assistenza: null,
     ora: ORA,
@@ -125,7 +125,7 @@ test("azienda attiva ma inesistente", () => {
 
 test("azienda diversa da quella attiva della sessione: nessuna azienda", () => {
   const i = base();
-  i.azienda = { id: "a2", nome: "Altra", demo: false };
+  i.azienda = { id: "a2", nome: "Altra", demo: false, registrata: false };
   assert.deepEqual(decidiAccesso(i), { negato: 403, motivo: "nessuna-azienda" });
 });
 

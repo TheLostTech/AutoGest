@@ -25,7 +25,7 @@ export type SessioneVista = {
 };
 
 export type AssistenzaVista = { id: string; organizationId: string; motivo: string; scade: number; fine?: number };
-export type AziendaVista = { id: string; nome: string; demo: boolean };
+export type AziendaVista = { id: string; nome: string; demo: boolean; registrata: boolean };
 
 export type Accesso = {
   utente: { id: string; nome: string };

@@ -3,6 +3,7 @@
 import type { Modulo } from "./moduli.ts";
 import { MODULI, ORDINE_MODULI } from "./moduli.ts";
 import type { Periodo } from "./listino.ts";
+import type { Push } from "./archivio-unione.ts";
 
 export type StatoAbbonamento = "nuovo" | "attivo" | "in-ritardo" | "disdetto" | "scaduto";
 
@@ -137,4 +138,24 @@ export function righeCambio(prima: Abbonamento, dopo: Abbonamento): string[] {
   for (const m of ORDINE_MODULI) if (m !== "magazzino" && dopoSet.has(m) && !prime.has(m)) righe.push(`Modulo aggiunto: ${MODULI[m].nome}`);
   for (const m of ORDINE_MODULI) if (m !== "magazzino" && prime.has(m) && !dopoSet.has(m)) righe.push(`Modulo tolto: ${MODULI[m].nome}`);
   return righe;
+}
+
+export type Scrittura = { esito: "ok"; corpo: Push } | { esito: "bloccato" };
+
+// Un salvataggio dal browser. Per le aziende registrate i moduli non li decide il browser (li decide l'abbonamento)
+// e, se l'abbonamento non è in regola, non si scrive nulla.
+export function scritturaAzienda(registrata: boolean, a: Abbonamento | null, veicoliPrima: number, corpo: Push): Scrittura {
+  if (!registrata) return { esito: "ok", corpo };
+  if (bloccato(a ?? ABBONAMENTO_NUOVO(true, 0), veicoliPrima)) return { esito: "bloccato" };
+  if (!corpo.whole) return { esito: "ok", corpo };
+  const whole = { ...corpo.whole };
+  delete whole.moduli;
+  return { esito: "ok", corpo: { ...corpo, whole } };
+}
+
+// Lo stato mandato al browser: per le aziende registrate i moduli vengono dall'abbonamento.
+export function statoPerBrowser(registrata: boolean, a: Abbonamento | null, stato: unknown): unknown {
+  if (!registrata || !stato || typeof stato !== "object") return stato;
+  const attivi = new Set(moduliDaAbbonamento(a ?? ABBONAMENTO_NUOVO(true, 0)));
+  return { ...(stato as object), moduli: ORDINE_MODULI.map((id) => ({ id, attivo: attivi.has(id) })) };
 }

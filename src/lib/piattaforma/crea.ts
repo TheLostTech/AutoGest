@@ -6,10 +6,10 @@ import { impostaPin } from "@/lib/auth/pin-dispositivo";
 import type { Role } from "@/lib/types";
 
 /** Crea l'azienda dall'adapter: nessuno diventa membro (né proprietario). */
-export async function creaAzienda(c: AuthContext, nome: string, slug: string, demo: boolean): Promise<{ id: string; name: string }> {
+export async function creaAzienda(c: AuthContext, nome: string, slug: string, demo: boolean, extra?: Record<string, unknown>): Promise<{ id: string; name: string }> {
   return c.adapter.create<Record<string, unknown>, { id: string; name: string }>({
     model: "organization",
-    data: { name: nome, slug, createdAt: new Date(), metadata: JSON.stringify({ demo }) },
+    data: { name: nome, slug, createdAt: new Date(), metadata: JSON.stringify({ demo, ...extra }) },
   });
 }
 

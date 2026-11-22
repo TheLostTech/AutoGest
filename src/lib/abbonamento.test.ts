@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   ABBONAMENTO_NUOVO, lookupKey, nomeStripe, moduliDaAbbonamento, bloccato,
-  abbonamentoDaStripe, contoAllaRovescia, righeCambio,
+  abbonamentoDaStripe, contoAllaRovescia, righeCambio, scritturaAzienda, statoPerBrowser,
   type Abbonamento, type SubStripe,
 } from "./abbonamento.ts";
 
@@ -103,4 +103,31 @@ test("righeCambio", () => {
     righeCambio(ab({ stato: "nuovo" }), { ...att, moduli: ["magazzino", "vendite"] }),
     ["Abbonamento attivato", "Modulo aggiunto: Vendite"],
   );
+});
+
+test("scritturaAzienda toglie i moduli mandati dal browser", () => {
+  const corpo = { schema: "s", whole: { moduli: [{ id: "vendite", attivo: true }], rules: [1] }, counters: { a: 1 } };
+  const r = scritturaAzienda(true, ab(), 0, corpo);
+  assert.equal(r.esito, "ok");
+  if (r.esito === "ok") assert.deepEqual(r.corpo, { schema: "s", whole: { rules: [1] }, counters: { a: 1 } });
+  const n = scritturaAzienda(false, null, 5, corpo);
+  assert.deepEqual(n, { esito: "ok", corpo });
+});
+
+test("scritturaAzienda: blocco per stato e veicoli", () => {
+  const c = { schema: "s", changes: { vehicles: [{ id: "V1" }] } };
+  assert.equal(scritturaAzienda(true, ab(), 0, c).esito, "ok");
+  assert.equal(scritturaAzienda(true, null, 0, c).esito, "ok");
+  assert.equal(scritturaAzienda(true, ab(), 1, c).esito, "bloccato");
+  assert.equal(scritturaAzienda(true, ab({ stato: "attivo" }), 9, c).esito, "ok");
+  assert.equal(scritturaAzienda(false, ab({ stato: "scaduto" }), 9, c).esito, "ok");
+});
+
+test("statoPerBrowser mette i moduli dell'abbonamento", () => {
+  const r = statoPerBrowser(true, ab({ stato: "attivo", moduli: ["magazzino", "vendite"] }), { x: 1, moduli: [] }) as { x: number; moduli: { id: string; attivo: boolean }[] };
+  assert.equal(r.x, 1);
+  assert.deepEqual(r.moduli.map((m) => [m.id, m.attivo]), [["magazzino", true], ["accettazione", false], ["ambiente", false], ["vendite", true]]);
+  const st = { moduli: [1] };
+  assert.equal(statoPerBrowser(false, null, st), st);
+  assert.equal(statoPerBrowser(true, null, null), null);
 });

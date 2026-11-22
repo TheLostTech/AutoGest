@@ -53,13 +53,16 @@ async function leggiSessione(req: Request) {
 function aziendaVista(o: { id: string; name: string; metadata?: unknown } | null): AziendaVista | null {
   if (!o) return null;
   let demo = false;
+  let registrata = false;
   try {
     const m = typeof o.metadata === "string" ? JSON.parse(o.metadata) : o.metadata;
     demo = typeof m === "object" && m !== null && (m as { demo?: unknown }).demo === true;
+    registrata = typeof m === "object" && m !== null && (m as { registrata?: unknown }).registrata === true;
   } catch {
     demo = false;
+    registrata = false;
   }
-  return { id: o.id, nome: o.name, demo };
+  return { id: o.id, nome: o.name, demo, registrata };
 }
 
 export async function accessoDaRichiesta(req: Request, opzioni: { attivitaAlle?: number } = {}): Promise<Accesso | Response> {
