@@ -61,7 +61,8 @@ export type SubStripe = {
 
 const VIVI = new Set(["active", "trialing", "past_due"]);
 
-function scegli(subs: SubStripe[]): SubStripe | null {
+// L'abbonamento che conta tra quelli del cliente: uno vivo prima di tutto, poi il più recente.
+export function scegli(subs: SubStripe[]): SubStripe | null {
   let best: SubStripe | null = null;
   for (const s of subs) {
     if (!best) { best = s; continue; }

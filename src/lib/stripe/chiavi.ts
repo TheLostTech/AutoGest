@@ -1,5 +1,6 @@
 // Regole pure per Stripe: che modalità danno le chiavi, da dove si prende l'azienda di un avviso,
 // quando si risincronizza. Nessun accesso a rete o disco: si provano con i test (spec registrazione-pagamento, 5, 7, 9).
+import type { Abbonamento } from "../abbonamento.ts";
 
 export type ModalitaStripe = "prova" | "live" | "spenta";
 
@@ -50,6 +51,43 @@ export function aziendaDaEvento(e: EventoMinimo): DaCercare | null {
   const c = o.customer;
   const cliente = typeof c === "string" ? c : c?.id;
   return cliente ? { cliente } : null;
+}
+
+// Stripe rifiuta un'espansione con più di quattro proprietà ("an expand string can contain no more than four properties").
+export function espansioneValida(e: string): boolean {
+  const parti = e.split(".");
+  return parti.length <= 4 && parti.every((p) => p.length > 0);
+}
+
+/** Tutte le espansioni che il server chiede a Stripe: il test controlla che stiano nel limite. */
+export const ESPANSIONI = {
+  // subscriptions.retrieve dell'abbonamento scelto: i prodotti servono per metadata.modulo
+  abbonamento: ["items.data.price.product"],
+} as const;
+
+/** Le aziende scritte con chiavi di prova non vanno con le chiavi vere (e viceversa): i loro id non esistono lì. Spento: nessuna. */
+export function stessoAmbiente(a: Abbonamento, m: ModalitaStripe): boolean {
+  return m !== "spenta" && a.prova === (m === "prova");
+}
+
+export type AzioneCliente = "riusa" | "crea" | "azzera-e-crea" | "rifiuta";
+
+/**
+ * Cosa fa clientePer con l'abbonamento salvato. Di un altro ambiente e mai pagato: si riparte da zero nell'ambiente
+ * di adesso. Di un altro ambiente e già pagato: si rifiuta (serve l'assistenza, i soldi stanno nell'altro conto).
+ */
+export function azioneCliente(a: Abbonamento | null, m: ModalitaStripe): AzioneCliente {
+  if (m === "spenta") return "rifiuta";
+  if (!a) return "crea";
+  if (!stessoAmbiente(a, m)) return a.pagatoAlmenoUnaVolta ? "rifiuta" : "azzera-e-crea";
+  return a.customerId ? "riusa" : "crea";
+}
+
+const QUINDICI_SECONDI = 15_000;
+
+/** Sincronizzazioni chieste dal browser: niente Stripe se l'ultimo tentativo per l'azienda è di meno di 15 secondi fa. */
+export function sincronizzazioneLimitata(ultimoTentativo: number | null, ora: number): boolean {
+  return ultimoTentativo !== null && ora - ultimoTentativo < QUINDICI_SECONDI;
 }
 
 const UN_ORA = 3_600_000;

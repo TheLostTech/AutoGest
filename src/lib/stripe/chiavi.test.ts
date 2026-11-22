@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { aziendaDaEvento, daSincronizzare, etichettaStripe, modalitaDaChiave } from "./chiavi.ts";
+import { ABBONAMENTO_NUOVO, type Abbonamento } from "../abbonamento.ts";
+import { azioneCliente, aziendaDaEvento, daSincronizzare, ESPANSIONI, espansioneValida, etichettaStripe, modalitaDaChiave, sincronizzazioneLimitata, stessoAmbiente } from "./chiavi.ts";
 
 test("modalitaDaChiave: senza chiave è spenta", () => {
   assert.equal(modalitaDaChiave(undefined, undefined), "spenta");
@@ -64,4 +65,53 @@ test("daSincronizzare: a richiesta sempre, altrimenti solo il titolare dopo un'o
   assert.equal(daSincronizzare({ richiesta: false, titolare: true, aggiornato: ora - 3_600_001, ora }), true);
   assert.equal(daSincronizzare({ richiesta: false, titolare: true, aggiornato: ora - 3_600_000, ora }), false);
   assert.equal(daSincronizzare({ richiesta: false, titolare: false, aggiornato: 0, ora }), false);
+});
+
+test("espansioneValida: al massimo quattro proprietà per stringa (limite di Stripe)", () => {
+  assert.equal(espansioneValida("items.data.price.product"), true);
+  assert.equal(espansioneValida("customer"), true);
+  assert.equal(espansioneValida("data.items.data.price.product"), false);
+  assert.equal(espansioneValida(""), false);
+});
+
+test("ESPANSIONI: ogni espansione usata dal codice sta nel limite", () => {
+  const tutte = Object.values(ESPANSIONI).flat();
+  assert.ok(tutte.length > 0);
+  for (const e of tutte) assert.equal(espansioneValida(e), true, e);
+});
+
+const ab = (x: Partial<Abbonamento>): Abbonamento => ({ ...ABBONAMENTO_NUOVO(true, 0), ...x });
+
+test("stessoAmbiente: prova con prova, vero con live, mai con spenta", () => {
+  assert.equal(stessoAmbiente(ab({ prova: true }), "prova"), true);
+  assert.equal(stessoAmbiente(ab({ prova: false }), "live"), true);
+  assert.equal(stessoAmbiente(ab({ prova: true }), "live"), false);
+  assert.equal(stessoAmbiente(ab({ prova: false }), "prova"), false);
+  assert.equal(stessoAmbiente(ab({ prova: true }), "spenta"), false);
+});
+
+test("azioneCliente: stesso ambiente, si riusa il cliente o se ne crea uno", () => {
+  assert.equal(azioneCliente(null, "prova"), "crea");
+  assert.equal(azioneCliente(ab({ prova: true }), "prova"), "crea");
+  assert.equal(azioneCliente(ab({ prova: true, customerId: "cus_1" }), "prova"), "riusa");
+  assert.equal(azioneCliente(ab({ prova: false, customerId: "cus_2" }), "live"), "riusa");
+});
+
+test("azioneCliente: altro ambiente mai pagato si azzera, pagato si rifiuta", () => {
+  assert.equal(azioneCliente(ab({ prova: true }), "live"), "azzera-e-crea");
+  assert.equal(azioneCliente(ab({ prova: true, customerId: "cus_t", orologioId: "clock_1" }), "live"), "azzera-e-crea");
+  assert.equal(azioneCliente(ab({ prova: false, customerId: "cus_l" }), "prova"), "azzera-e-crea");
+  assert.equal(azioneCliente(ab({ prova: true, customerId: "cus_t", pagatoAlmenoUnaVolta: true, stato: "scaduto" }), "live"), "rifiuta");
+});
+
+test("azioneCliente: con Stripe spento si rifiuta", () => {
+  assert.equal(azioneCliente(null, "spenta"), "rifiuta");
+  assert.equal(azioneCliente(ab({ customerId: "cus_1" }), "spenta"), "rifiuta");
+});
+
+test("sincronizzazioneLimitata: niente Stripe se l'ultimo tentativo è di meno di 15 secondi fa", () => {
+  assert.equal(sincronizzazioneLimitata(null, 100_000), false);
+  assert.equal(sincronizzazioneLimitata(100_000, 100_000), true);
+  assert.equal(sincronizzazioneLimitata(100_000, 114_999), true);
+  assert.equal(sincronizzazioneLimitata(100_000, 115_000), false);
 });

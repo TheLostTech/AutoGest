@@ -1,12 +1,13 @@
 // Stripe sul server: chiave, cliente (in prova dentro un orologio di prova), prezzi, IVA e sincronizzazione
 // dell'abbonamento. Solo server. Spec registrazione-pagamento, sezioni 4, 5, 7, 9.
 import Stripe from "stripe";
-import { ABBONAMENTO_NUOVO, abbonamentoDaStripe, lookupKey, righeCambio, type Abbonamento } from "@/lib/abbonamento";
+import { ABBONAMENTO_NUOVO, abbonamentoDaStripe, lookupKey, righeCambio, scegli, type Abbonamento } from "@/lib/abbonamento";
 import { aggiornaAbbonamento, leggiAbbonamento } from "@/lib/abbonamento-server";
 import { aggiungiEventi } from "@/lib/archivio-azienda";
 import type { Periodo } from "@/lib/listino";
 import type { Modulo } from "@/lib/moduli";
-import { modalitaDaChiave, type ModalitaStripe } from "./chiavi";
+import { azioneCliente, ESPANSIONI, modalitaDaChiave, sincronizzazioneLimitata, stessoAmbiente, type ModalitaStripe } from "./chiavi";
+import { creaFila, type Fila } from "./fila";
 import { subMinima, type SubDaStripe } from "./forma";
 
 // Versione dell'API fissata: quella che porta con sé stripe@23.2.0 (Stripe.API_VERSION). Si cambia insieme alla libreria.
@@ -15,7 +16,8 @@ const VERSIONE_API = "2026-11-18.endive";
 type Globali = typeof globalThis & {
   __stripe?: { chiave: string; client: Stripe };
   __clientiStripe?: Map<string, Promise<string>>;
-  __sincronizzazioni?: Map<string, Promise<unknown>>;
+  __filaSincronizzazioni?: Fila<Abbonamento>;
+  __tentativiSincronizzazione?: Map<string, number>;
   __ivaStripe?: Promise<string>;
 };
 const g = globalThis as Globali;
@@ -34,19 +36,26 @@ export function stripe(): Stripe {
   return g.__stripe.client;
 }
 
+const ALTRO_AMBIENTE = "Abbonamento di un altro ambiente Stripe: serve l'assistenza";
+
 /**
  * Il cliente Stripe dell'azienda: quello salvato in abbonamento.json, altrimenti uno nuovo con metadata.azienda.
  * In prova nasce dentro un orologio di prova tutto suo, che parte da adesso. Due chiamate insieme aspettano lo stesso cliente.
+ * Abbonamento di un altro ambiente (prova ↔ live): mai pagato si riparte da zero, pagato si rifiuta (vedi azioneCliente).
  */
 export function clientePer(aziendaId: string, nome: string, email: string): Promise<string> {
   const inCorso = (g.__clientiStripe ??= new Map());
   const gia = inCorso.get(aziendaId);
   if (gia) return gia;
   const run = (async () => {
+    const s = stripe(); // spento: lancia con il messaggio di configurazione
+    const m = modalitaStripe();
     const a = await leggiAbbonamento(aziendaId);
-    if (a?.customerId) return a.customerId;
-    const s = stripe();
-    const prova = modalitaStripe() === "prova";
+    const azione = azioneCliente(a, m);
+    if (azione === "riusa" && a?.customerId) return a.customerId;
+    if (azione === "rifiuta") throw new Error(ALTRO_AMBIENTE);
+    if (azione === "azzera-e-crea") console.warn("Abbonamento di un altro ambiente Stripe, mai pagato: si riparte da zero", aziendaId, a?.customerId);
+    const prova = m === "prova";
     const ora = Date.now();
     const orologio = prova ? await s.testHelpers.testClocks.create({ frozen_time: Math.floor(ora / 1000), name: aziendaId }) : null;
     const cliente = await s.customers.create({
@@ -55,14 +64,20 @@ export function clientePer(aziendaId: string, nome: string, email: string): Prom
       metadata: { azienda: aziendaId },
       ...(orologio ? { test_clock: orologio.id } : {}),
     });
+    const ids = { customerId: cliente.id, orologioId: orologio?.id ?? null, oraOrologio: orologio ? orologio.frozen_time * 1000 : null };
+    // Si decide di nuovo sul file appena letto, dentro il blocco: un altro processo può averlo cambiato
     const scritto = await aggiornaAbbonamento(aziendaId, (prima) => {
-      const base = prima ?? ABBONAMENTO_NUOVO(prova, ora);
-      // Un altro processo l'ha già salvato nel frattempo: si tiene quello (il nuovo resta orfano in Stripe)
-      if (base.customerId) {
-        console.warn("Cliente Stripe già presente: quello nuovo resta inutilizzato", aziendaId, cliente.id);
-        return base;
+      switch (azioneCliente(prima, m)) {
+        case "riusa":
+          console.warn("Cliente Stripe già presente: quello nuovo resta inutilizzato", aziendaId, cliente.id);
+          return prima!;
+        case "rifiuta":
+          throw new Error(ALTRO_AMBIENTE);
+        case "azzera-e-crea":
+          return { ...ABBONAMENTO_NUOVO(prova, ora), ...ids };
+        case "crea":
+          return { ...(prima ?? ABBONAMENTO_NUOVO(prova, ora)), ...ids };
       }
-      return { ...base, customerId: cliente.id, orologioId: orologio?.id ?? null, oraOrologio: orologio ? orologio.frozen_time * 1000 : null };
     });
     return scritto.customerId ?? cliente.id;
   })();
@@ -114,21 +129,24 @@ export function aliquotaIva(): Promise<string> {
   return run;
 }
 
-// Le aziende scritte con chiavi di prova non si sincronizzano con le chiavi vere (e viceversa): i loro id non esistono lì.
-function stessoAmbiente(a: Abbonamento, m: ModalitaStripe): boolean {
-  return m !== "spenta" && a.prova === (m === "prova");
-}
-
 async function rileggi(aziendaId: string): Promise<Abbonamento> {
   const prima = await leggiAbbonamento(aziendaId);
   if (!prima) return ABBONAMENTO_NUOVO(modalitaStripe() !== "live", Date.now());
+  // Le aziende scritte con chiavi di prova non si sincronizzano con le chiavi vere (e viceversa): i loro id non esistono lì.
   if (!prima.customerId || !stessoAmbiente(prima, modalitaStripe())) return prima;
   const s = stripe();
+  // Elenco senza espansioni (data.items.data.price.product sarebbero 5 livelli: Stripe ne accetta 4), poi si rilegge
+  // solo l'abbonamento scelto con i prodotti, che servono per metadata.modulo. Gli altri non contano per lo stato.
   const [subs, orologio] = await Promise.all([
-    s.subscriptions.list({ customer: prima.customerId, status: "all", expand: ["data.items.data.price.product"], limit: 100 }),
+    s.subscriptions.list({ customer: prima.customerId, status: "all", limit: 100 }),
     prima.orologioId ? s.testHelpers.testClocks.retrieve(prima.orologioId) : Promise.resolve(null),
   ]);
-  const minime = subs.data.map((x) => subMinima(x as unknown as SubDaStripe));
+  let minime = subs.data.map((x) => subMinima(x as unknown as SubDaStripe));
+  const scelto = scegli(minime);
+  if (scelto) {
+    const pieno = subMinima((await s.subscriptions.retrieve(scelto.id, { expand: [...ESPANSIONI.abbonamento] })) as unknown as SubDaStripe);
+    minime = minime.map((x) => (x.id === pieno.id ? pieno : x));
+  }
   let righe: string[] = [];
   const dopo = await aggiornaAbbonamento(aziendaId, (cur) => {
     const base = cur ?? prima;
@@ -146,28 +164,40 @@ async function rileggi(aziendaId: string): Promise<Abbonamento> {
   return dopo;
 }
 
+const fila = (g.__filaSincronizzazioni ??= creaFila<Abbonamento>());
+// Ultimo tentativo di sincronizzazione per azienda (riuscito o no): separato da `aggiornato`, così uno Stripe che
+// sbaglia non viene martellato.
+const tentativi = (g.__tentativiSincronizzazione ??= new Map<string, number>());
+
 /**
- * Rilegge da Stripe l'abbonamento corrente del cliente e riscrive abbonamento.json. Una per volta per azienda,
- * così una lettura vecchia non scrive sopra una più nuova. Lancia se Stripe non risponde (per il webhook: 500, Stripe ritenta).
+ * Rilegge da Stripe l'abbonamento corrente del cliente e riscrive abbonamento.json. Una per volta per azienda, così una
+ * lettura vecchia non scrive sopra una più nuova; chi arriva mentre una è in coda e non ancora partita riusa quella.
+ * Mai limitata (avvisi di Stripe, ritorno da Checkout). Lancia se Stripe non risponde (per il webhook: 500, Stripe ritenta).
  */
 export function sincronizzaOLancia(aziendaId: string): Promise<Abbonamento> {
-  const code = (g.__sincronizzazioni ??= new Map());
-  const prima = code.get(aziendaId) ?? Promise.resolve();
-  const run = prima.then(() => rileggi(aziendaId));
-  const coda = run.catch(() => undefined);
-  code.set(aziendaId, coda);
-  void coda.then(() => {
-    if (code.get(aziendaId) === coda) code.delete(aziendaId);
+  return fila.metti(aziendaId, () => {
+    tentativi.set(aziendaId, Date.now());
+    return rileggi(aziendaId);
   });
-  return run;
 }
 
-/** Come sincronizzaOLancia, ma non lancia mai: con Stripe irraggiungibile scrive nel log e restituisce quello che c'è. */
-export async function sincronizza(aziendaId: string): Promise<Abbonamento> {
+const salvato = async (aziendaId: string) => (await leggiAbbonamento(aziendaId)) ?? ABBONAMENTO_NUOVO(modalitaStripe() !== "live", Date.now());
+
+/**
+ * Come sincronizzaOLancia, ma non lancia mai: con Stripe irraggiungibile scrive nel log e restituisce quello che c'è.
+ * `limita` (le richieste dal browser, che può chiederle qualunque ruolo): se l'ultimo tentativo per l'azienda è di
+ * meno di 15 secondi fa non si chiama Stripe e si restituisce quello salvato, oppure quella già in coda se c'è.
+ */
+export async function sincronizza(aziendaId: string, opzioni: { limita?: boolean } = {}): Promise<Abbonamento> {
   try {
+    if (opzioni.limita) {
+      const inCoda = fila.inAttesa(aziendaId);
+      if (inCoda) return await inCoda;
+      if (sincronizzazioneLimitata(tentativi.get(aziendaId) ?? null, Date.now())) return await salvato(aziendaId);
+    }
     return await sincronizzaOLancia(aziendaId);
   } catch (e) {
     console.error("Sincronizzazione Stripe non riuscita", aziendaId, e);
-    return (await leggiAbbonamento(aziendaId)) ?? ABBONAMENTO_NUOVO(modalitaStripe() !== "live", Date.now());
+    return await salvato(aziendaId);
   }
 }
