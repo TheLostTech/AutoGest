@@ -12,7 +12,7 @@ import { aliquotaIva, clientePer, esitoCheckout, modalitaStripe, preparaCheckout
 
 const NOSTORE = { "Cache-Control": "no-store" };
 const ALTRO_AMBIENTE = "Abbonamento di un altro ambiente Stripe: serve l'assistenza";
-const PAGAMENTO_IN_CORSO = "Un pagamento è già in corso: aspetta la conferma di Stripe e ricarica la pagina.";
+const PAGAMENTO_IN_CORSO = "Un pagamento è già in corso: aspetta la conferma di Stripe, questa pagina si aggiorna da sola.";
 
 // L'email del cliente Stripe: quella di chi paga; in assistenza quella di un titolare dell'azienda (non del super admin).
 async function emailCliente(a: Accesso): Promise<string> {

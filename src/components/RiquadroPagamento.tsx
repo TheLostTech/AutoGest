@@ -13,11 +13,15 @@ import { BRAND } from "@/lib/config";
 import { euro, LISTINO, prezzo, risparmioAnnuale, totale, type Periodo } from "@/lib/listino";
 import { ORDINE_MODULI, type Modulo } from "@/lib/moduli";
 import type { ModalitaStripe } from "@/lib/stripe/chiavi";
+import { ricaricaAbbonamento } from "@/lib/use-abbonamento";
 import { Button } from "./ui";
 
 const TITOLO_SCADUTO = "Il tuo abbonamento è finito. I tuoi dati sono al sicuro: riattivalo per continuare";
 const AGGIUNTIVI = ORDINE_MODULI.filter((m) => m !== "magazzino");
 const perPeriodo = (p: Periodo) => (p === "anno" ? "/ anno" : "/ mese");
+// Mentre il riquadro è aperto per il titolare lo stato si richiede a Stripe ogni 10 secondi (il server ne fa al massimo
+// una ogni 15 per azienda): un pagamento finito in un'altra scheda, o arrivato in ritardo, chiude il riquadro da solo.
+const RICONTROLLA_MS = 10_000;
 
 // Scelta di partenza: con lo stato scaduto si riparte da quello che il cliente aveva
 function sceltaIniziale(a: Abbonamento | null): { periodo: Periodo; moduli: Set<Modulo> } {
@@ -41,7 +45,23 @@ export function RiquadroPagamento({
   const titoloId = useId();
   const titoloRef = useRef<HTMLHeadingElement>(null);
   const [uscendo, setUscendo] = useState(false);
+  // Il titolo del titolare si sceglie sullo stato appena letto da Stripe: quello in memoria può essere vecchio
+  // (per esempio quando il riquadro si apre per un rifiuto 402 della sincronizzazione)
+  const [fresco, setFresco] = useState(false);
   const scaduto = abbonamento?.stato === "scaduto";
+
+  useEffect(() => {
+    if (!titolare) return;
+    let vivo = true;
+    void ricaricaAbbonamento(true).then(() => vivo && setFresco(true));
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") void ricaricaAbbonamento(true);
+    }, RICONTROLLA_MS);
+    return () => {
+      vivo = false;
+      clearInterval(t);
+    };
+  }, [titolare]);
 
   // Il fuoco entra nel riquadro: il resto della pagina è inerte (vedi AppShell)
   useEffect(() => {
@@ -63,7 +83,7 @@ export function RiquadroPagamento({
       <div className="mx-auto w-full max-w-[34rem] rounded-xl bg-label text-ink shadow-[0_24px_60px_-20px_rgb(0_0_0/0.5)]">
         <div className="flex items-start justify-between gap-4 border-b border-hair-soft px-5 pb-4 pt-5 md:px-7 md:pt-6">
           <h2 ref={titoloRef} id={titoloId} tabIndex={-1} className="text-[22px] font-bold leading-tight outline-none md:text-[24px]">
-            {!titolare ? (
+            {!titolare || !fresco ? (
               "L'abbonamento non è attivo."
             ) : scaduto ? (
               TITOLO_SCADUTO
@@ -79,7 +99,8 @@ export function RiquadroPagamento({
           </button>
         </div>
         {titolare ? (
-          <Scelta abbonamento={abbonamento} modalita={modalita} negata={negata} />
+          // Con lo stato nuovo (per esempio diventato scaduto) la scelta riparte da quello che il cliente aveva
+          <Scelta key={abbonamento?.stato ?? "nessuno"} abbonamento={abbonamento} modalita={modalita} negata={negata} />
         ) : (
           <p className="px-5 py-6 text-[17px] md:px-7">Chiedi al titolare di attivarlo.</p>
         )}
@@ -122,6 +143,8 @@ function Scelta({ abbonamento, modalita, negata }: { abbonamento: Abbonamento | 
         return;
       }
       setErrore(j?.error ?? "Non è stato possibile aprire il pagamento. Riprova.");
+      // Già attivo o pagamento già in corso: lo stato si rilegge da Stripe, e se è pagato il riquadro si chiude
+      if (r.status === 409) void ricaricaAbbonamento(true);
     } catch {
       setErrore("Non riesco a collegarmi al server. Controlla la rete e riprova.");
     }

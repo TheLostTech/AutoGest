@@ -201,9 +201,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEbaySync();
   const moduli = useModuli();
   // Riquadro di pagamento, solo per le aziende registrate: dopo il primo veicolo (o a scadenza) finché non si paga
-  const { dati: abbonamento } = useAbbonamento();
+  const { dati: abbonamento, ricarica: ricaricaAbbonamento } = useAbbonamento();
   const veicoli = useStore((s) => s.vehicles.length);
   const attesaPagamento = useAttesaPagamento();
+  // Il server ha rifiutato una scrittura con 402: lo stato in memoria è vecchio, si rilegge da Stripe
+  // (al massimo una volta ogni 15 secondi per azienda) per il titolo e la scelta del riquadro
+  useEffect(() => {
+    if (attesaPagamento) void ricaricaAbbonamento(true);
+  }, [attesaPagamento, ricaricaAbbonamento]);
   const pagamento =
     !!accesso?.azienda.registrata && !!abbonamento?.registrata && ((!!abbonamento.abbonamento && bloccato(abbonamento.abbonamento, veicoli)) || attesaPagamento);
   const registrata = !!accesso?.azienda.registrata;
