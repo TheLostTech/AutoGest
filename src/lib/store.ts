@@ -41,6 +41,8 @@ import type {
 import { euro, publishChecks } from "./logic";
 import { assestaPezzi, collocaPezzoInAnnuncio, ordineNegozio, pagaOrdine, ricalcolaAnnuncio } from "./negozio-ordine";
 import { canTransmit, currentKg, firNumberTaken, isDraft, missingFields, monthLabel, nextRegisterNumber, periodsOf } from "./periodo";
+import { MODULI, ORDINE_MODULI, type Modulo, type StatoModulo } from "./moduli";
+import { bonificaRegistrabile, datiRegistroErrori, normCf, statoDatiRegistro, type DatiRegistro } from "./dati-registro";
 
 // Chi sta usando questo dispositivo: arriva dalla sessione (mai dai dati salvati nel browser).
 export type Operatore = { nome: string; dispositivo: string; assistenza: boolean };
@@ -79,6 +81,8 @@ interface State {
   inventory: InventoryCount[];
   counters: Counters;
   activeVehicleId?: string;
+  // Moduli acquistati dall'azienda (vedi moduli.ts): un modulo spento nasconde le schermate, i dati restano
+  moduli: StatoModulo[];
 }
 
 type Result<T = undefined> = { ok: true; value: T } | { ok: false; error: string; conflicts?: string[] };
@@ -152,6 +156,11 @@ interface Actions {
   addWarehouse: (w: Warehouse) => void;
   closeCount: (c: Omit<InventoryCount, "id" | "at" | "by">) => string;
   log: (e: Omit<AuditEvent, "id" | "at" | "user" | "role" | "device"> & Partial<Pick<AuditEvent, "user" | "role" | "device">>) => void;
+  setModulo: (id: Modulo, attivo: boolean) => void;
+  // Senza Ambiente: bonifica segnata con un tocco (lo smontaggio si sblocca, il registro non si tocca)
+  segnaBonificata: (vehicleId: string, at: string) => void;
+  // Senza Accettazione: chi consegna e certificato ricopiati dalla pratica fatta altrove, per il registro rifiuti
+  setDatiRegistro: (vehicleId: string, d: DatiRegistro) => Result;
   reset: () => void;
 }
 
@@ -182,6 +191,7 @@ function initial(): State {
     inventory: s.inventory,
     counters: s.counters,
     activeVehicleId: "V-000118",
+    moduli: ORDINE_MODULI.map((id) => ({ id, attivo: true })),
   };
 }
 
@@ -348,6 +358,44 @@ export const useStore = create<State & Actions>()(
           set((s) => ({ operatore, ruoliPermessi, role: ruoliPermessi.includes(s.role) || ruoliPermessi.length === 0 ? s.role : ruoliPermessi[0] })),
         setActiveVehicle: (id) => set({ activeVehicleId: id }),
         log: (e) => push(event(e)),
+
+        setModulo: (id, attivo) => {
+          if (id === "magazzino") return; // la base non si spegne
+          const st = { id, attivo, cambiatoAt: now(), cambiatoDa: nomeOperatore(get().operatore) };
+          set((s) => ({ moduli: [...s.moduli.filter((x) => x.id !== id), st] }));
+          push(event({ entity: "sistema", entityId: `modulo-${id}`, action: attivo ? "Modulo attivato" : "Modulo disattivato", detail: MODULI[id].nome }));
+        },
+
+        segnaBonificata: (vehicleId, at) => {
+          const by = nomeOperatore(get().operatore);
+          set((s) => ({ vehicles: s.vehicles.map((v) => (v.id === vehicleId && !v.bonifica ? { ...v, bonifica: { at, by, items: [], residualKg: 0, semplice: true } } : v)) }));
+          push(event({ entity: "veicolo", entityId: vehicleId, action: "Bonifica segnata come fatta", detail: "senza dettaglio dei materiali (modulo Ambiente non attivo)" }));
+        },
+
+        setDatiRegistro: (vehicleId, d) => {
+          const errori = datiRegistroErrori(d);
+          if (errori.length) return { ok: false, error: errori.join(" · ") };
+          const v = get().vehicles.find((x) => x.id === vehicleId);
+          if (!v) return { ok: false, error: "Veicolo non trovato" };
+          // Carico già numerato: produttore e certificato del registro non cambierebbero, si corregge con una rettifica
+          if (statoDatiRegistro(v, get().wasteMoves) === "completo") return { ok: false, error: "Il carico è già registrato: si corregge con una rettifica nel registro" };
+          const nome = d.nome.trim();
+          const cf = normCf(d.cf);
+          const numero = d.numero.trim();
+          const data = new Date(`${d.data}T12:00:00`).toISOString();
+          set((s) => ({
+            vehicles: s.vehicles.map((x) =>
+              x.id === vehicleId
+                ? { ...x, conferente: { tipo: x.conferente?.tipo ?? "privato", nome, cf, documento: x.conferente?.documento }, dossier: { ...x.dossier, number: numero }, presaInCarico: { at: data, by: nomeOperatore(get().operatore) } }
+                : x,
+            ),
+          }));
+          push(event({ entity: "veicolo", entityId: vehicleId, action: "Dati per il registro rifiuti", detail: `${nome} · certificato ${numero}` }));
+          // Il carico d'ingresso in bozza si completa con gli stessi dati (e prende il numero se non manca altro)
+          const carico = get().wasteMoves.find((m) => m.origin === vehicleId && m.causale === "*T" && isDraft(m));
+          if (carico) get().completeDraft(carico.id, { produttoreNome: nome, produttoreCf: cf, certificato: { numero, data } });
+          return { ok: true, value: undefined };
+        },
 
         addVehicle: (v) => {
           const n = get().counters.vehicle + 1;
@@ -904,7 +952,8 @@ export const useStore = create<State & Actions>()(
 
         saveBonifica: (vehicleId, items, weightKg) => {
           const v0 = get().vehicles.find((x) => x.id === vehicleId);
-          if (!v0 || v0.bonifica) return 0;
+          // Una bonifica segnata senza il modulo Ambiente (nessun materiale) si completa qui con i materiali tolti
+          if (!v0 || !bonificaRegistrabile(v0.bonifica)) return 0;
           const at = now();
           let carico = get().wasteMoves.find((m) => m.origin === vehicleId && m.causale === "*T");
           const intake = carico ? [] : movesForIntake({ ...v0, weightKg: v0.weightKg ?? (weightKg || undefined) }, v0.intakeAt);

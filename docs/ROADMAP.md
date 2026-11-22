@@ -4,7 +4,7 @@ Il prototipo diventa un prodotto da vendere ad altre autodemolizioni. Obiettivo:
 
 Data: 16 novembre 2026. Stato: proposta da validare.
 
-**Già nel prototipo (in forma dimostrativa, servizi esterni simulati):** H1 coda "Da fare", H2 ricerca globale, H4 navigazione per aree; C1–C2 conferente e documenti, C4 visura con fermo, C6 presa in carico e certificato, C8 radiazione, C9 fascicolo, C10 peso in ingresso; D1–D3 bonifica e registro automatico, D4 trasmissione RENTRI, D5–D7 formulari e uscite, D8 limiti dell'autorizzazione; E4 prezzo del nuovo e suggerito, E5 listini, E9 inventario a rotazione (con creazione magazzini e provenienza da pratiche passate), B7 inventario di avvio; F2 preventivi, F3 scontrino o fattura al banco, F6 nota di credito sul reso; G1 documenti.
+**Già nel prototipo (in forma dimostrativa, servizi esterni simulati):** H1 coda "Da fare", H2 ricerca globale, H4 navigazione per aree con moduli attivabili (Magazzino base + Accettazione, Ambiente, Vendite; spec `docs/superpowers/specs/2026-11-19-moduli-a-pagamento-design.md`); C1–C2 conferente e documenti, C4 visura con fermo, C6 presa in carico e certificato, C8 radiazione, C9 fascicolo, C10 peso in ingresso; D1–D3 bonifica e registro automatico, D4 trasmissione RENTRI, D5–D7 formulari e uscite, D8 limiti dell'autorizzazione; E4 prezzo del nuovo e suggerito, E5 listini, E9 inventario a rotazione (con creazione magazzini e provenienza da pratiche passate), B7 inventario di avvio; F2 preventivi, F3 scontrino o fattura al banco, F6 nota di credito sul reso; G1 documenti.
 
 ---
 
@@ -18,7 +18,7 @@ I gestionali di settore espongono ogni modulo come una voce di menu: registri, f
 2. **Si lavora da una coda, non da un menu.** "Oggi" raccoglie tutto ciò che va fatto con la sua scadenza: radiazioni in scadenza, formulari da firmare, registri da trasmettere, limiti dell'autorizzazione vicini, ordini da spedire. Ogni voce porta direttamente all'azione.
 3. **Al massimo sei aree.** Ogni funzione nuova entra in un'area esistente, non apre una voce di menu nuova.
 4. **Dettaglio a richiesta.** Liste pulite; i dati completi stanno in schede laterali (come la scheda ricambio nelle vendite) e nelle pagine di dettaglio.
-5. **Ognuno vede il suo lavoro.** Smontatore, piazzale, magazzino, banco e ufficio hanno viste diverse. I moduli non acquistati non compaiono.
+5. **Ognuno vede il suo lavoro.** Smontatore, piazzale, magazzino, banco e ufficio hanno viste diverse. I moduli non acquistati compaiono bloccati, con la spiegazione e la richiesta d'attivazione.
 6. **Una ricerca per tutto.** Una sola barra trova targa, telaio, ID veicolo, ID ricambio, codice OE, vecchio codice, cliente, pratica, formulario, fattura.
 7. **Telefono per il campo, computer per l'ufficio.** Stessi componenti e stesso linguaggio visivo (DESIGN.md).
 

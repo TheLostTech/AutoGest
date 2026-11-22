@@ -2,7 +2,7 @@
 // Collezioni con ID: il server fonde per ID invece di sovrascrivere.
 const PREPEND = ["vehicles", "parts", "annunci", "orders", "docs", "firs"] as const; // i nuovi in cima
 const APPEND = ["audit", "wasteMoves", "inventory"] as const; // i nuovi in fondo (cronologici)
-const WHOLE = ["rules", "listini", "warehouses", "soggetti"] as const; // piccole: si sostituiscono intere
+const WHOLE = ["rules", "listini", "warehouses", "soggetti", "moduli"] as const; // piccole: si sostituiscono intere
 
 export type Rec = Record<string, unknown> & { id?: string; typeId?: string };
 export interface Stored {

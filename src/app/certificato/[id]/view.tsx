@@ -7,12 +7,23 @@ import { BRAND } from "@/lib/config";
 import { CONFERENTI, docsFor } from "@/lib/pratica";
 import { dateIt } from "@/lib/logic";
 import { fmtKg } from "@/lib/ambiente";
+import { moduloDi } from "@/lib/moduli";
+import { useModuli } from "@/lib/use-moduli";
+import { ModuloBloccato } from "@/components/ModuloBloccato";
 
 // Copia per il detentore del Certificato di Rottamazione Digitale (CRD) emesso nel RVFU.
 // Nel reale il CRD (con codice nazionale) lo genera il RVFU: qui è un fac-simile dimostrativo.
 export default function Certificato() {
   const { id } = useParams<{ id: string }>();
   const v = useStore((s) => s.vehicles.find((x) => x.id === id));
+  const moduli = useModuli();
+  // Pagina di stampa fuori dall'area dell'app: il controllo del modulo va fatto qui
+  if (!moduli.has(moduloDi(`/certificato/${id}`)))
+    return (
+      <div className="min-h-dvh bg-ground p-4 sm:p-8">
+        <ModuloBloccato modulo={moduloDi(`/certificato/${id}`)} />
+      </div>
+    );
   if (!v) return <p className="p-8">Veicolo {id} non trovato.</p>;
   if (!v.presaInCarico) return <p className="p-8">Il veicolo {id} non è ancora stato preso in carico: il certificato non è disponibile.</p>;
 

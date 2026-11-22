@@ -8,6 +8,7 @@ import { useStore } from "@/lib/store";
 import { ButtonLink, Button, Empty, Panel, Plate } from "@/components/ui";
 import { RecoveryList } from "@/components/RecoveryList";
 import { PartRow } from "@/components/PartRow";
+import { useModuli } from "@/lib/use-moduli";
 
 export default function SmontaggioVeicolo() {
   const { id } = useParams<{ id: string }>();
@@ -15,6 +16,7 @@ export default function SmontaggioVeicolo() {
   const allParts = useStore((s) => s.parts);
   const { updateVehicle, setActiveVehicle } = useStore();
   const parts = allParts.filter((p) => p.vehicleId === id);
+  const moduli = useModuli();
 
   // Aprire la pagina rende il veicolo quello "attivo" su questo dispositivo, ma non cambia il suo stato:
   // lo smontaggio si avvia con il pulsante (o con il primo pezzo catalogato)
@@ -44,7 +46,7 @@ export default function SmontaggioVeicolo() {
       </header>
 
       {!v.bonifica && (
-        <Link href={`/veicoli/${v.id}/bonifica`} className="mb-5 flex items-center justify-between gap-3 rounded-md bg-warn-bg px-4 py-3 font-semibold text-warn">
+        <Link href={moduli.has("ambiente") ? `/veicoli/${v.id}/bonifica` : `/veicoli/${v.id}#bonifica`} className="mb-5 flex items-center justify-between gap-3 rounded-md bg-warn-bg px-4 py-3 font-semibold text-warn">
           <span>Bonifica non ancora registrata: falla prima di smontare</span>
           <span className="shrink-0 underline">Bonifica</span>
         </Link>

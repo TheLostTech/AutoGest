@@ -10,17 +10,19 @@ import { pesoDiverso } from "@/lib/stime";
 import { dateIt } from "@/lib/logic";
 import { ButtonLink, Button, Empty, Notice, Plate } from "@/components/ui";
 import type { BonificaItem } from "@/lib/types";
+import { bonificaRegistrabile } from "@/lib/dati-registro";
 
 export default function BonificaVeicolo() {
   const { id } = useParams<{ id: string }>();
   const v = useStore((s) => s.vehicles.find((x) => x.id === id));
   const saveBonifica = useStore((s) => s.saveBonifica);
-  const [items, setItems] = useState<BonificaItem[]>(() => (v ? (v.bonifica?.items ?? typicalBonifica(v)) : []));
+  // Una bonifica segnata senza Ambiente non ha materiali: si riparte dal modello tipico del veicolo
+  const [items, setItems] = useState<BonificaItem[]>(() => (v ? (v.bonifica && !bonificaRegistrabile(v.bonifica) ? v.bonifica.items : typicalBonifica(v)) : []));
   const [weight, setWeight] = useState(v?.weightKg ? String(v.weightKg) : "");
   const [saved, setSaved] = useState<number | null>(null);
 
   if (!v) return <Empty title={`Veicolo ${id} non trovato`} />;
-  const done = !!v.bonifica;
+  const done = !bonificaRegistrabile(v.bonifica);
   const removedKg = items.reduce((a, i) => a + itemKg(i), 0);
   const w = Number(weight) || 0;
   const residual = Math.max(0, Math.round(w - removedKg));

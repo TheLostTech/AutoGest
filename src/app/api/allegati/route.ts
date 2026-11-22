@@ -6,6 +6,7 @@ import path from "node:path";
 import { connection } from "next/server";
 import { accessoDaRichiesta, soloRuoli } from "@/lib/accesso/server";
 import { richiestaDellApp } from "@/lib/collegamenti-server";
+import { moduloAttivoSulServer } from "@/lib/moduli-server";
 import { cartellaAllegatiAzienda } from "@/lib/server-data";
 
 const PREFIX = "data:application/pdf;base64,";
@@ -18,6 +19,8 @@ export async function POST(req: Request) {
   if (acc instanceof Response) return acc;
   const vietato = soloRuoli(acc, "accettazione", "responsabile");
   if (vietato) return vietato;
+  // Le ricevute sono della pratica, cioè del modulo Accettazione: spento, non si caricano nemmeno per vie traverse
+  if (!(await moduloAttivoSulServer(acc.azienda.id, "accettazione"))) return Response.json({ error: "Il modulo Accettazione non è attivo" }, { status: 403 });
   const { data } = (await req.json().catch(() => ({}))) as { data?: unknown };
   if (typeof data !== "string" || !data.startsWith(PREFIX)) return Response.json({ error: "Serve un file PDF" }, { status: 400 });
   const bytes = Buffer.from(data.slice(PREFIX.length), "base64");

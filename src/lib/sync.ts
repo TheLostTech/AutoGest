@@ -14,7 +14,7 @@ import { MOTIVO_AZIENDA_CAMBIATA } from "./accesso/regole";
 const PREPEND = ["vehicles", "parts", "annunci", "orders", "docs", "firs"] as const;
 const APPEND = ["audit", "wasteMoves", "inventory"] as const;
 const LISTS = [...PREPEND, ...APPEND] as const;
-const WHOLE = ["rules", "listini", "warehouses", "soggetti"] as const;
+const WHOLE = ["rules", "listini", "warehouses", "soggetti", "moduli"] as const;
 const SHARED = [...LISTS, ...WHOLE, "counters"] as const;
 
 type S = ReturnType<typeof useStore.getState>;

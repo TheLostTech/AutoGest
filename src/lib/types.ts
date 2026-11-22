@@ -75,6 +75,7 @@ export interface Bonifica {
   by: string;
   items: BonificaItem[];
   residualKg: number; // carcassa bonificata che resta in piazzale
+  semplice?: boolean; // segnata come fatta senza il modulo Ambiente: nessun materiale, nessun movimento nel registro
 }
 
 // Causali del registro per un impianto (manuale RENTRI §3.3): *T carico ricevuto da terzi, NP carico nuovo

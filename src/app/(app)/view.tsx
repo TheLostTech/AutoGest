@@ -11,6 +11,8 @@ import { isDraft, periodsOf } from "@/lib/periodo";
 import { dateIt, euro } from "@/lib/logic";
 import { listingOf } from "@/lib/annunci";
 import type { Role } from "@/lib/types";
+import { filtraAgenda } from "@/lib/moduli";
+import { useModuli } from "@/lib/use-moduli";
 
 const GROUPS: { u: Urgency; label: string; tone: string }[] = [
   { u: "scaduto", label: "In ritardo", tone: "text-danger" },
@@ -42,7 +44,8 @@ const DAY = 864e5;
 export default function Oggi() {
   const s = useStore();
   const { vehicles, parts, orders, audit, role } = s;
-  const agenda = buildAgenda(s, role);
+  const moduli = useModuli();
+  const agenda = filtraAgenda(buildAgenda(s, role), moduli);
   const late = agenda.filter((i) => urgencyOf(i.due) === "scaduto").length;
   const today = new Date().toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" });
 
@@ -116,7 +119,7 @@ export default function Oggi() {
           <ul className="mt-2 space-y-1.5">
             {parked.map(({ v, c }) => (
               <li key={v.id}>
-                <Link href={`/veicoli/${v.id}/bonifica`} className="flex flex-wrap items-center gap-x-3 gap-y-1 hover:underline">
+                <Link href={moduli.has("ambiente") ? `/veicoli/${v.id}/bonifica` : `/veicoli/${v.id}#bonifica`} className="flex flex-wrap items-center gap-x-3 gap-y-1 hover:underline">
                   <BonificaBadge clock={c} />
                   <Plate plate={v.plate} size="sm" />
                   <span className="font-semibold">{v.make} {v.model}</span>
