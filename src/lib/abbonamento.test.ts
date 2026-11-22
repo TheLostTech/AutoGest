@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   ABBONAMENTO_NUOVO, lookupKey, nomeStripe, moduliDaAbbonamento, bloccato,
   abbonamentoDaStripe, contoAllaRovescia, righeCambio, scritturaAzienda, statoPerBrowser, contaVeicoli, sceltaValida,
-  fasciaDaMostrare, richiestaModuli, rifiutoCambio,
+  fasciaDaMostrare, richiestaModuli, rifiutoCambio, nuovaOraOrologio, avanzamentoPermesso, passoValido,
   type Abbonamento, type SubStripe,
 } from "./abbonamento.ts";
 
@@ -220,4 +220,46 @@ test("rifiutoCambio: stati ammessi, magazzino, doppioni e riattiva", () => {
   assert.deepEqual(rifiutoCambio({ ...attivo, periodo: null }, { azione: "aggiungi", modulo: "accettazione" }), { stato: 409, messaggio: "Abbonamento non attivo" });
   assert.equal(rifiutoCambio({ ...attivo, stato: "disdetto" }, { azione: "riattiva" }), null);
   assert.deepEqual(rifiutoCambio(attivo, { azione: "riattiva" }), { stato: 409, messaggio: "L'abbonamento non è disdetto" });
+});
+
+test("nuovaOraOrologio: giorno e settimana aggiungono 24 ore e 7 × 24 ore", () => {
+  assert.equal(nuovaOraOrologio(ORA, "giorno"), ORA + 86_400_000);
+  assert.equal(nuovaOraOrologio(ORA, "settimana"), ORA + 7 * 86_400_000);
+});
+
+test("nuovaOraOrologio: mese e anno di calendario a Roma, stessa ora", () => {
+  assert.equal(nuovaOraOrologio(ORA, "mese"), T(2026, 12, 22));
+  assert.equal(nuovaOraOrologio(T(2027, 1, 31), "mese"), T(2027, 2, 28));
+  assert.equal(nuovaOraOrologio(ORA, "anno"), T(2027, 11, 22));
+  // 29 febbraio + 1 anno: ultimo giorno di febbraio
+  assert.equal(nuovaOraOrologio(T(2028, 2, 29), "anno"), T(2029, 2, 28));
+  // Dicembre → gennaio dell'anno dopo
+  assert.equal(nuovaOraOrologio(T(2026, 12, 31), "mese"), T(2027, 1, 31));
+});
+
+test("nuovaOraOrologio: con il cambio dell'ora legale resta la stessa ora di Roma", () => {
+  // 22/03/2027 13:00 a Roma (ora solare, 12:00 UTC) → 22/04/2027 13:00 a Roma (ora legale, 11:00 UTC)
+  assert.equal(nuovaOraOrologio(Date.UTC(2027, 2, 22, 12), "mese"), Date.UTC(2027, 3, 22, 11));
+  // Il contrario a ottobre: 22/10/2027 13:00 (legale, 11:00 UTC) → 22/11/2027 13:00 (solare, 12:00 UTC)
+  assert.equal(nuovaOraOrologio(Date.UTC(2027, 9, 22, 11), "mese"), Date.UTC(2027, 10, 22, 12));
+});
+
+test("avanzamentoPermesso: +1 anno solo con l'annuale, gli altri sempre", () => {
+  assert.equal(avanzamentoPermesso(ab({ stato: "attivo", periodo: "mese" }), "anno"), false);
+  assert.equal(avanzamentoPermesso(ab({ stato: "attivo", periodo: "anno" }), "anno"), true);
+  assert.equal(avanzamentoPermesso(ab({ stato: "nuovo", periodo: null }), "anno"), false);
+  for (const periodo of ["mese", "anno", null] as const) {
+    assert.equal(avanzamentoPermesso(ab({ periodo }), "mese"), true);
+    assert.equal(avanzamentoPermesso(ab({ periodo }), "settimana"), true);
+    assert.equal(avanzamentoPermesso(ab({ periodo }), "giorno"), true);
+  }
+});
+
+test("passoValido: solo i quattro passi", () => {
+  assert.equal(passoValido({ passo: "mese" }), "mese");
+  assert.equal(passoValido({ passo: "giorno" }), "giorno");
+  assert.equal(passoValido({ passo: "ora" }), null);
+  assert.equal(passoValido({}), null);
+  assert.equal(passoValido(null), null);
+  assert.equal(passoValido("mese"), null);
 });

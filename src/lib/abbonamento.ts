@@ -146,7 +146,61 @@ export function fasciaDaMostrare(a: Abbonamento, ora: number): boolean {
   return c?.giorni != null && c.giorni <= 7;
 }
 
-export type RichiestaModuli = { azione: "aggiungi" | "togli" | "anteprima"; modulo: Modulo } | { azione: "riattiva" };
+// Strumenti di prova: di quanto si fa avanzare l'orologio di prova di Stripe (spec registrazione-pagamento, sezione 7).
+export type Passo = "giorno" | "settimana" | "mese" | "anno";
+
+const PASSI: readonly Passo[] = ["giorno", "settimana", "mese", "anno"];
+
+// Il corpo di POST /api/abbonamento/prova/avanza: { passo } con uno dei quattro passi, altrimenti null.
+export function passoValido(corpo: unknown): Passo | null {
+  if (!corpo || typeof corpo !== "object" || Array.isArray(corpo)) return null;
+  const p = (corpo as { passo?: unknown }).passo;
+  return PASSI.find((x) => x === p) ?? null;
+}
+
+const ROMA = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Europe/Rome", hourCycle: "h23",
+  year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric",
+});
+
+// Data e ora di Roma di un istante, come se fossero in UTC (ms): la differenza con l'istante è lo scarto del fuso.
+function oraDiRoma(ms: number): number {
+  const p = Object.fromEntries(ROMA.formatToParts(new Date(ms)).map((x) => [x.type, Number(x.value)]));
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second, ((ms % 1000) + 1000) % 1000);
+}
+
+// L'istante in cui a Roma è l'ora indicata (in UTC "finta", come da oraDiRoma). Due passi bastano per lo scarto del fuso.
+function daOraDiRoma(finta: number): number {
+  let ms = finta - (oraDiRoma(finta) - finta);
+  ms = finta - (oraDiRoma(ms) - ms);
+  return ms;
+}
+
+/**
+ * Dove arriva l'orologio di prova da `ora` (ms). Giorno e settimana: 24 ore e 7 × 24 ore. Mese e anno: di calendario,
+ * a Roma e alla stessa ora; se il giorno non c'è si va all'ultimo del mese (31/01 → 28/02).
+ */
+export function nuovaOraOrologio(ora: number, passo: Passo): number {
+  if (passo === "giorno") return ora + 86_400_000;
+  if (passo === "settimana") return ora + 7 * 86_400_000;
+  const r = new Date(oraDiRoma(ora));
+  const mesi = r.getUTCMonth() + (passo === "mese" ? 1 : 12);
+  const anno = r.getUTCFullYear() + Math.floor(mesi / 12);
+  const mese = mesi % 12;
+  const ultimo = new Date(Date.UTC(anno, mese + 1, 0)).getUTCDate();
+  const finta = Date.UTC(anno, mese, Math.min(r.getUTCDate(), ultimo), r.getUTCHours(), r.getUTCMinutes(), r.getUTCSeconds(), r.getUTCMilliseconds());
+  return daOraDiRoma(finta);
+}
+
+/**
+ * Il passo si può chiedere a Stripe? Stripe non fa avanzare l'orologio di più di due periodi dell'abbonamento più corto:
+ * +1 anno solo con l'annuale; giorno, settimana e mese sempre (stanno sempre entro due periodi).
+ */
+export function avanzamentoPermesso(a: Abbonamento, passo: Passo): boolean {
+  return passo !== "anno" || a.periodo === "anno";
+}
+
+export type RichiestaModuli ={ azione: "aggiungi" | "togli" | "anteprima"; modulo: Modulo } | { azione: "riattiva" };
 
 const AZIONI_MODULO = ["aggiungi", "togli", "anteprima"] as const;
 

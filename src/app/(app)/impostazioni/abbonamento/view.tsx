@@ -14,7 +14,9 @@ import { euro, LISTINO, prezzo, totale, type Periodo } from "@/lib/listino";
 import { ORDINE_MODULI, type Modulo } from "@/lib/moduli";
 import { lavoroAperto } from "@/lib/moduli-lavoro";
 import { useStore } from "@/lib/store";
+import type { ModalitaStripe } from "@/lib/stripe/chiavi";
 import { useAbbonamento } from "@/lib/use-abbonamento";
+import { StrumentiProva } from "@/components/StrumentiProva";
 import { Button, Notice, PageTitle, Panel } from "@/components/ui";
 
 const STATO: Record<StatoAbbonamento, string> = {
@@ -79,10 +81,20 @@ export default function AbbonamentoView() {
       </div>
     );
   }
-  return <Pagina abbonamento={dati.abbonamento} conto={dati.conto} ricarica={ricarica} />;
+  return <Pagina abbonamento={dati.abbonamento} conto={dati.conto} modalita={dati.modalita} ricarica={ricarica} />;
 }
 
-function Pagina({ abbonamento: a, conto, ricarica }: { abbonamento: Abbonamento; conto: Conto | null; ricarica: (sincronizza?: boolean) => Promise<void> }) {
+function Pagina({
+  abbonamento: a,
+  conto,
+  modalita,
+  ricarica,
+}: {
+  abbonamento: Abbonamento;
+  conto: Conto | null;
+  modalita: ModalitaStripe;
+  ricarica: (sincronizza?: boolean) => Promise<void>;
+}) {
   const router = useRouter();
   const path = usePathname();
   const sp = useSearchParams();
@@ -268,6 +280,9 @@ function Pagina({ abbonamento: a, conto, ricarica }: { abbonamento: Abbonamento;
         </Button>
         <span className="text-[14px] text-ink-3">Si apre il portale clienti di Stripe.</span>
       </div>
+
+      {/* Solo con le chiavi di prova e l'orologio di prova di Stripe (spec, sezione 7) */}
+      {modalita === "prova" && a.prova && a.orologioId && <StrumentiProva abbonamento={a} />}
     </div>
   );
 }

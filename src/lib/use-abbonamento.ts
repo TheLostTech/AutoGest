@@ -8,7 +8,8 @@ import type { ModalitaStripe } from "./stripe/chiavi";
 import { fetchAzienda } from "./accesso/azienda-client";
 import { intestazioniPassive } from "./accesso/attivita";
 
-export type StatoApi = { abbonamento: Abbonamento | null; registrata: boolean; modalita: ModalitaStripe; conto: Conto | null };
+// orologioPronto: solo con controllaOrologio (strumenti di prova); altrimenti null
+export type StatoApi = { abbonamento: Abbonamento | null; registrata: boolean; modalita: ModalitaStripe; conto: Conto | null; orologioPronto: boolean | null };
 
 let dati: StatoApi | null = null;
 let letto = 0; // quando è arrivata l'ultima risposta (ms)
@@ -17,17 +18,29 @@ const ascoltatori = new Set<() => void>();
 // Tornando sulla scheda si rilegge, ma non più di una volta ogni 30 secondi
 const RILEGGI_DOPO_MS = 30_000;
 
-async function leggi(sincronizza: boolean): Promise<void> {
+async function leggi(parametri: string): Promise<StatoApi | null> {
   try {
     // Lettura automatica: per una sessione da PIN non conta come attività della persona
-    const r = await fetchAzienda(`/api/abbonamento/stato${sincronizza ? "?sincronizza=1" : ""}`, { cache: "no-store", headers: intestazioniPassive() });
-    if (!r.ok) return;
-    dati = (await r.json()) as StatoApi;
+    const r = await fetchAzienda(`/api/abbonamento/stato${parametri}`, { cache: "no-store", headers: intestazioniPassive() });
+    if (!r.ok) return null;
+    const nuovi = (await r.json()) as StatoApi;
+    dati = nuovi;
     letto = Date.now();
     ascoltatori.forEach((f) => f());
+    return nuovi;
   } catch {
     // server non raggiungibile: resta l'ultimo stato letto
+    return null;
   }
+}
+
+/**
+ * Strumenti di prova: rilegge lo stato con quello dell'orologio di prova (`orologioPronto`). Non passa dal limite dei
+ * 15 secondi di ricarica(true): il server sincronizza da solo, una volta, quando l'orologio torna pronto. null se il
+ * server non risponde. Aggiorna la copia condivisa come le altre letture.
+ */
+export function controllaOrologio(): Promise<StatoApi | null> {
+  return leggi("?orologio=1");
 }
 
 /** Rilegge lo stato; con `sincronizza` il server lo chiede prima a Stripe (al massimo una volta ogni 15 secondi). */
@@ -35,7 +48,7 @@ export function ricaricaAbbonamento(sincronizza = false): Promise<void> {
   // Una lettura semplice già in corso basta; una con sincronizzazione parte comunque dopo
   if (inCorso && !sincronizza) return inCorso;
   const prima = inCorso ?? Promise.resolve();
-  const run: Promise<void> = prima.then(() => leggi(sincronizza)).finally(() => {
+  const run: Promise<void> = prima.then(async () => void (await leggi(sincronizza ? "?sincronizza=1" : ""))).finally(() => {
     if (inCorso === run) inCorso = null;
   });
   inCorso = run;

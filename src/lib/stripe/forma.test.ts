@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { abbonamentoModificabile, importoSenzaTasse, pagamentoRifiutato, subMinima, voceDelModulo } from "./forma.ts";
+import { abbonamentoModificabile, importoSenzaTasse, pagamentoRifiutato, rifiutoAvanzamento, subMinima, voceDelModulo } from "./forma.ts";
 
 const voce = (product: unknown, interval: string | null, fine = 1_800_000_000) => ({
   price: { recurring: interval ? { interval } : null, product },
@@ -79,4 +79,15 @@ test("pagamentoRifiutato: errore della carta o 402 di Stripe, non gli altri erro
   assert.equal(pagamentoRifiutato({ type: "StripeConnectionError" }), false);
   assert.equal(pagamentoRifiutato(new Error("rete")), false);
   assert.equal(pagamentoRifiutato(null), false);
+});
+
+test("rifiutoAvanzamento: oltre due periodi → 400, orologio già in avanzamento → 409, il resto null", () => {
+  const troppo = { stato: 400, messaggio: "Stripe fa avanzare l'orologio al massimo di due periodi alla volta" };
+  assert.deepEqual(rifiutoAvanzamento({ type: "StripeInvalidRequestError", statusCode: 400, message: "You can't advance the test clock more than two intervals from the shortest subscription interval." }), troppo);
+  assert.deepEqual(rifiutoAvanzamento({ type: "StripeInvalidRequestError", statusCode: 400, message: "Test clock cannot be advanced more than 2 intervals into the future" }), troppo);
+  assert.deepEqual(rifiutoAvanzamento({ type: "StripeInvalidRequestError", statusCode: 400, message: "The test clock is currently advancing." }), { stato: 409, messaggio: "L'orologio sta già avanzando" });
+  assert.equal(rifiutoAvanzamento({ type: "StripeInvalidRequestError", statusCode: 404, message: "No such test_clock" }), null);
+  assert.equal(rifiutoAvanzamento({ type: "StripeConnectionError", message: "advancing" }), null);
+  assert.equal(rifiutoAvanzamento(new Error("rete")), null);
+  assert.equal(rifiutoAvanzamento(null), null);
 });

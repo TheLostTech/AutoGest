@@ -63,6 +63,21 @@ export function pagamentoRifiutato(e: unknown): boolean {
   return x.type === "StripeCardError" || x.statusCode === 402;
 }
 
+export const TROPPI_PERIODI = "Stripe fa avanzare l'orologio al massimo di due periodi alla volta";
+export const OROLOGIO_IN_AVANZAMENTO = "L'orologio sta già avanzando";
+
+// Un rifiuto di Stripe all'avanzamento dell'orologio di prova che si spiega a chi prova: oltre due periodi
+// dell'abbonamento più corto (400) oppure orologio che sta già avanzando (409). Gli altri errori: null (502).
+// Stripe non dà un codice per questi casi: si riconoscono dal messaggio della richiesta rifiutata.
+export function rifiutoAvanzamento(e: unknown): { stato: number; messaggio: string } | null {
+  if (!e || typeof e !== "object") return null;
+  const x = e as { type?: unknown; statusCode?: unknown; message?: unknown };
+  if (x.type !== "StripeInvalidRequestError" || x.statusCode !== 400 || typeof x.message !== "string") return null;
+  if (/interval/i.test(x.message)) return { stato: 400, messaggio: TROPPI_PERIODI };
+  if (/advancing/i.test(x.message)) return { stato: 409, messaggio: OROLOGIO_IN_AVANZAMENTO };
+  return null;
+}
+
 // Anteprima della fattura: quanto si paga subito, IVA esclusa (in centesimi), mai sotto zero.
 export function importoSenzaTasse(f: { amount_due: number; total_taxes: { amount: number }[] | null }): number {
   const tasse = (f.total_taxes ?? []).reduce((s, t) => s + t.amount, 0);

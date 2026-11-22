@@ -1,14 +1,14 @@
 // Stripe sul server: chiave, cliente (in prova dentro un orologio di prova), prezzi, IVA e sincronizzazione
 // dell'abbonamento. Solo server. Spec registrazione-pagamento, sezioni 4, 5, 7, 9.
 import Stripe from "stripe";
-import { ABBONAMENTO_NUOVO, abbonamentoDaStripe, lookupKey, rifiutoCambio, righeCambio, scegli, type Abbonamento, type RichiestaModuli } from "@/lib/abbonamento";
+import { ABBONAMENTO_NUOVO, abbonamentoDaStripe, avanzamentoPermesso, lookupKey, nuovaOraOrologio, rifiutoCambio, righeCambio, scegli, type Abbonamento, type Passo, type RichiestaModuli } from "@/lib/abbonamento";
 import { aggiornaAbbonamento, leggiAbbonamento } from "@/lib/abbonamento-server";
 import { aggiungiEventi } from "@/lib/archivio-azienda";
 import type { Periodo } from "@/lib/listino";
 import type { Modulo } from "@/lib/moduli";
 import { azioneCliente, ESPANSIONI, modalitaDaChiave, pagamentoInCorso, sessioniDaScadere, sincronizzazioneLimitata, stessoAmbiente, type ModalitaStripe, type SessioneCheckout } from "./chiavi";
 import { creaFila, type Fila } from "./fila";
-import { abbonamentoModificabile, importoSenzaTasse, pagamentoRifiutato, subMinima, voceDelModulo, type SubDaStripe } from "./forma";
+import { abbonamentoModificabile, importoSenzaTasse, OROLOGIO_IN_AVANZAMENTO, pagamentoRifiutato, rifiutoAvanzamento, subMinima, TROPPI_PERIODI, voceDelModulo, type SubDaStripe } from "./forma";
 
 // Versione dell'API fissata: quella che porta con sé stripe@23.2.0 (Stripe.API_VERSION). Si cambia insieme alla libreria.
 const VERSIONE_API = "2026-11-18.endive";
@@ -21,6 +21,8 @@ type Globali = typeof globalThis & {
   __ivaStripe?: Promise<string>;
   __checkoutInCorso?: Map<string, Promise<unknown>>;
   __cambiModuliInCorso?: Map<string, Promise<unknown>>;
+  __avanzamentiInCorso?: Map<string, Promise<unknown>>;
+  __orologiDaChiudere?: Set<string>;
 };
 const g = globalThis as Globali;
 
@@ -211,6 +213,71 @@ export function unCheckoutAllaVolta<T>(aziendaId: string, lavoro: () => Promise<
 /** Un cambio di moduli (o una riattivazione) per volta per azienda: due schede non aggiungono lo stesso modulo due volte. */
 export function unCambioAllaVolta<T>(aziendaId: string, lavoro: () => Promise<T>): Promise<T> {
   return unoAllaVolta(cambiInCorso, aziendaId, lavoro);
+}
+
+const avanzamentiInCorso = (g.__avanzamentiInCorso ??= new Map<string, Promise<unknown>>());
+// Aziende il cui orologio è stato fatto avanzare da qui e non ancora sincronizzato dopo che è tornato pronto
+const orologiDaChiudere = (g.__orologiDaChiudere ??= new Set<string>());
+
+/** L'abbonamento ha un orologio di prova di Stripe che gli strumenti di prova possono usare (solo con le chiavi di prova). */
+export function conOrologio(a: Abbonamento | null): a is Abbonamento & { orologioId: string } {
+  return modalitaStripe() === "prova" && !!a?.prova && !!a.orologioId;
+}
+
+const OROLOGIO_GUASTO = "L'orologio di prova di Stripe non funziona più: per ricominciare registra un'altra azienda.";
+
+export type EsitoAvanzamento = { frozenTime: number } | { errore: string; stato: number };
+
+/**
+ * Strumenti di prova (spec registrazione-pagamento, sezione 7): fa partire l'avanzamento dell'orologio di prova
+ * dell'azienda di un passo, contato dall'ora dell'orologio letta adesso da Stripe. Uno per volta per azienda: il
+ * secondo trova l'orologio che sta avanzando e riceve 409. Non aspetta la fine: Stripe lavora in background e la pagina
+ * ricontrolla con statoOrologio. `frozenTime`: l'ora d'arrivo in ms. Lancia se Stripe non risponde.
+ */
+export function avanzaOrologio(aziendaId: string, passo: Passo): Promise<EsitoAvanzamento> {
+  return unoAllaVolta(avanzamentiInCorso, aziendaId, async () => {
+    const ab = await leggiAbbonamento(aziendaId);
+    if (!conOrologio(ab)) return { errore: "Orologio di prova non trovato", stato: 404 };
+    if (!avanzamentoPermesso(ab, passo)) return { errore: TROPPI_PERIODI, stato: 400 };
+    const s = stripe();
+    const orologio = await s.testHelpers.testClocks.retrieve(ab.orologioId);
+    if (orologio.status === "advancing") return { errore: OROLOGIO_IN_AVANZAMENTO, stato: 409 };
+    if (orologio.status !== "ready") return { errore: OROLOGIO_GUASTO, stato: 502 };
+    const arrivo = Math.floor(nuovaOraOrologio(orologio.frozen_time * 1000, passo) / 1000);
+    try {
+      await s.testHelpers.testClocks.advance(ab.orologioId, { frozen_time: arrivo });
+    } catch (e) {
+      const no = rifiutoAvanzamento(e);
+      if (!no) throw e;
+      return { errore: no.messaggio, stato: no.stato };
+    }
+    orologiDaChiudere.add(aziendaId);
+    return { frozenTime: arrivo * 1000 };
+  });
+}
+
+/**
+ * Lo stato dell'orologio di prova per la pagina che aspetta dopo un avanzamento: `pronto` vero quando Stripe ha finito,
+ * falso mentre avanza (o se è guasto), null se Stripe non risponde. Appena l'orologio è pronto dopo un avanzamento
+ * (fatto da qui, o un'ora diversa da quella salvata) si sincronizza subito, senza il limite dei 15 secondi: succede una
+ * volta per avanzamento, perché dopo l'ora salvata è quella dell'orologio. Non lancia mai.
+ */
+export async function statoOrologio(aziendaId: string, ab: Abbonamento & { orologioId: string }): Promise<{ pronto: boolean | null; abbonamento: Abbonamento }> {
+  try {
+    const o = await stripe().testHelpers.testClocks.retrieve(ab.orologioId);
+    if (o.status !== "ready") return { pronto: false, abbonamento: ab };
+    if (!orologiDaChiudere.has(aziendaId) && o.frozen_time * 1000 === ab.oraOrologio) return { pronto: true, abbonamento: ab };
+    orologiDaChiudere.delete(aziendaId);
+    try {
+      return { pronto: true, abbonamento: await sincronizzaOLancia(aziendaId) };
+    } catch (e) {
+      orologiDaChiudere.add(aziendaId); // si riprova al prossimo controllo
+      throw e;
+    }
+  } catch (e) {
+    console.error("Orologio di prova non letto", aziendaId, ab.orologioId, e);
+    return { pronto: null, abbonamento: ab };
+  }
 }
 
 const PAGAMENTO_RIFIUTATO = "Pagamento non riuscito: controlla la carta da «Carta, fatture e disdetta».";
