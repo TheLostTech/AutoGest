@@ -12,6 +12,7 @@ import { Button, Empty, Field, Notice } from "@/components/ui";
 import type { Condition } from "@/lib/types";
 import { ShippingChoice } from "@/components/ShippingChoice";
 import { asksShipping } from "@/lib/spedizione";
+import { TypeOptions } from "@/components/TypeOptions";
 
 // Ciò che resta uguale tra un pezzo e il successivo (stesso scaffale, spesso stessa auto)
 interface Sticky {
@@ -46,6 +47,7 @@ export default function AggiungiRicambio() {
   const [guessing, setGuessing] = useState(false);
   const [typeId, setTypeId] = useState("");
   const [side, setSide] = useState("");
+  const [misura, setMisura] = useState("");
   const [spedibile, setSpedibile] = useState(false);
   const [dicitura, setDicitura] = useState<string | null>(null); // null = composta in automatico
   const [legacy, setLegacy] = useState("");
@@ -60,12 +62,12 @@ export default function AggiungiRicambio() {
   const t = typeId ? typeById(typeId) : undefined;
   const v = vehicles.find((x) => x.id === vehicleId);
   const model = v ? `${v.make} ${v.model}` : sticky.model.trim();
-  const auto = t ? `${t.name}${model ? ` ${model}` : ""}${side ? ` ${side.toLowerCase()}` : ""}` : "";
+  const auto = t ? `${t.name}${misura ? ` ${misura}` : ""}${model ? ` ${model}` : ""}${side ? ` ${side.toLowerCase()}` : ""}` : "";
   const description = (dicitura ?? auto).trim();
   const loc = normLoc(w.id, sticky.corsia, sticky.scaffale, sticky.ripiano, sticky.contenitore);
   const locOk = !!loc.corsia && !!loc.scaffale && !!loc.ripiano;
   const dupLegacy = legacy.trim() && parts.find((p) => p.legacyCode?.toUpperCase() === legacy.trim().toUpperCase());
-  const ok = !!t && description.length >= 4 && locOk && !!condition && (!t.sided || !!side) && !dupLegacy;
+  const ok = !!t && description.length >= 4 && locOk && !!condition && (!t.sided || !!side) && (!t.misure || !!misura) && !dupLegacy;
   const knownPast = [...new Map(parts.filter((p) => p.pastDossier).map((p) => [p.pastDossier!.number, p.pastDossier!])).values()];
   const set = (k: keyof Sticky) => (e: React.ChangeEvent<HTMLInputElement>) => setSticky({ ...sticky, [k]: e.target.value });
 
@@ -99,6 +101,7 @@ export default function AggiungiRicambio() {
           ? { number: sticky.pratica.trim().toUpperCase(), plate: sticky.targa.trim().toUpperCase() || undefined, vin: sticky.telaio.trim().toUpperCase() || undefined, model: sticky.model.trim() || undefined }
           : undefined,
       typeId: t.id,
+      misura: t.misure ? misura : undefined,
       description,
       condition,
       status: "bozza",
@@ -206,11 +209,19 @@ export default function AggiungiRicambio() {
         <section className="space-y-4 rounded-md border border-hair bg-label p-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Tipo di pezzo" error={tried && !t ? "Scegli il tipo" : undefined}>
-              <select className="field" value={typeId} onChange={(e) => setTypeId(e.target.value)}>
+              <select className="field" value={typeId} onChange={(e) => { setTypeId(e.target.value); setMisura(""); }}>
                 <option value="">Scegli…</option>
-                {PART_TYPES.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                <TypeOptions />
               </select>
             </Field>
+            {t?.misure && (
+              <Field label="Misura" error={tried && !misura ? "Scegli la misura" : undefined}>
+                <select className="field" value={misura} onChange={(e) => setMisura(e.target.value)}>
+                  <option value="">Scegli…</option>
+                  {t.misure.map((m) => <option key={m}>{m}</option>)}
+                </select>
+              </Field>
+            )}
             {t?.sided ? (
               <Field label="Lato" error={tried && !side ? "Indica il lato" : undefined}>
                 <select className="field" value={side} onChange={(e) => setSide(e.target.value)}>

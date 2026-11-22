@@ -5,8 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { PageTitle, Panel, Empty } from "@/components/ui";
 import { PartRow } from "@/components/PartRow";
-import { PART_TYPES } from "@/lib/catalog";
 import type { PartStatus } from "@/lib/types";
+import { TypeOptions } from "@/components/TypeOptions";
 
 const STATUSES: (PartStatus | "tutti")[] = ["tutti", "disponibile", "bozza", "riservato", "venduto", "invendibile", "scartato"];
 
@@ -62,7 +62,7 @@ function Magazzino() {
         </select>
         <select className="field" value={type} onChange={(e) => setType(e.target.value)} aria-label="Tipologia">
           <option value="">Tutte le tipologie</option>
-          {PART_TYPES.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          <TypeOptions />
         </select>
         <select className="field" value={area} onChange={(e) => setArea(e.target.value)} aria-label="Magazzino">
           <option value="">Tutti i magazzini</option>

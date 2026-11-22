@@ -954,7 +954,7 @@ export const useStore = create<State & Actions>()(
         },
 
         setRule: (typeId, min, max) => {
-          set((s) => ({ rules: s.rules.map((r) => (r.typeId === typeId ? { ...r, min, max } : r)) }));
+          set((s) => ({ rules: s.rules.some((r) => r.typeId === typeId) ? s.rules.map((r) => (r.typeId === typeId ? { ...r, min, max } : r)) : [...s.rules, { typeId, min, max }] }));
           push(event({ entity: "regola", entityId: typeId, action: "Soglia scorta modificata", detail: `min ${min} · max ${max}` }));
         },
 

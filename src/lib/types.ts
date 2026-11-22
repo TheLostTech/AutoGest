@@ -259,6 +259,7 @@ export interface Part {
   pastDossier?: { number: string; plate?: string; vin?: string; model?: string };
   missingSince?: string; // non trovato al suo posto durante l'ultima conta
   typeId: string;
+  misura?: string; // per i tipi con misure (es. "M8 × 1,25 × 30 mm", "205/55 R16")
   description: string;
   condition: Condition;
   status: PartStatus;
@@ -352,6 +353,7 @@ export interface PartType {
   basePrice: number;
   render?: string;
   value: number; // peso commerciale 1-5 per ordinare i suggerimenti
+  misure?: string[]; // bulloneria, fusibili, gomme…: un solo tipo, la misura si sceglie quando si cataloga
 }
 
 // ——— Documenti di vendita ———
