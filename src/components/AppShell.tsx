@@ -9,6 +9,7 @@ import { useModuli } from "@/lib/use-moduli";
 import { ModuloBloccato } from "./ModuloBloccato";
 import { useDeviceStorageFull, useStore } from "@/lib/store";
 import { RUOLO_LABEL } from "@/lib/accesso/ruoli";
+import { scritturaPersoneNegata } from "@/lib/accesso/persone-regole";
 import { esci, esciDallAssistenza, useSessione } from "@/lib/accesso/client";
 import { useSyncAvviso } from "@/lib/sync";
 import type { Role } from "@/lib/types";
@@ -263,6 +264,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           abbonamento={abbonamento.abbonamento}
           modalita={abbonamento.modalita}
           titolare={titolare}
+          negata={accesso ? scritturaPersoneNegata(accesso.tipo) : null}
           assistenza={!!accesso?.assistenza}
         />
       )}

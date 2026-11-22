@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   await connection();
   const x = daAltroSito(req, true);
   if (x) return x;
-  const a = await titolare(req);
+  const a = await titolare(req, { paga: true });
   if (a instanceof Response) return a;
   if (modalitaStripe() === "spenta") return errore(503, "Pagamenti non disponibili");
 

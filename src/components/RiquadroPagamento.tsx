@@ -29,11 +29,13 @@ export function RiquadroPagamento({
   abbonamento,
   modalita,
   titolare,
+  negata,
   assistenza,
 }: {
   abbonamento: Abbonamento | null;
   modalita: ModalitaStripe;
   titolare: boolean;
+  negata: string | null; // entrati con il PIN: si sceglie, ma per pagare serve l'accesso con email e password
   assistenza: boolean; // la fascia del super admin resta visibile sopra il riquadro
 }) {
   const titoloId = useId();
@@ -77,7 +79,7 @@ export function RiquadroPagamento({
           </button>
         </div>
         {titolare ? (
-          <Scelta abbonamento={abbonamento} modalita={modalita} />
+          <Scelta abbonamento={abbonamento} modalita={modalita} negata={negata} />
         ) : (
           <p className="px-5 py-6 text-[17px] md:px-7">Chiedi al titolare di attivarlo.</p>
         )}
@@ -86,7 +88,7 @@ export function RiquadroPagamento({
   );
 }
 
-function Scelta({ abbonamento, modalita }: { abbonamento: Abbonamento | null; modalita: ModalitaStripe }) {
+function Scelta({ abbonamento, modalita, negata }: { abbonamento: Abbonamento | null; modalita: ModalitaStripe; negata: string | null }) {
   const path = usePathname();
   const [periodo, setPeriodo] = useState<Periodo>(() => sceltaIniziale(abbonamento).periodo);
   const [extra, setExtra] = useState<Set<Modulo>>(() => sceltaIniziale(abbonamento).moduli);
@@ -185,9 +187,13 @@ function Scelta({ abbonamento, modalita }: { abbonamento: Abbonamento | null; mo
         <p className="text-[14px] text-ink-3">IVA esclusa{periodo === "anno" && risparmio > 0 ? ` · risparmi ${euro(risparmio)} rispetto al mensile` : ""}</p>
       </div>
 
-      <Button size="lg" className="mt-5 w-full" onClick={paga} disabled={attesa}>
-        {attesa ? "Apro Stripe…" : "Paga con Stripe"}
-      </Button>
+      {negata ? (
+        <p className="mt-5 rounded-md bg-warn-bg px-4 py-3 text-[16px] font-semibold text-warn">{negata}</p>
+      ) : (
+        <Button size="lg" className="mt-5 w-full" onClick={paga} disabled={attesa}>
+          {attesa ? "Apro Stripe…" : "Paga con Stripe"}
+        </Button>
+      )}
       {errore && (
         <p role="alert" className="mt-3 rounded-md bg-danger-bg px-4 py-3 text-[15px] font-medium text-danger">
           {errore}

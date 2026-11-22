@@ -10,6 +10,7 @@ import { CreditCard } from "lucide-react";
 import { moduliDaAbbonamento, type Abbonamento, type Conto, type StatoAbbonamento } from "@/lib/abbonamento";
 import { fetchAzienda } from "@/lib/accesso/azienda-client";
 import { useSessione } from "@/lib/accesso/client";
+import { scritturaPersoneNegata } from "@/lib/accesso/persone-regole";
 import { euro, LISTINO, prezzo, totale, type Periodo } from "@/lib/listino";
 import { ORDINE_MODULI, type Modulo } from "@/lib/moduli";
 import { lavoroAperto } from "@/lib/moduli-lavoro";
@@ -81,18 +82,21 @@ export default function AbbonamentoView() {
       </div>
     );
   }
-  return <Pagina abbonamento={dati.abbonamento} conto={dati.conto} modalita={dati.modalita} ricarica={ricarica} />;
+  // Entrati con il PIN di un dispositivo condiviso: si guarda l'abbonamento, ma per cambiarlo serve email e password
+  return <Pagina abbonamento={dati.abbonamento} conto={dati.conto} modalita={dati.modalita} negata={scritturaPersoneNegata(accesso.tipo)} ricarica={ricarica} />;
 }
 
 function Pagina({
   abbonamento: a,
   conto,
   modalita,
+  negata,
   ricarica,
 }: {
   abbonamento: Abbonamento;
   conto: Conto | null;
   modalita: ModalitaStripe;
+  negata: string | null;
   ricarica: (sincronizza?: boolean) => Promise<void>;
 }) {
   const router = useRouter();
@@ -107,9 +111,9 @@ function Pagina({
   // Arrivando da "Attiva" (?aggiungi=<modulo>) si apre la conferma di quel modulo appena l'abbonamento lo permette:
   // lo stato in memoria può essere vecchio, e la rilettura da Stripe all'apertura arriva dopo.
   const [pendente, setPendente] = useState<Modulo | null>(() => ORDINE_MODULI.find((x) => x !== "magazzino" && x === richiesto) ?? null);
-  if (pendente && conferma === null && cambiabile(a)) {
+  if (pendente && conferma === null && (negata || cambiabile(a))) {
     setPendente(null);
-    if (!attivi.includes(pendente)) setConferma({ tipo: "aggiungi", modulo: pendente, importo: null });
+    if (!negata && !attivi.includes(pendente)) setConferma({ tipo: "aggiungi", modulo: pendente, importo: null });
   }
 
   // Il modulo richiesto non resta nell'indirizzo: ricaricando la pagina la conferma non si riapre
@@ -206,9 +210,11 @@ function Pagina({
           {a.stato === "disdetto" && (
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-[16px] text-ink-2">Nessun altro addebito: l&apos;abbonamento non si rinnova.</p>
-              <Button size="sm" onClick={riattiva} disabled={attesa !== null}>
-                {attesa === "riattiva" ? "Riattivo…" : "Riattiva"}
-              </Button>
+              {!negata && (
+                <Button size="sm" onClick={riattiva} disabled={attesa !== null}>
+                  {attesa === "riattiva" ? "Riattivo…" : "Riattiva"}
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -221,7 +227,9 @@ function Pagina({
       )}
 
       <Panel title="Moduli" className="mt-5">
-        {!puoCambiare && (
+        {negata ? (
+          <p className="border-b border-hair-soft bg-warn-bg px-4 py-3 text-[15px] font-semibold text-warn">{negata}</p>
+        ) : !puoCambiare && (
           <p className="border-b border-hair-soft px-4 py-3 text-[15px] text-ink-3">
             {a.stato === "in-ritardo" ? "Aggiorna la carta prima di cambiare i moduli." : "I moduli si cambiano con l'abbonamento attivo."}
           </p>
@@ -240,6 +248,8 @@ function Pagina({
                   <span className="flex w-28 justify-end">
                     {m === "magazzino" ? (
                       <span className="text-[14px] font-semibold text-ok">incluso</span>
+                    ) : negata ? (
+                      <span className={`text-[14px] font-semibold ${acceso ? "text-ok" : "text-ink-3"}`}>{acceso ? "attivo" : "non attivo"}</span>
                     ) : acceso ? (
                       <Button
                         size="sm"
@@ -273,16 +283,20 @@ function Pagina({
         </ul>
       </Panel>
 
-      <div className="mt-5 flex flex-wrap items-center gap-3">
-        <Button variant="secondary" onClick={portale} disabled={attesa !== null || !a.customerId}>
-          <CreditCard className="size-5" aria-hidden />
-          {attesa === "portale" ? "Apro Stripe…" : "Carta, fatture e disdetta"}
-        </Button>
-        <span className="text-[14px] text-ink-3">Si apre il portale clienti di Stripe.</span>
-      </div>
+      {negata ? (
+        <p className="mt-5 text-[15px] text-ink-3">Carta, fatture e disdetta: {negata.charAt(0).toLowerCase() + negata.slice(1)}</p>
+      ) : (
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <Button variant="secondary" onClick={portale} disabled={attesa !== null || !a.customerId}>
+            <CreditCard className="size-5" aria-hidden />
+            {attesa === "portale" ? "Apro Stripe…" : "Carta, fatture e disdetta"}
+          </Button>
+          <span className="text-[14px] text-ink-3">Si apre il portale clienti di Stripe.</span>
+        </div>
+      )}
 
       {/* Solo con le chiavi di prova e l'orologio di prova di Stripe (spec, sezione 7) */}
-      {modalita === "prova" && a.prova && a.orologioId && <StrumentiProva abbonamento={a} />}
+      {modalita === "prova" && a.prova && a.orologioId && <StrumentiProva abbonamento={a} negata={negata} />}
     </div>
   );
 }

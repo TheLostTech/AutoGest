@@ -12,6 +12,30 @@ export function modalitaDaChiave(chiave: string | undefined, live: string | unde
   return "spenta";
 }
 
+/**
+ * Un avviso firmato ma di un altro ambiente (prova ↔ live, per esempio lo stesso indirizzo registrato nei due conti):
+ * si scarta. Con Stripe spento decide la route (503, così Stripe ritenta quando la chiave c'è).
+ */
+export function eventoDiUnAltroAmbiente(livemode: boolean, m: ModalitaStripe): boolean {
+  return m !== "spenta" && livemode !== (m === "live");
+}
+
+/**
+ * Indirizzo per i ritorni da Stripe (Checkout, portale): l'Origin della richiesta, cioè l'indirizzo da cui il titolare
+ * usa il gestionale e dove ha il cookie della sessione (le route lo controllano già contro Host). Senza un Origin valido:
+ * INDIRIZZO_GESTIONALE, poi l'indirizzo della richiesta.
+ */
+export function origineRitorno(origin: string | null, fissa: string | undefined, urlRichiesta: string): string {
+  if (origin) {
+    try {
+      const u = new URL(origin);
+      if (u.protocol === "https:" || u.protocol === "http:") return u.origin;
+    } catch {}
+  }
+  const f = fissa?.trim().replace(/\/+$/, "");
+  return f || new URL(urlRichiesta).origin;
+}
+
 /** La riga nella Piattaforma. */
 export function etichettaStripe(m: ModalitaStripe): string {
   if (m === "prova") return "Stripe: prova (AutoLost demo)";

@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   if (modalitaStripe() !== "prova") return errore(404, "Non trovato");
   const x = daAltroSito(req, true);
   if (x) return x;
-  const a = await titolare(req);
+  const a = await titolare(req, { paga: true });
   if (a instanceof Response) return a;
 
   const passo = passoValido(await leggiJson(req));

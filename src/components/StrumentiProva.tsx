@@ -41,7 +41,8 @@ type RispostaAvanza = { frozenTime?: number; error?: string };
 type Messaggio = { tono: "ok" | "warn" | "danger"; testo: string };
 const TONI: Record<Messaggio["tono"], string> = { ok: "text-ok", warn: "text-warn", danger: "bg-danger-bg text-danger" };
 
-export function StrumentiProva({ abbonamento: a }: { abbonamento: Abbonamento }) {
+// negata: entrati con il PIN, l'orologio si guarda ma non si fa avanzare (serve l'accesso con email e password)
+export function StrumentiProva({ abbonamento: a, negata }: { abbonamento: Abbonamento; negata: string | null }) {
   const [attesa, setAttesa] = useState<"invio" | "avanza" | null>(null);
   const [messaggio, setMessaggio] = useState<Messaggio | null>(null);
   const vivo = useRef(true);
@@ -107,13 +108,17 @@ export function StrumentiProva({ abbonamento: a }: { abbonamento: Abbonamento })
         Data di prova: <span className="code tabular-nums">{a.oraOrologio != null ? DATA.format(new Date(a.oraOrologio)) : "—"}</span>
       </p>
       <p className="mt-1 text-[14px] text-ink-3">Fa passare il tempo su Stripe: rinnovi, carte rifiutate e fine della disdetta senza aspettare. L&apos;orologio va solo avanti.</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {passi.map((p) => (
-          <Button key={p.passo} size="sm" variant="secondary" disabled={attesa !== null} onClick={() => void avanza(p.passo)}>
-            {p.etichetta}
-          </Button>
-        ))}
-      </div>
+      {negata ? (
+        <p className="mt-3 text-[15px] font-semibold text-warn">{negata}</p>
+      ) : (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {passi.map((p) => (
+            <Button key={p.passo} size="sm" variant="secondary" disabled={attesa !== null} onClick={() => void avanza(p.passo)}>
+              {p.etichetta}
+            </Button>
+          ))}
+        </div>
+      )}
       <div aria-live="polite" className="mt-2 min-h-6 text-[15px]">
         {attesa === "invio" ? (
           <p className="text-ink-2">Chiedo a Stripe…</p>
