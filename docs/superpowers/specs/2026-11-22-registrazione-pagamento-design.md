@@ -198,7 +198,7 @@ Schizzo per il titolare (`responsabile`):
 
   | Stato Stripe | Stato nell'app |
   |---|---|
-  | `active` o `trialing` | `attivo`, oppure `disdetto` se `cancel_at_period_end` |
+  | `active` o `trialing` | `attivo`, oppure `disdetto` se `cancel_at_period_end` o `cancel_at` (fine: la prima delle due date) |
   | `past_due` | `in-ritardo` |
   | `canceled`, `unpaid`, `incomplete_expired` | `scaduto` |
   | `incomplete` | lo stato non cambia: il primo pagamento non è ancora riuscito |

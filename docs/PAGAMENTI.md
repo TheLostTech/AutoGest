@@ -12,6 +12,9 @@ Come si registra una nuova autodemolizione, come paga l'abbonamento (Stripe) e c
 - **Checkout.** `src/app/api/abbonamento/checkout` apre il pagamento su Stripe. Si sceglie mese o anno per tutti i moduli insieme (Stripe non mescola i due periodi nello stesso abbonamento).
 - **Pagina Abbonamento.** Conto alla rovescia, aggiunta o rimozione di moduli (`/api/abbonamento/moduli`), portale clienti di Stripe (`/api/abbonamento/portale`) per carta, fatture, dati di fatturazione e disdetta a fine periodo. Il cambio da mensile ad annuale non c'è: si disdice e, alla scadenza, si fa un nuovo abbonamento.
 - **Fascia in cima al gestionale** (solo per il titolare): pagamento non riuscito, sempre; disdetta, negli ultimi 7 giorni.
+- **Disdetta.** Vale sia quella a fine periodo (`cancel_at_period_end`) sia quella a una data (`cancel_at`): lo stato è disdetto e la fine è la prima delle due date. "Riattiva" le toglie tutte e due.
+- **Con il PIN si guarda, non si paga.** Checkout, aggiunta e rimozione di moduli, portale e orologio di prova chiedono una sessione con email e password (stessa regola delle Persone): da un dispositivo condiviso con il PIN rispondono 403 e le schermate mostrano "Serve l'accesso con email e password." al posto dei pulsanti.
+- **Riquadro di pagamento sempre aggiornato.** Mentre è aperto per il titolare rilegge lo stato da Stripe all'apertura e ogni 10 secondi (il server ne fa al massimo una ogni 15), dopo un 409 del Checkout e quando la sincronizzazione riceve un 402: un pagamento finito in un'altra scheda lo chiude da solo.
 
 ## Variabili d'ambiente
 
@@ -20,6 +23,7 @@ Come si registra una nuova autodemolizione, come paga l'abbonamento (Stripe) e c
 | `STRIPE_SECRET_KEY` | Chiave segreta di Stripe. `sk_test_…` o `rk_test_…`: modalità **prova** (sandbox AutoLost demo). `sk_live_…` o `rk_live_…`: vale solo con `STRIPE_LIVE=1`, altrimenti Stripe resta **spento**. Se manca, Stripe è spento: nessun pagamento. Mai nel codice, mai in un file versionato. |
 | `STRIPE_WEBHOOK_SECRET` | Segreto di firma degli avvisi (`whsec_…`): quello dell'endpoint in dashboard, oppure quello stampato da `stripe listen` in locale. Senza, il webhook risponde 503. |
 | `STRIPE_LIVE` | `1` solo quando si andrà con chiavi vere. Con qualunque altro valore una chiave live viene ignorata. |
+| `INDIRIZZO_GESTIONALE` | Facoltativo. Indirizzo di riserva per i ritorni da Stripe (Checkout, portale) quando la richiesta non porta `Origin`. Di solito Stripe riporta il titolare all'indirizzo da cui sta usando il gestionale (tunnel, rete locale), dove ha il cookie della sessione. |
 
 In Piattaforma una riga dice in che modalità è Stripe: "Stripe: prova (AutoLost demo)", "Stripe: live" o "Stripe: spento".
 
@@ -31,7 +35,8 @@ Account Stripe: sandbox **AutoLost demo** (`acct_1UeZEhPHwF2v5yEU`), sotto Losta
 
 - i prezzi si trovano per lookup key: `magazzino_mese`, `magazzino_anno`, `pratiche_…`, `ambiente_…`, `banco_…`;
 - ogni prodotto ha `metadata.modulo` con l'id del modulo dell'app (`magazzino`, `accettazione`, `ambiente`, `vendite`);
-- l'aliquota "IVA 22%" la crea da sola l'app (`aliquotaIva()`), non serve farla a mano.
+- l'aliquota "IVA 22%" la crea da sola l'app (`aliquotaIva()`), non serve farla a mano;
+- ogni prezzo deve andare con `src/lib/listino.ts`: stesso importo in centesimi, `eur`, periodo `month` o `year`, IVA esclusa (`tax_behavior: exclusive`). Se no il server scrive nel log quale prezzo non va e Checkout e moduli rispondono 502 "Prezzi di Stripe diversi dal listino: avvisa l'assistenza" (nessun addebito diverso da quello mostrato).
 
 Passi da fare una volta, nella dashboard:
 
@@ -56,7 +61,7 @@ Gli avvisi che l'app ascolta (`src/lib/stripe/chiavi.ts`):
 - `invoice.paid`, `invoice.payment_failed`
 - `test_helpers.test_clock.ready` (fine di un avanzamento dell'orologio di prova)
 
-Gli altri ricevono 200 e non fanno nulla. Un avviso con firma sbagliata riceve 400.
+Gli altri ricevono 200 e non fanno nulla. Un avviso con firma sbagliata riceve 400. Un avviso di un altro ambiente (`livemode` vero con le chiavi di prova, o falso con quelle vere) finisce nel log e riceve 200.
 
 **Senza avvisi l'app funziona lo stesso:** si rilegge da Stripe da sola (quando la pagina lo chiede, dopo ogni cambio di moduli o di orologio, e per il titolare quando l'ultimo aggiornamento ha più di un'ora; le richieste del browser non vanno a Stripe più di una volta ogni 15 secondi per azienda). Gli avvisi servono a essere più rapidi.
 
@@ -90,6 +95,7 @@ Con le chiavi di prova ogni cliente Stripe nasce dentro un orologio di prova (te
 - **Nessun endpoint fisso.** Il server gira sul Mac e il tunnel rapido cambia indirizzo: finché non c'è un indirizzo stabile gli avvisi arrivano solo da `stripe listen`; il resto lo fa la sincronizzazione dell'app.
 - **Fattura elettronica fuori da Stripe.** Le fatture di Stripe non sono fatture elettroniche per lo SDI: le emette Lostar con il suo strumento. L'IVA (prezzi esclusi, aliquota 22%) è da confermare con il commercialista prima di andare live.
 - **Un solo processo Node.** Le code e i blocchi (un Checkout per volta, un cambio di moduli per volta, i 15 secondi tra sincronizzazioni) stanno in memoria: valgono per un solo processo e si azzerano al riavvio. Con più processi o più server non bastano.
+- **Cliente cancellato su Stripe.** Se il cliente, l'abbonamento o l'orologio di prova non esistono più (cancellati dalla dashboard), la sincronizzazione non sbaglia a ogni giro: l'azienda resta senza abbonamenti (scaduta se aveva pagato, altrimenti nuova) e il prossimo Checkout crea un cliente nuovo.
 - **Aziende di prova e chiavi vere.** Le aziende create con le chiavi di prova non si sincronizzano con le chiavi live (i loro id non esistono lì): se mai pagate si riparte da zero, se già pagate l'app rifiuta e serve l'assistenza. Le aziende di prova e i loro clienti Stripe non si eliminano (rimandato).
 - **Rimandato:** email (conferma indirizzo, recupero password, inviti, ricevute nostre); periodo di prova gratuito a tempo, codici sconto, prezzo "Completo"; registrazione aperta senza codice invito (serve una protezione dai robot); chiavi live e endpoint definitivo.
 
