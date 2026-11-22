@@ -305,7 +305,8 @@ export async function cambiaModuli(aziendaId: string, r: RichiestaModuli): Promi
     return { errore: "Abbonamento non attivo", stato: 409 };
   }
   if (r.azione === "riattiva") {
-    await s.subscriptions.update(ab.subscriptionId, { cancel_at_period_end: false });
+    // Si tolgono tutte e due le disdette: a fine periodo e a una data ("" cancella cancel_at)
+    await s.subscriptions.update(ab.subscriptionId, { cancel_at_period_end: false, cancel_at: "" });
     return { abbonamento: await sincronizza(aziendaId) };
   }
   const voce = voceDelModulo(sub.items.data, r.modulo);

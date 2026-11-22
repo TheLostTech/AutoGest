@@ -13,8 +13,8 @@ const RINNOVO = T(2026, 12, 22);
 
 const ab = (o: Partial<Abbonamento> = {}): Abbonamento => ({ ...ABBONAMENTO_NUOVO(false, ORA), ...o });
 
-const sub = (o: { id?: string; status?: string; cancel?: boolean; created?: number; modulo?: string; interval?: "month" | "year"; fine?: number } = {}): SubStripe => ({
-  id: o.id ?? "sub_1", status: o.status ?? "active", cancel_at_period_end: o.cancel ?? false, created: o.created ?? 1000,
+const sub = (o: { id?: string; status?: string; cancel?: boolean; cancelAt?: number | null; created?: number; modulo?: string; interval?: "month" | "year"; fine?: number } = {}): SubStripe => ({
+  id: o.id ?? "sub_1", status: o.status ?? "active", cancel_at_period_end: o.cancel ?? false, cancel_at: o.cancelAt ?? null, created: o.created ?? 1000,
   items: [{ price: { recurring: { interval: o.interval ?? "month" }, product: { metadata: { modulo: o.modulo ?? "accettazione" } } }, current_period_end: o.fine ?? RINNOVO / 1000 }],
 });
 
@@ -50,6 +50,27 @@ test("abbonamentoDaStripe: stati", () => {
   assert.equal(d([sub({ status: "incomplete" })], ab({ stato: "disdetto" })).stato, "disdetto");
   assert.equal(d([], ab({ pagatoAlmenoUnaVolta: false })).stato, "nuovo");
   assert.equal(d([], ab({ pagatoAlmenoUnaVolta: true, stato: "attivo" })).stato, "scaduto");
+});
+
+test("abbonamentoDaStripe: disdetto anche con cancel_at (disdetta a una data), che vale come fine se viene prima", () => {
+  const d = (s: SubStripe) => abbonamentoDaStripe([s], ab(), ORA, null);
+  const prima = RINNOVO / 1000 - 5 * 86_400;
+  const r = d(sub({ status: "active", cancelAt: prima }));
+  assert.equal(r.stato, "disdetto");
+  assert.equal(r.rinnovo, prima * 1000);
+  assert.equal(d(sub({ status: "trialing", cancelAt: prima })).stato, "disdetto");
+  // cancel_at dopo la fine del periodo: la fine resta quella del periodo
+  const dopo = d(sub({ status: "active", cancelAt: RINNOVO / 1000 + 86_400 }));
+  assert.equal(dopo.stato, "disdetto");
+  assert.equal(dopo.rinnovo, RINNOVO);
+  // Tutte e due: disdetto, fine del periodo
+  const tutte = d(sub({ status: "active", cancel: true, cancelAt: RINNOVO / 1000 }));
+  assert.equal(tutte.stato, "disdetto");
+  assert.equal(tutte.rinnovo, RINNOVO);
+  // Senza disdetta: attivo
+  assert.equal(d(sub({ status: "active", cancelAt: null })).stato, "attivo");
+  // past_due con cancel_at resta in ritardo
+  assert.equal(d(sub({ status: "past_due", cancelAt: prima })).stato, "in-ritardo");
 });
 
 test("abbonamentoDaStripe: moduli, rinnovo, periodo", () => {

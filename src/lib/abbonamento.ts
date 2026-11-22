@@ -69,13 +69,18 @@ export function negozioAperto(registrata: boolean, a: Abbonamento | null, veicol
   return !registrata || !bloccato(a ?? ABBONAMENTO_NUOVO(true, 0), veicoli);
 }
 
-// Forma minima di un abbonamento Stripe, così il test non dipende dalla libreria
+// Forma minima di un abbonamento Stripe, così il test non dipende dalla libreria. cancel_at in secondi.
 export type SubStripe = {
-  id: string; status: string; cancel_at_period_end: boolean; created: number;
+  id: string; status: string; cancel_at_period_end: boolean; cancel_at: number | null; created: number;
   items: { price: { recurring: { interval: "month" | "year" } | null; product: { metadata: Record<string, string> } | string }; current_period_end: number }[];
 };
 
 const VIVI = new Set(["active", "trialing", "past_due"]);
+
+// Disdetta: a fine periodo (cancel_at_period_end) oppure a una data (cancel_at, che dall'API 2026 il portale può usare)
+export function conDisdetta(s: { cancel_at_period_end: boolean; cancel_at?: number | null }): boolean {
+  return s.cancel_at_period_end || s.cancel_at != null;
+}
 
 // L'abbonamento che conta tra quelli del cliente: uno vivo prima di tutto, poi il più recente.
 export function scegli(subs: SubStripe[]): SubStripe | null {
@@ -96,7 +101,7 @@ export function abbonamentoDaStripe(subs: SubStripe[], prima: Abbonamento, ora: 
   }
   let stato: StatoAbbonamento;
   switch (s.status) {
-    case "active": case "trialing": stato = s.cancel_at_period_end ? "disdetto" : "attivo"; break;
+    case "active": case "trialing": stato = conDisdetta(s) ? "disdetto" : "attivo"; break;
     case "past_due": stato = "in-ritardo"; break;
     case "canceled": case "unpaid": case "incomplete_expired": stato = "scaduto"; break;
     default: return { ...prima, oraOrologio: orologio, aggiornato: ora }; // incomplete e sconosciuti: niente cambia
@@ -108,12 +113,16 @@ export function abbonamentoDaStripe(subs: SubStripe[], prima: Abbonamento, ora: 
     if (m) trovati.add(m);
   }
   const primo = s.items[0];
+  // Fine del periodo pagato; con una disdetta a una data che viene prima, quella data
+  const finePeriodo = primo ? primo.current_period_end * 1000 : null;
+  const fineDisdetta = s.cancel_at != null ? s.cancel_at * 1000 : null;
+  const rinnovo = fineDisdetta !== null && (finePeriodo === null || fineDisdetta < finePeriodo) ? fineDisdetta : finePeriodo;
   return {
     ...prima,
     stato,
     periodo: primo?.price.recurring?.interval === "year" ? "anno" : "mese",
     moduli: ORDINE_MODULI.filter((m) => trovati.has(m)),
-    rinnovo: primo ? primo.current_period_end * 1000 : null,
+    rinnovo,
     subscriptionId: s.id,
     oraOrologio: orologio,
     pagatoAlmenoUnaVolta: prima.pagatoAlmenoUnaVolta || stato === "attivo" || stato === "disdetto" || stato === "in-ritardo",

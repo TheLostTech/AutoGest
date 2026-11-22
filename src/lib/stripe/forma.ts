@@ -1,6 +1,6 @@
 // Da un abbonamento come lo restituisce Stripe (voci in items.data) alla forma minima SubStripe di abbonamento.ts.
 // Pura: i tipi sono strutturali, così il test non dipende dalla libreria.
-import type { SubStripe } from "../abbonamento.ts";
+import { conDisdetta, type SubStripe } from "../abbonamento.ts";
 import type { Modulo } from "../moduli.ts";
 
 type ProdottoStripe = string | { id: string; deleted?: boolean; metadata?: Record<string, string> | null };
@@ -9,6 +9,7 @@ export type SubDaStripe = {
   id: string;
   status: string;
   cancel_at_period_end: boolean;
+  cancel_at?: number | null;
   created: number;
   items: { data: { price: { recurring: { interval: string } | null; product: ProdottoStripe | unknown }; current_period_end: number }[] };
 };
@@ -26,6 +27,7 @@ export function subMinima(s: SubDaStripe): SubStripe {
     id: s.id,
     status: s.status,
     cancel_at_period_end: s.cancel_at_period_end,
+    cancel_at: s.cancel_at ?? null,
     created: s.created,
     items: s.items.data.map((it) => ({
       price: {
@@ -48,11 +50,12 @@ export function voceDelModulo(voci: { id: string; price: { product: unknown } }[
 
 const IN_CORSO = new Set(["active", "trialing"]);
 
-// L'abbonamento appena riletto da Stripe si può cambiare? I moduli solo se è active o trialing (anche disdetto a fine
-// periodo); la riattivazione solo se è active o trialing e ha la disdetta. Tutto il resto: "Abbonamento non attivo".
-export function abbonamentoModificabile(s: { status: string; cancel_at_period_end: boolean }, azione: "aggiungi" | "togli" | "anteprima" | "riattiva"): boolean {
+// L'abbonamento appena riletto da Stripe si può cambiare? I moduli solo se è active o trialing (anche disdetto);
+// la riattivazione solo se è active o trialing e ha la disdetta (a fine periodo o a una data, vedi conDisdetta).
+// Tutto il resto: "Abbonamento non attivo".
+export function abbonamentoModificabile(s: { status: string; cancel_at_period_end: boolean; cancel_at?: number | null }, azione: "aggiungi" | "togli" | "anteprima" | "riattiva"): boolean {
   if (!IN_CORSO.has(s.status)) return false;
-  return azione === "riattiva" ? s.cancel_at_period_end : true;
+  return azione === "riattiva" ? conDisdetta(s) : true;
 }
 
 // Stripe ha rifiutato il pagamento (carta rifiutata, autenticazione richiesta, fattura non pagata): errore della

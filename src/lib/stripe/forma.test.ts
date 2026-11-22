@@ -13,9 +13,15 @@ test("subMinima: le voci passano da items.data a una lista, con il prodotto espa
     items: { data: [voce({ id: "prod_1", metadata: { modulo: "ambiente" } }, "month", 123)] },
   });
   assert.deepEqual(s, {
-    id: "sub_1", status: "active", cancel_at_period_end: false, created: 100,
+    id: "sub_1", status: "active", cancel_at_period_end: false, cancel_at: null, created: 100,
     items: [{ price: { recurring: { interval: "month" }, product: { metadata: { modulo: "ambiente" } } }, current_period_end: 123 }],
   });
+});
+
+test("subMinima: cancel_at passa così com'è (secondi), assente vale null", () => {
+  const s = subMinima({ id: "s", status: "active", cancel_at_period_end: false, cancel_at: 1_800_000_000, created: 1, items: { data: [voce("prod_x", "month")] } });
+  assert.equal(s.cancel_at, 1_800_000_000);
+  assert.equal(subMinima({ id: "s", status: "active", cancel_at_period_end: false, cancel_at: null, created: 1, items: { data: [] } }).cancel_at, null);
 });
 
 test("subMinima: anno resta anno, ogni altro intervallo vale mese", () => {
@@ -62,6 +68,13 @@ test("abbonamentoModificabile: i moduli si cambiano solo su un abbonamento activ
       assert.equal(abbonamentoModificabile({ status, cancel_at_period_end: false }, azione), false, status);
     }
   }
+});
+
+test("abbonamentoModificabile: la disdetta a una data (cancel_at) si riattiva come quella a fine periodo", () => {
+  assert.equal(abbonamentoModificabile({ status: "active", cancel_at_period_end: false, cancel_at: 1_800_000_000 }, "riattiva"), true);
+  assert.equal(abbonamentoModificabile({ status: "active", cancel_at_period_end: false, cancel_at: null }, "riattiva"), false);
+  assert.equal(abbonamentoModificabile({ status: "past_due", cancel_at_period_end: false, cancel_at: 1_800_000_000 }, "riattiva"), false);
+  assert.equal(abbonamentoModificabile({ status: "active", cancel_at_period_end: false, cancel_at: 1_800_000_000 }, "aggiungi"), true);
 });
 
 test("abbonamentoModificabile: riattiva solo un abbonamento active o trialing con la disdetta", () => {
