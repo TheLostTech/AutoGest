@@ -53,6 +53,7 @@ let inUscita = false; // uscita in corso (blocco per inattività, "Esci"): chi e
 // Il server ha rifiutato una scrittura con 402 (abbonamento non pagato). Finché resta così non si scrive: le letture
 // continuano, le modifiche si aggiungono alla coda in sospeso con `pagamento: true` (non scade dopo 24 ore) e partono
 // quando una lettura dice che l'azienda non è più bloccata.
+// Non si azzera al cambio di azienda perché la pagina non cambia mai azienda senza ricaricarsi (fissaAzienda, Hydrator).
 let attesaPagamento = false;
 /** Le modifiche di questo dispositivo aspettano il pagamento dell'abbonamento (le legge il riquadro di pagamento). */
 export const inAttesaDiPagamento = (): boolean => attesaPagamento;
@@ -257,6 +258,7 @@ async function pull() {
     demoAzienda = res.demo === true;
     if (attesaPagamento && !bloccatoDalServer(res)) {
       // Pagato: partono le modifiche rimaste in attesa, poi il giro normale manda quelle ancora da inviare.
+      // Se l'invio non riesce (rete, di nuovo 402) attesaPagamento torna vero e il giro normale non parte.
       // La risposta di adesso non contiene le modifiche appena inviate: la prossima lettura scarica l'archivio unito.
       attesaPagamento = false;
       pushing++;
@@ -334,7 +336,14 @@ async function inviaSalvateInSospeso() {
     await api("PUT", corpo);
     togliInSospeso();
   } catch (e) {
-    if (!(e instanceof ErroreApi) || e.stato === 401) return; // rete assente o accesso perso: restano per la prossima volta
+    if (!(e instanceof ErroreApi) || e.stato === 401) {
+      // Rete assente o accesso perso: restano per la prossima volta. Una coda che aspettava il pagamento (senza
+      // scadenza) va consegnata prima di ogni altra scrittura: altrimenti resterebbe nel browser dopo che il giro
+      // normale ha già mandato copie più nuove, e al prossimo avvio le sovrascriverebbe. Si resta in attesa: la
+      // prossima lettura riuscita la rimanda (vedi pull).
+      if ((raw as { pagamento?: unknown }).pagamento === true) attesaPagamento = true;
+      return;
+    }
     // Abbonamento non pagato: la coda resta dov'è e da adesso non scade più; parte dopo il pagamento
     if (e.stato === 402 && e.motivo === "abbonamento") {
       attesaPagamento = true;
