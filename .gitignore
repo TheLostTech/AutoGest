@@ -52,3 +52,6 @@ next-env.d.ts
 
 # Cache Python degli script Blender
 __pycache__/
+
+# ambiente di prova dell'app Android (scripts/piazzale-test.sh)
+.dati-test/

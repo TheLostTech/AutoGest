@@ -58,7 +58,8 @@ export async function GET(req: Request) {
   }
   await c.internalAdapter.updateSession(entrata.response.token, { activeOrganizationId: demo.id });
 
-  const headers = new Headers({ Location: new URL(da, u).toString(), "Cache-Control": "no-store" });
+  // Rimando relativo: dietro il tunnel req.url dice localhost, e un indirizzo assoluto porterebbe fuori dal tunnel
+  const headers = new Headers({ Location: da, "Cache-Control": "no-store" });
   for (const cookie of entrata.headers.getSetCookie()) headers.append("set-cookie", cookie);
   return conCookieSecure(req, new Response(null, { status: 303, headers }));
 }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tenendo premuta l'icona: "Cambia server" apre la schermata dell'indirizzo -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="cambia_server"
+        android:shortcutShortLabel="@string/cambia_server">
+        <intent
+            android:action="it.lostar.piazzale.CAMBIA_SERVER"
+            android:targetClass="it.lostar.piazzale.MainActivity"
+            android:targetPackage="it.lostar.piazzale" />
+    </shortcut>
+</shortcuts>
