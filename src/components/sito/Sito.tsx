@@ -25,6 +25,9 @@ export function Testata({ attiva }: { attiva?: "news" }) {
             <Logo className="text-[30px] md:text-[34px]" />
           </Link>
           <nav className="flex items-center gap-1 md:gap-2" aria-label="Sito">
+            <Link href="/scopri#in-regola" className={voce}>
+              In regola
+            </Link>
             <Link href="/scopri#percorso" className={voce}>
               Come funziona
             </Link>
