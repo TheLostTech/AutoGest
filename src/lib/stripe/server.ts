@@ -35,7 +35,7 @@ export function stripe(): Stripe {
   const chiave = process.env.STRIPE_SECRET_KEY;
   if (modalitaStripe() === "spenta" || !chiave) throw new Error("Stripe non configurato: manca STRIPE_SECRET_KEY di prova (o STRIPE_LIVE=1 con la chiave vera).");
   if (g.__stripe?.chiave !== chiave) {
-    g.__stripe = { chiave, client: new Stripe(chiave, { apiVersion: VERSIONE_API, appInfo: { name: "AutoLost" } }) };
+    g.__stripe = { chiave, client: new Stripe(chiave, { apiVersion: VERSIONE_API, appInfo: { name: "Piazzale" } }) };
   }
   return g.__stripe.client;
 }

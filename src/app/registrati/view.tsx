@@ -81,7 +81,7 @@ export function RegistratiView({ invito: invitoIniziale, prova }: { invito: stri
         ) : (
           <form onSubmit={invia} className="label-sheet space-y-4 p-5" noValidate>
             <h1 className="code text-[18px] font-bold uppercase tracking-wide text-ink">Registra la tua azienda</h1>
-            {!invitoIniziale && <Notice>La registrazione è su invito: chiedi il codice ad AutoLost.</Notice>}
+            {!invitoIniziale && <Notice>La registrazione è su invito: chiedi il codice a Piazzale.</Notice>}
             {errore && (
               <div role="alert">
                 <Notice tone="danger">{errore}</Notice>

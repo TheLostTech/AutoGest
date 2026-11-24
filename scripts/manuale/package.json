@@ -1,7 +1,7 @@
 {
   "name": "manuale-screenshot",
   "private": true,
-  "description": "Cattura gli screenshot del manuale operativo di AutoLost",
+  "description": "Cattura gli screenshot del manuale operativo di Piazzale",
   "scripts": {
     "cattura": "node cattura.js"
   },

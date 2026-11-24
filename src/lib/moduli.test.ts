@@ -40,7 +40,7 @@ test("moduliAttivi: il Magazzino resta attivo anche se spento", () => {
 test("linkAttivazione: messaggio WhatsApp già scritto", () => {
   assert.equal(
     linkAttivazione("Demo Srl", "accettazione"),
-    "https://wa.me/390000000000?text=" + encodeURIComponent("Ciao, sono Demo Srl su AutoLost: vorrei attivare il modulo Accettazione."),
+    "https://wa.me/390000000000?text=" + encodeURIComponent("Ciao, sono Demo Srl su Piazzale: vorrei attivare il modulo Accettazione."),
   );
 });
 
