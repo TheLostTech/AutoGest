@@ -9,12 +9,18 @@ import { REGISTRAZIONE } from "@/components/sito/Sito";
 
 const PER: Record<Periodo, string> = { mese: "al mese", anno: "all'anno" };
 
+// I moduli che servono, oltre al Magazzino, per gli obblighi di legge: pratica RVFU e registro rifiuti
+const IN_REGOLA: Modulo[] = ["accettazione", "ambiente"];
+
 // L'offerta: il Magazzino c'è sempre, gli altri si aggiungono. Lo scontrino accanto somma quello che scegli.
 export function Offerta() {
   const [periodo, setPeriodo] = useState<Periodo>("mese");
   const [aggiunti, setAggiunti] = useState<Set<Modulo>>(() => new Set());
   const scelti = ORDINE_MODULI.filter((m) => m === "magazzino" || aggiunti.has(m));
   const risparmio = scelti.reduce((s, m) => s + risparmioAnnuale(m), 0);
+
+  const inRegola = IN_REGOLA.every((m) => aggiunti.has(m));
+  const prezzoInRegola = totale(["magazzino", ...IN_REGOLA], periodo);
 
   const cambia = (m: Modulo) =>
     setAggiunti((prima) => {
@@ -41,7 +47,28 @@ export function Offerta() {
           ))}
         </div>
 
-        <ul className="mt-6 space-y-3">
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-md border border-band bg-label p-5">
+          <div className="min-w-0 flex-1 basis-[260px]">
+            <p className="text-[18px] font-bold leading-snug">Tutto quello che serve per essere a norma</p>
+            <p className="mt-1 text-[15px] leading-[1.5] text-ink-2">
+              Magazzino, Pratiche e Ambiente: {euro(prezzoInRegola)} {PER[periodo]}.
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-pressed={inRegola}
+            onClick={() => setAggiunti((prima) => new Set([...prima, ...IN_REGOLA]))}
+            disabled={inRegola}
+            className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md px-4 text-[16px] font-semibold transition-colors ${
+              inRegola ? "bg-band-tint text-band" : "bg-band text-white hover:bg-band-deep"
+            }`}
+          >
+            {inRegola ? <Check className="size-[18px]" aria-hidden /> : <Plus className="size-[18px]" aria-hidden />}
+            {inRegola ? "Scelti" : "Scegli questi"}
+          </button>
+        </div>
+
+        <ul className="mt-3 space-y-3">
           {ORDINE_MODULI.map((m) => {
             const base = m === "magazzino";
             const dentro = base || aggiunti.has(m);
@@ -52,6 +79,7 @@ export function Offerta() {
                     <h3 className="text-[24px] font-bold leading-tight tracking-[-0.01em]">
                       {LISTINO[m].nome}
                       {base && <span className="ml-3 align-middle text-[15px] font-semibold text-band">sempre compreso</span>}
+                      {IN_REGOLA.includes(m) && <span className="ml-3 align-middle text-[15px] font-semibold text-band">per essere a norma</span>}
                     </h3>
                     <p className="mt-1.5 max-w-[56ch] text-[16px] leading-[1.55] text-ink-2">{MODULI[m].frase}</p>
                   </div>
