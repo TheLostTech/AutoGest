@@ -152,7 +152,7 @@ export function tabsAttive<T extends { area?: string; href?: string }>(tabs: T[]
 export const WHATSAPP_ATTIVAZIONE = "390000000000";
 
 export function linkAttivazione(azienda: string, m: Modulo): string {
-  const testo = `Ciao, sono ${azienda} su AutoLost: vorrei attivare il modulo ${MODULI[m].nome}.`;
+  const testo = `Ciao, sono ${azienda} su Piazzale: vorrei attivare il modulo ${MODULI[m].nome}.`;
   return `https://wa.me/${WHATSAPP_ATTIVAZIONE}?text=${encodeURIComponent(testo)}`;
 }
 

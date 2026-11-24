@@ -1,4 +1,4 @@
-// Cattura gli screenshot del manuale operativo (AutoLost).
+// Cattura gli screenshot del manuale operativo (Piazzale).
 // Ogni file ha lo stesso nome del segnaposto nel manuale: «[Screenshot · accettazione-01-oggi]» → accettazione-01-oggi.png
 //
 // Uso (con il gestionale avviato):

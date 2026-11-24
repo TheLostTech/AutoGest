@@ -1,6 +1,6 @@
 export const BRAND = {
-  azienda: "AutoLost",
-  negozio: "AutoLost Ricambi",
+  azienda: "Piazzale",
+  negozio: "Piazzale Ricambi",
   sede: "Sede di prova",
   // Numero dimostrativo: ogni azienda mette il proprio
   telefono: "+39 000 000 0000",
