@@ -24,7 +24,7 @@ test("percorsoDaSicuro: il risultato non è mai un indirizzo con due barre inizi
 });
 
 test("percorsoPubblico", () => {
-  for (const p of ["/accesso", "/negozio", "/negozio/carrello", "/ebay-simulato/x", "/scopri", "/news/1", "/robots.txt", "/sitemap.xml"]) {
+  for (const p of ["/accesso", "/demo", "/negozio", "/negozio/carrello", "/ebay-simulato/x", "/scopri", "/news/1", "/robots.txt", "/sitemap.xml"]) {
     assert.equal(percorsoPubblico(p), true, p);
   }
   for (const p of ["/", "/ricambi", "/negozio-finto", "/accessorio", "/etichetta/X", "/api/demo-state"]) {

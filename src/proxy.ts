@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
 import { percorsoApi, percorsoPubblico } from "./lib/accesso/percorsi";
+import { demoPubblica } from "./lib/accesso/demo-pubblica";
 
 // Controllo ottimistico: guarda solo se c'è il cookie di sessione. La decisione vera (azienda, ruoli, scadenze)
 // la prende ogni route con accessoDaRichiesta; le API senza cookie rispondono 401 da sole.
@@ -9,7 +10,8 @@ export function proxy(req: NextRequest) {
   if (percorsoApi(pathname) || percorsoPubblico(pathname)) return NextResponse.next();
   if (getSessionCookie(req)) return NextResponse.next();
   const url = req.nextUrl.clone();
-  url.pathname = "/accesso";
+  // Vetrina online: senza sessione si entra (o si rientra) nella demo, senza passare dalla pagina di accesso
+  url.pathname = demoPubblica() ? "/demo" : "/accesso";
   url.search = "";
   url.searchParams.set("da", pathname + search);
   return NextResponse.redirect(url);

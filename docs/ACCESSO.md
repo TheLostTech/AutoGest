@@ -9,6 +9,7 @@
 | `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD`, `SUPERADMIN_NOME` | Primo super admin (vedi sotto). La password è di almeno 8 caratteri. |
 | `NEGOZIO_AZIENDA` | Id dell'azienda che vende dal negozio pubblico. Se manca, è l'azienda demo. |
 | `DEMO_UTENTI` | Con `NODE_ENV=production` gli utenti demo si creano solo se vale `1`. |
+| `DEMO_PUBBLICA` | Solo per la vetrina online (Vercel): con `1` "Apri la demo" (`/demo`) entra senza credenziali nell'azienda demo come la responsabile, e chi non ha una sessione ci rientra da solo. Il login vero resta su `/accesso?manuale=1`. Va con `DEMO_UTENTI=1` e `DATI_DIR` in una cartella scrivibile (su Vercel `/tmp/...`, che si azzera da sola). Mai sul server di un'azienda. |
 | `INDIRIZZO_GESTIONALE` | Indirizzo pubblico del gestionale (es. quello del tunnel): è l'unico altro sito da cui Better Auth accetta le richieste. |
 
 ## Primo avvio
