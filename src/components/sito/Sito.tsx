@@ -10,8 +10,8 @@ export const DEMO = "/demo";
 // Dove si parte per comprare: la registrazione dell'azienda. Finché la pagina di registrazione non c'è, porta alla demo.
 export const REGISTRAZIONE = DEMO;
 
-// Indirizzo pubblico del sito, per canonical, sitemap e condivisioni. Da impostare in produzione.
-export const SITO = (process.env.SITO_PUBBLICO ?? "http://localhost:3000").replace(/\/$/, "");
+// Indirizzo pubblico del sito, per canonical, sitemap e condivisioni. SITO_PUBBLICO lo cambia (per esempio in prova).
+export const SITO = (process.env.SITO_PUBBLICO ?? "https://miopiazzale.it").replace(/\/$/, "");
 
 export function Testata({ attiva }: { attiva?: "news" }) {
   const voce = "hidden rounded-md px-3 py-2 text-[15px] font-semibold text-white/90 hover:bg-white/12 md:block";
