@@ -15,7 +15,7 @@ import { Button, ButtonLink, Empty, Field, Plate } from "@/components/ui";
 import { PartLabel } from "@/components/PartLabel";
 import { ShippingChoice } from "@/components/ShippingChoice";
 import { asksShipping } from "@/lib/spedizione";
-import { TypeOptions } from "@/components/TypeOptions";
+import { TypePicker } from "@/components/TypePicker";
 
 export default function Page() {
   return (
@@ -210,10 +210,7 @@ function NuovoPezzo() {
 
       <div className="mt-5 space-y-5">
         <Field label="Che pezzo è?" error={tried && !t ? "Scegli la tipologia" : undefined}>
-          <select className="field text-[17px] font-semibold" value={typeId ?? ""} onChange={(e) => { setTypeId(e.target.value || undefined); setMisura(""); setOemOk(false); if (aiState === "proposed") setAiState("rejected"); }}>
-            <option value="">Seleziona…</option>
-            <TypeOptions />
-          </select>
+          <TypePicker className="text-[17px] font-semibold" value={typeId ?? ""} vuoto="Seleziona…" onChange={(v) => { setTypeId(v || undefined); setMisura(""); setOemOk(false); if (aiState === "proposed") setAiState("rejected"); }} />
         </Field>
 
         {t?.misure && (

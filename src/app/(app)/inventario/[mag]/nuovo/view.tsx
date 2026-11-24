@@ -12,7 +12,7 @@ import { Button, Empty, Field, Notice } from "@/components/ui";
 import type { Condition } from "@/lib/types";
 import { ShippingChoice } from "@/components/ShippingChoice";
 import { asksShipping } from "@/lib/spedizione";
-import { TypeOptions } from "@/components/TypeOptions";
+import { TypePicker } from "@/components/TypePicker";
 
 // Ciò che resta uguale tra un pezzo e il successivo (stesso scaffale, spesso stessa auto)
 interface Sticky {
@@ -209,10 +209,7 @@ export default function AggiungiRicambio() {
         <section className="space-y-4 rounded-md border border-hair bg-label p-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Tipo di pezzo" error={tried && !t ? "Scegli il tipo" : undefined}>
-              <select className="field" value={typeId} onChange={(e) => { setTypeId(e.target.value); setMisura(""); }}>
-                <option value="">Scegli…</option>
-                <TypeOptions />
-              </select>
+              <TypePicker value={typeId} onChange={(v) => { setTypeId(v); setMisura(""); }} />
             </Field>
             {t?.misure && (
               <Field label="Misura" error={tried && !misura ? "Scegli la misura" : undefined}>
