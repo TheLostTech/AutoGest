@@ -302,7 +302,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Testata mobile */}
         <header className="no-print sticky top-0 z-30 bg-band text-white md:hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-            <Link href="/" className="min-w-0" aria-label={`${BRAND.azienda}, pagina iniziale`}>
+            <Link href="/" className="shrink-0" aria-label={`${BRAND.azienda}, pagina iniziale`}>
               <Logo className="text-[27px]" />
             </Link>
             <div className="flex shrink-0 items-center gap-2">
@@ -312,27 +312,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <ScanLine className="size-5" aria-hidden />
                 </Link>
               )}
-              {ruoliPermessi.length > 1 && (
-                <label>
-                  <span className="sr-only">Ruolo</span>
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value as Role)}
-                    className="h-10 rounded border border-white/40 bg-band-deep px-2 text-[15px] font-semibold text-white"
-                  >
-                    {ruoliPermessi.map((r) => (
-                      <option key={r} value={r}>
-                        {RUOLO_LABEL[r]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
               <button onClick={() => { setUscendo(true); void esci(); }} disabled={uscendo} className="grid h-10 place-items-center rounded border border-white/40 px-2.5 text-[14px] font-semibold md:hidden">
                 Esci
               </button>
             </div>
           </div>
+          {/* Il ruolo su una riga sua: accanto al nome la tendina prende la larghezza della voce più lunga e lo copriva */}
+          {ruoliPermessi.length > 1 && (
+            <label className="flex items-center gap-2 px-4 pb-2.5">
+              <span className="shrink-0 text-[14px] text-white/80">Stai usando come</span>
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as Role)}
+                className="h-9 min-w-0 flex-1 truncate rounded border border-white/40 bg-band-deep px-2 text-[15px] font-semibold text-white"
+              >
+                {ruoliPermessi.map((r) => (
+                  <option key={r} value={r}>
+                    {RUOLO_LABEL[r]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {/* Sottosezioni dell'area aperta */}
           {subTabs.length > 0 && (
             <nav className="flex gap-1 overflow-x-auto px-3 pb-2" aria-label={`Sezioni di ${cur?.area?.label}`}>
