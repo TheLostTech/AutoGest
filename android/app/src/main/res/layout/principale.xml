@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/radice"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0b2d7a">
+
+    <WebView
+        android:id="@+id/web"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/white" />
+
+    <ProgressBar
+        android:id="@+id/caricamento"
+        style="@android:style/Widget.Material.ProgressBar.Horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:indeterminate="true"
+        android:indeterminateTint="#F4B500"
+        android:visibility="gone" />
+
+    <!-- Schermata dell'indirizzo: primo avvio senza indirizzo, server che non risponde, scorciatoia "Cambia server" -->
+    <ScrollView
+        android:id="@+id/impostazioni"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#0b2d7a"
+        android:fillViewport="true"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:padding="28dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="PIAZZALE"
+                android:textColor="#C3C8D0"
+                android:textSize="34sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/messaggio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp" />
+
+            <Button
+                android:id="@+id/qr"
+                android:layout_width="match_parent"
+                android:layout_height="64dp"
+                android:layout_marginTop="28dp"
+                android:backgroundTint="#F4B500"
+                android:text="Inquadra il QR del server"
+                android:textAllCaps="false"
+                android:textColor="#0b2d7a"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="Oppure scrivi l'indirizzo"
+                android:textColor="#C3C8D0"
+                android:textSize="15sp" />
+
+            <EditText
+                android:id="@+id/indirizzo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:backgroundTint="#FFFFFF"
+                android:hint="https://…"
+                android:imeOptions="actionGo"
+                android:inputType="textUri"
+                android:minHeight="56dp"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#8fa3cf"
+                android:textSize="17sp" />
+
+            <Button
+                android:id="@+id/apri"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_marginTop="12dp"
+                android:backgroundTint="#FFFFFF"
+                android:text="Apri"
+                android:textAllCaps="false"
+                android:textColor="#0b2d7a"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="Il QR lo stampa il Mac con: zsh scripts/piazzale-test.sh"
+                android:textColor="#8fa3cf"
+                android:textSize="14sp" />
+        </LinearLayout>
+    </ScrollView>
+</FrameLayout>
