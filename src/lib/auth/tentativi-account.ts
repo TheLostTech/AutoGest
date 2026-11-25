@@ -41,6 +41,19 @@ function sulConto<R>(k: string, op: (conti: Map<string, StatoAccount>, ora: numb
     return { stato: conti.get(k) ?? vuoto(), risultato };
   });
 }
+/**
+ * Dopo l'accesso: chiude il gettone di questa richiesta e, se scatta il blocco, lo scrive nel registro. Non lancia mai:
+ * a questo punto la sessione è già creata, e un errore qui diventerebbe un 500 con la password giusta (e una sessione
+ * rimasta senza nessuno). Se il deposito non risponde l'errore va nel log: il blocco lo controlla comunque l'hook
+ * "before", e il gettone rimasto aperto scade da solo dopo 60 secondi.
+ */
+export async function chiudiTentativo(c: AuthContext, p: { k: string; gettone: string; userId: string }, esito: Esito): Promise<void> {
+  try {
+    if (await sulConto(p.k, (conti, adesso) => chiudi(conti, p.k, p.gettone, adesso, esito))) await registraBlocco(c, p.userId);
+  } catch (e) {
+    console.error("[tentativi] esito dell'accesso non registrato (il gettone scade da solo in 60 secondi)", e);
+  }
+}
 const chiaveDi = (ctx: { body?: unknown }) => chiaveAccount((ctx.body as { email?: unknown } | undefined)?.email);
 
 export const tentativiAccount = {
@@ -75,7 +88,7 @@ export const tentativiAccount = {
           stato.inCorso.delete(ctx.request);
           const st = codice(ctx.context.returned);
           const esito: Esito = st === 401 ? "sbagliata" : st === undefined || st < 400 ? "giusta" : "altro";
-          if (await sulConto(p.k, (conti, adesso) => chiudi(conti, p.k, p.gettone, adesso, esito))) await registraBlocco(ctx.context, p.userId);
+          await chiudiTentativo(ctx.context, p, esito);
         }),
       },
     ],
