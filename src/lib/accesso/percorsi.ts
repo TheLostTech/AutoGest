@@ -1,6 +1,6 @@
 // Pagine che si aprono senza accesso. Puro: lo usano il proxy, il caricamento del client e la sincronizzazione.
 const PUBBLICI = ["/accesso", "/demo", "/negozio", "/ebay-simulato", "/scopri", "/news"];
-const FILE_PUBBLICI = ["/robots.txt", "/sitemap.xml", "/favicon.ico"];
+const FILE_PUBBLICI = ["/robots.txt", "/sitemap.xml", "/llms.txt", "/favicon.ico"];
 
 export function percorsoPubblico(percorso: string): boolean {
   if (FILE_PUBBLICI.includes(percorso)) return true;

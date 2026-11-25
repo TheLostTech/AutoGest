@@ -5,6 +5,8 @@
 // (DPCM 30/01/2026, Allegato 3, Scheda AUT), specifiche API RENTRI dati-registri e formulari, DD MASE 251/2023.
 // Le classi di pericolo (HP) le attribuisce il produttore del rifiuto: quelle qui sotto sono PROPOSTE da far
 // confermare alla consulente. Nel formulario sono obbligatorie per ogni codice pericoloso (con l'asterisco).
+// Le più incerte: 14 06 01* (HP03 se il gas è infiammabile, come l'R1234yf), 16 01 21* (dipende dal componente),
+// 16 06 07* (batterie al litio, da rivedere con il nuovo codice).
 import type { BonificaItem, Provenienza, StatoFisico, Vehicle, WasteMove } from "./types";
 import { monthKey, monthStock } from "./periodo";
 import { stimaComponenti, type Voce } from "./stime";
@@ -16,7 +18,7 @@ export interface Eer {
   limitKg: number; // stoccaggio massimo da autorizzazione (demo)
   destinatario: string; // destinatario abituale
   stato: StatoFisico; // stato fisico per il registro
-  hp: string[]; // classi di pericolo proposte (da confermare con la consulente); vuote se non note
+  hp: string[]; // classi di pericolo proposte (da confermare con la consulente); vuote per i non pericolosi
   dal?: string; // codice valido da questa data (AAAA-MM-GG)
   al?: string; // codice valido fino a questa data compresa
 }
@@ -31,30 +33,30 @@ export const EER: Eer[] = [
   { code: "13 07 01*", label: "Olio combustibile e carburante diesel", short: "Gasolio", limitKg: 600, destinatario: "Recupero Oli Demo", stato: "L", hp: ["HP03", "HP07", "HP14"] },
   // 13 07 02* non è tra i codici stampati nella Scheda AUT del MUD 2026 (che ha 13 07 01 e 13 07 03): da chiarire con la consulente
   { code: "13 07 02*", label: "Benzina", short: "Benzina", limitKg: 600, destinatario: "Recupero Oli Demo", stato: "L", hp: ["HP03", "HP05", "HP07", "HP11", "HP14"] },
-  { code: "13 07 03*", label: "Altri carburanti (comprese le miscele)", short: "Altri carburanti", limitKg: 300, destinatario: "Recupero Oli Demo", stato: "L", hp: [] },
+  { code: "13 07 03*", label: "Altri carburanti (comprese le miscele)", short: "Altri carburanti", limitKg: 300, destinatario: "Recupero Oli Demo", stato: "L", hp: ["HP03", "HP07", "HP14"] },
   { code: "13 02 08*", label: "Altri oli per motori, ingranaggi e lubrificazione", short: "Oli motore e cambio", limitKg: 1500, destinatario: "Recupero Oli Demo", stato: "L", hp: ["HP07", "HP14"] },
   { code: "16 01 13*", label: "Liquidi per freni", short: "Liquido freni", limitKg: 200, destinatario: "Smaltimenti Speciali Demo", stato: "L", hp: ["HP06", "HP10"] },
   { code: "16 01 14*", label: "Liquidi antigelo contenenti sostanze pericolose", short: "Antigelo", limitKg: 500, destinatario: "Smaltimenti Speciali Demo", stato: "L", hp: ["HP05", "HP06"] },
   { code: "16 01 15", label: "Liquidi antigelo diversi da quelli di cui alla voce 16 01 14", short: "Antigelo non pericoloso", limitKg: 300, destinatario: "Smaltimenti Speciali Demo", stato: "L", hp: [] },
-  { code: "14 06 01*", label: "Clorofluorocarburi, HCFC, HFC", short: "Gas climatizzatore", limitKg: 60, destinatario: "Smaltimenti Speciali Demo", stato: "L", hp: [] },
+  { code: "14 06 01*", label: "Clorofluorocarburi, HCFC, HFC", short: "Gas climatizzatore", limitKg: 60, destinatario: "Smaltimenti Speciali Demo", stato: "L", hp: ["HP14"] },
   { code: "16 06 01*", label: "Batterie al piombo-acido", short: "Batterie", limitKg: 3000, destinatario: "Raccolta Batterie Demo", stato: "S", hp: ["HP08", "HP10", "HP14"] },
   { code: "16 06 05", label: "Altre batterie e accumulatori", short: "Batterie di trazione", limitKg: 2000, destinatario: "Raccolta Batterie Demo", stato: "S", hp: [], al: "2026-12-08" },
-  { code: "16 06 07*", label: "Rifiuti di batterie al litio", short: "Batterie al litio", limitKg: 2000, destinatario: "Raccolta Batterie Demo", stato: "S", hp: [], dal: NUOVI_CODICI_BATTERIE },
+  { code: "16 06 07*", label: "Rifiuti di batterie al litio", short: "Batterie al litio", limitKg: 2000, destinatario: "Raccolta Batterie Demo", stato: "S", hp: ["HP03", "HP08", "HP14"], dal: NUOVI_CODICI_BATTERIE },
   { code: "16 01 07*", label: "Filtri dell'olio", short: "Filtri olio", limitKg: 200, destinatario: "Smaltimenti Speciali Demo", stato: "S", hp: ["HP07", "HP14"] },
-  { code: "16 01 08*", label: "Componenti contenenti mercurio", short: "Componenti con mercurio", limitKg: 20, destinatario: "Smaltimenti Speciali Demo", stato: "S", hp: [] },
-  { code: "16 01 09*", label: "Componenti contenenti PCB", short: "Componenti con PCB", limitKg: 20, destinatario: "Smaltimenti Speciali Demo", stato: "S", hp: [] },
+  { code: "16 01 08*", label: "Componenti contenenti mercurio", short: "Componenti con mercurio", limitKg: 20, destinatario: "Smaltimenti Speciali Demo", stato: "S", hp: ["HP06", "HP10", "HP14"] },
+  { code: "16 01 09*", label: "Componenti contenenti PCB", short: "Componenti con PCB", limitKg: 20, destinatario: "Smaltimenti Speciali Demo", stato: "S", hp: ["HP05", "HP14"] },
   { code: "16 01 10*", label: "Componenti esplosivi (es. air bag)", short: "Airbag", limitKg: 150, destinatario: "Smaltimenti Speciali Demo", stato: "S", hp: ["HP01"] },
-  { code: "16 01 11*", label: "Pastiglie per freni, contenenti amianto", short: "Pastiglie con amianto", limitKg: 50, destinatario: "Smaltimenti Speciali Demo", stato: "S", hp: [] },
+  { code: "16 01 11*", label: "Pastiglie per freni, contenenti amianto", short: "Pastiglie con amianto", limitKg: 50, destinatario: "Smaltimenti Speciali Demo", stato: "S", hp: ["HP05", "HP07"] },
   { code: "16 01 12", label: "Pastiglie per freni, diverse da quelle di cui alla voce 16 01 11", short: "Pastiglie freni", limitKg: 300, destinatario: "Recupero Metalli Demo", stato: "S", hp: [] },
   { code: "16 01 16", label: "Serbatoi per gas liquido", short: "Serbatoi del gas", limitKg: 1500, destinatario: "Recupero Metalli Demo", stato: "S", hp: [] },
   { code: "16 01 17", label: "Metalli ferrosi", short: "Ferro", limitKg: 10000, destinatario: "Recupero Metalli Demo", stato: "S", hp: [] },
   { code: "16 01 18", label: "Metalli non ferrosi", short: "Metalli non ferrosi", limitKg: 3000, destinatario: "Recupero Metalli Demo", stato: "S", hp: [] },
   { code: "16 01 19", label: "Plastica", short: "Plastica", limitKg: 3000, destinatario: "Recupero Plastica Demo", stato: "S", hp: [] },
   { code: "16 01 20", label: "Vetro", short: "Vetro", limitKg: 3000, destinatario: "Recupero Vetro Demo", stato: "S", hp: [] },
-  { code: "16 01 21*", label: "Componenti pericolosi diversi da quelli di cui alle voci da 16 01 07 a 16 01 11 e 16 01 13 e 16 01 14", short: "Componenti pericolosi", limitKg: 200, destinatario: "Smaltimenti Speciali Demo", stato: "S", hp: [] },
+  { code: "16 01 21*", label: "Componenti pericolosi diversi da quelli di cui alle voci da 16 01 07 a 16 01 11 e 16 01 13 e 16 01 14", short: "Componenti pericolosi", limitKg: 200, destinatario: "Smaltimenti Speciali Demo", stato: "S", hp: ["HP14"] },
   { code: "16 01 22", label: "Componenti non specificati altrimenti", short: "Altri componenti", limitKg: 2000, destinatario: "Recupero Metalli Demo", stato: "S", hp: [] },
   { code: "16 08 01", label: "Catalizzatori esauriti contenenti oro, argento, renio, rodio, palladio, iridio o platino (tranne 16 08 07)", short: "Catalizzatori", limitKg: 300, destinatario: "Recupero Catalizzatori Demo", stato: "S", hp: [] },
-  { code: "16 08 07*", label: "Catalizzatori esauriti contaminati da sostanze pericolose", short: "Catalizzatori contaminati", limitKg: 100, destinatario: "Recupero Catalizzatori Demo", stato: "S", hp: [] },
+  { code: "16 08 07*", label: "Catalizzatori esauriti contaminati da sostanze pericolose", short: "Catalizzatori contaminati", limitKg: 100, destinatario: "Recupero Catalizzatori Demo", stato: "S", hp: ["HP07", "HP14"] },
   { code: "16 01 03", label: "Pneumatici fuori uso", short: "Pneumatici", limitKg: 2000, destinatario: "Recupero Pneumatici Demo", stato: "S", hp: [] },
 ];
 

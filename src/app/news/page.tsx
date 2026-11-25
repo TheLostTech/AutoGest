@@ -7,7 +7,7 @@ import "../scopri/scopri.css";
 
 const TITOLO = "Normative per autodemolizioni, spiegate e commentate";
 const DESCRIZIONE =
-  "RENTRI, formulario digitale, bonifica dei veicoli fuori uso, nuovo regolamento europeo, GPSR sui ricambi usati, garanzia: cosa dicono le norme e cosa cambia in piazzale.";
+  "RENTRI e codici del registro, FIR digitale, MUD veicoli fuori uso, nuovi codici EER delle batterie, bonifica, GPSR e garanzia: cosa cambia in piazzale.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITO),
@@ -27,7 +27,7 @@ export default function NewsPage() {
     description: DESCRIZIONE,
     url: `${SITO}/news`,
     inLanguage: "it-IT",
-    hasPart: ordinati.map((a) => ({ "@type": "Article", headline: a.titolo, url: `${SITO}/news/${a.slug}`, datePublished: a.data })),
+    hasPart: ordinati.map((a) => ({ "@type": "Article", headline: a.titolo, description: a.descrizione, url: `${SITO}/news/${a.slug}`, datePublished: a.data, dateModified: a.aggiornato ?? a.data })),
   };
   return (
     <div className="min-h-dvh bg-ground text-ink">

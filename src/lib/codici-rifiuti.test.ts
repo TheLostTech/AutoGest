@@ -42,6 +42,7 @@ test("ogni movimento generato ha provenienza S e le classi di pericolo del codic
 test("i codici non pericolosi non hanno classi di pericolo; le classi sono nel formato HP01–HP15", () => {
   for (const e of EER) {
     if (!pericoloso(e.code)) assert.deepEqual(e.hp, [], e.code);
+    else assert.ok(e.hp.length > 0, `${e.code}: codice pericoloso senza classi di pericolo proposte`);
     for (const h of e.hp) assert.match(h, /^HP(0[1-9]|1[0-5])$/, e.code);
   }
   assert.equal(new Set(EER.map((e) => e.code)).size, EER.length, "codici doppi");
