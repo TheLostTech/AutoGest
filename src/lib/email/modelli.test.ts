@@ -28,6 +28,13 @@ describe("modelli email", () => {
     });
   }
 
+  it("privacy: link assoluto preso dal link dell'email quando manca l'indirizzo pubblico", () => {
+    for (const e of Object.values(modelli)) {
+      assert.ok(e.testo.includes("Informativa privacy: https://app.example.test/privacy"), e.testo);
+      assert.ok(e.html.includes('href="https://app.example.test/privacy"'));
+    }
+  });
+
   it("scappa i caratteri speciali del nome", () => {
     const e = emailConferma("<b>X</b>", LINK);
     assert.ok(e.html.includes("&lt;b&gt;X&lt;/b&gt;"));
@@ -54,6 +61,12 @@ describe("indirizzoPubblico", () => {
     assert.equal(indirizzoPubblico({ VERCEL: "1", VERCEL_BRANCH_URL: "b.vercel.app", VERCEL_URL: "d.vercel.app" }), "https://b.vercel.app");
     assert.equal(indirizzoPubblico({ VERCEL: "1", VERCEL_URL: "d.vercel.app" }), "https://d.vercel.app");
   });
+  it("su Vercel in produzione usa l'indirizzo di produzione del progetto", () => {
+    const env = { VERCEL: "1", VERCEL_ENV: "production", VERCEL_PROJECT_PRODUCTION_URL: "app.piazzale.it", VERCEL_BRANCH_URL: "b.vercel.app", VERCEL_URL: "d.vercel.app" };
+    assert.equal(indirizzoPubblico(env), "https://app.piazzale.it");
+    assert.equal(indirizzoPubblico({ ...env, VERCEL_ENV: "preview" }), "https://b.vercel.app");
+    assert.equal(indirizzoPubblico({ ...env, VERCEL_PROJECT_PRODUCTION_URL: "" }), "https://b.vercel.app");
+  });
   it("in locale è null", () => {
     assert.equal(indirizzoPubblico({}), null);
     assert.deepEqual(originiVercel({}), []);
@@ -67,10 +80,12 @@ describe("inviaEmail", () => {
   const env = { ...process.env };
   const fetchOriginale = globalThis.fetch;
   const logOriginale = console.log;
+  const erroreOriginale = console.error;
   afterEach(() => {
     process.env = { ...env };
     globalThis.fetch = fetchOriginale;
     console.log = logOriginale;
+    console.error = erroreOriginale;
   });
   const e = { a: "x@y.it", oggetto: "Ciao", testo: "t", html: "<p>t</p>" };
 
@@ -84,6 +99,7 @@ describe("inviaEmail", () => {
     }) as typeof fetch;
     await inviaEmail(e);
     assert.equal(chiamata!.url, "https://api.resend.com/emails");
+    assert.ok(chiamata!.init.signal instanceof AbortSignal, "la richiesta ha un tempo massimo");
     assert.equal((chiamata!.init.headers as Record<string, string>).Authorization, "Bearer re_prova");
     assert.deepEqual(JSON.parse(chiamata!.init.body as string), {
       from: "Lostar Technology <noreply@lostartechnology.com>",
@@ -94,13 +110,31 @@ describe("inviaEmail", () => {
     });
   });
 
-  it("errore HTTP: lancia senza dettagli né chiave", async () => {
+  it("errore HTTP: lancia; nel log né la chiave né il contenuto dell'email", async () => {
     process.env.RESEND_API_KEY = "re_segreta";
-    globalThis.fetch = (async () => new Response("boom", { status: 500 })) as typeof fetch;
-    const err = console.error;
-    console.error = () => {};
-    await assert.rejects(inviaEmail(e), (x: Error) => x.message === "Email non inviata");
-    console.error = err;
+    process.env.EMAIL_MITTENTE = "Lostar Technology <noreply@lostartechnology.com>";
+    const segreto = { a: "x@y.it", oggetto: "Ciao", testo: "testo-riservato-123", html: "<p>html-riservato-456</p>" };
+    // Anche se Resend rimandasse indietro chiave e contenuto, nel log non arrivano
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ name: "validation_error", message: `re_segreta testo-riservato-123 html-riservato-456 x@y.it` }), { status: 422 })) as typeof fetch;
+    const righe: string[] = [];
+    console.error = (...a: unknown[]) => righe.push(a.map(String).join(" "));
+    await assert.rejects(inviaEmail(segreto), (x: Error) => x.message === "Email non inviata");
+    const log = righe.join("\n");
+    assert.ok(log.includes("422"), log);
+    for (const vietato of ["re_segreta", "testo-riservato-123", "html-riservato-456"]) assert.ok(!log.includes(vietato), `${vietato} nel log: ${log}`);
+  });
+
+  it("con la chiave ma senza mittente: lancia senza chiamare Resend", async () => {
+    process.env.RESEND_API_KEY = "re_prova";
+    delete process.env.EMAIL_MITTENTE;
+    let fetchChiamata = false;
+    globalThis.fetch = (async () => {
+      fetchChiamata = true;
+      return new Response("{}");
+    }) as typeof fetch;
+    await assert.rejects(inviaEmail(e), (x: Error) => x.message === "Invio email non configurato");
+    assert.equal(fetchChiamata, false);
   });
 
   it("senza chiave fuori produzione: niente fetch, scrive nel log", async () => {

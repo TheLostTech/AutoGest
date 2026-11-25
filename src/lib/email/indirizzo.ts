@@ -4,14 +4,16 @@ function senzaBarraFinale(u: string): string {
   return u.replace(/\/+$/, "");
 }
 
-// Indirizzo pubblico dell'app, per i link nelle email e per Better Auth: BETTER_AUTH_URL se c'è; su Vercel
-// l'indirizzo del ramo (VERCEL_BRANCH_URL) o del deploy (VERCEL_URL), che arrivano senza "https://"; altrimenti null
+// Indirizzo pubblico dell'app, per i link nelle email e per Better Auth: BETTER_AUTH_URL se c'è; su Vercel in
+// produzione l'indirizzo di produzione del progetto (VERCEL_PROJECT_PRODUCTION_URL), negli altri deploy quello del
+// ramo (VERCEL_BRANCH_URL) o del deploy (VERCEL_URL), che arrivano senza "https://"; altrimenti null
 // (locale: l'indirizzo si deduce dalla richiesta).
 export function indirizzoPubblico(env: Ambiente = process.env): string | null {
   const esplicito = env.BETTER_AUTH_URL?.trim();
   if (esplicito) return senzaBarraFinale(esplicito);
   if (env.VERCEL) {
-    const host = (env.VERCEL_BRANCH_URL || env.VERCEL_URL)?.trim();
+    const produzione = env.VERCEL_ENV === "production" ? env.VERCEL_PROJECT_PRODUCTION_URL?.trim() : undefined;
+    const host = (produzione || env.VERCEL_BRANCH_URL || env.VERCEL_URL)?.trim();
     if (host) return `https://${host}`;
   }
   return null;

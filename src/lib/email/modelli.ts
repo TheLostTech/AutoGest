@@ -9,14 +9,15 @@ function esc(v: string): string {
 const PIEDE = `${PRODUTTORE.ragioneSociale} · ${PRODUTTORE.sede} · P. IVA e C.F. ${PRODUTTORE.piva} · REA ${PRODUTTORE.rea}`;
 const MOTIVO = "Ricevi questa email perché ti sei registrato a Piazzale.";
 
-function linkPrivacy(): string {
-  return `${indirizzoPubblico() ?? ""}/privacy`;
+// Mai relativo: senza indirizzo pubblico (in locale) si prende l'origine dal link dell'email stessa
+function linkPrivacy(link: string): string {
+  return `${indirizzoPubblico() ?? new URL(link).origin}/privacy`;
 }
 
 type Corpo = { oggetto: string; paragrafi: string[]; pulsante: string; link: string; nota?: string };
 
 function componi(a: string, c: Corpo): Email {
-  const privacy = linkPrivacy();
+  const privacy = linkPrivacy(c.link);
   const testo = [
     ...c.paragrafi,
     "",
