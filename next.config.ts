@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withBotId } from "botid/next/config";
 
 const nextConfig: NextConfig = {
   devIndicators: false,
@@ -20,4 +21,5 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// BotID di Vercel (controllo dei robot sulla registrazione): aggiunge i percorsi che girano la verifica a Vercel
+export default withBotId(nextConfig);

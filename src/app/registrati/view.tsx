@@ -2,31 +2,21 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { authClient } from "@/lib/auth/client";
 import { BRAND } from "@/lib/config";
 import { Button, Field, Notice } from "@/components/ui";
 
-// Dopo la registrazione si entra come da /accesso: sessione, poi l'azienda (la sola del titolare) diventa attiva.
-async function entra(email: string, password: string) {
-  const r = await authClient.signIn.email({ email, password });
-  if (r.error) throw new Error("accesso");
-  const aziende = await authClient.organization.list();
-  const prima = aziende.data?.[0];
-  if (!prima) throw new Error("accesso");
-  const a = await authClient.organization.setActive({ organizationId: prima.id });
-  if (a.error) throw new Error("accesso");
-}
-
-export function RegistratiView({ invito: invitoIniziale, prova }: { invito: string; prova: boolean }) {
+// Registrazione libera: dopo l'invio non si entra, si conferma l'email (il link fa partire la prova di 15 giorni).
+export function RegistratiView({ prova }: { prova: boolean }) {
   const [azienda, setAzienda] = useState("");
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
+  const [telefono, setTelefono] = useState("");
   const [password, setPassword] = useState("");
-  const [invito, setInvito] = useState(invitoIniziale);
   const [condizioni, setCondizioni] = useState(false);
+  // Contatti commerciali: facoltativi e di serie non spuntati
+  const [commerciale, setCommerciale] = useState(false);
   const [errore, setErrore] = useState("");
   const [attesa, setAttesa] = useState(false);
-  // Registrazione fatta ma accesso non riuscito: si entra da /accesso
   const [fatta, setFatta] = useState(false);
 
   async function invia(ev: React.FormEvent) {
@@ -38,7 +28,7 @@ export function RegistratiView({ invito: invitoIniziale, prova }: { invito: stri
       r = await fetch("/api/registrazione", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ azienda, nome, email, password, invito, condizioni }),
+        body: JSON.stringify({ azienda, nome, email, telefono, password, condizioni, commerciale }),
       });
     } catch {
       setErrore("Non riesco a collegarmi al server. Controlla la rete e riprova.");
@@ -51,14 +41,8 @@ export function RegistratiView({ invito: invitoIniziale, prova }: { invito: stri
       setAttesa(false);
       return;
     }
-    try {
-      await entra(email.trim().toLowerCase(), password);
-      // Navigazione completa: i dati dell'azienda si caricano da zero
-      window.location.assign("/");
-    } catch {
-      setFatta(true);
-      setAttesa(false);
-    }
+    setFatta(true);
+    setAttesa(false);
   }
 
   return (
@@ -73,15 +57,17 @@ export function RegistratiView({ invito: invitoIniziale, prova }: { invito: stri
         {fatta ? (
           <div className="label-sheet space-y-4 p-5">
             <h1 className="code text-[18px] font-bold uppercase tracking-wide text-ink">Registrazione fatta</h1>
-            <Notice tone="ok">La tua azienda è pronta. Non sono riuscito a farti entrare da solo: accedi con l&apos;email e la password che hai scelto.</Notice>
-            <Link href="/accesso" className="press inline-flex min-h-14 w-full items-center justify-center rounded-md bg-band px-6 text-lg font-semibold text-white">
-              Vai all&apos;accesso
-            </Link>
+            <div role="status">
+              <Notice tone="ok">Controlla la posta: ti abbiamo mandato il link per attivare la prova.</Notice>
+            </div>
+            <p className="text-[15px] text-ink-2">
+              L&apos;email arriva a <span className="font-semibold text-ink">{email.trim().toLowerCase()}</span>. Se non la trovi, guarda anche nella posta indesiderata.
+            </p>
           </div>
         ) : (
           <form onSubmit={invia} className="label-sheet space-y-4 p-5" noValidate>
             <h1 className="code text-[18px] font-bold uppercase tracking-wide text-ink">Registra la tua azienda</h1>
-            {!invitoIniziale && <Notice>La registrazione è su invito: chiedi il codice a Piazzale.</Notice>}
+            <p className="text-[15px] text-ink-2">Prova gratuita di 15 giorni con tutti i moduli.</p>
             {errore && (
               <div role="alert">
                 <Notice tone="danger">{errore}</Notice>
@@ -96,32 +82,32 @@ export function RegistratiView({ invito: invitoIniziale, prova }: { invito: stri
             <Field label="Email">
               <input className="field" type="email" autoComplete="username" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </Field>
+            <Field label="Telefono (facoltativo)" hint="Solo cifre, spazi e +.">
+              <input className="field" type="tel" autoComplete="tel" inputMode="tel" maxLength={20} value={telefono} onChange={(e) => setTelefono(e.target.value)} />
+            </Field>
             <Field label="Password" hint="Almeno 10 caratteri.">
               <input className="field" type="password" autoComplete="new-password" minLength={10} maxLength={128} value={password} onChange={(e) => setPassword(e.target.value)} required />
-            </Field>
-            <Field label="Codice invito">
-              <input
-                className="field code tracking-[0.15em] uppercase"
-                type="text"
-                autoComplete="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                placeholder="XXXX-XXXX-XXXX"
-                value={invito}
-                onChange={(e) => setInvito(e.target.value)}
-                required
-              />
             </Field>
             <label className="flex items-start gap-3 text-[15px] text-ink">
               <input type="checkbox" className="mt-0.5 size-6 shrink-0 accent-band" checked={condizioni} onChange={(e) => setCondizioni(e.target.checked)} />
               <span>
                 Accetto le{" "}
                 <Link href="/condizioni" target="_blank" className="font-semibold text-band underline">
-                  condizioni del servizio
+                  condizioni del servizio e l&apos;accordo sul trattamento dei dati
                 </Link>
               </span>
             </label>
-            <Button type="submit" size="lg" className="w-full" disabled={attesa || !azienda || !nome || !email || !password || !invito || !condizioni}>
+            <p className="text-[15px] text-ink">
+              Ho letto l&apos;
+              <Link href="/privacy" target="_blank" className="font-semibold text-band underline">
+                informativa privacy
+              </Link>
+            </p>
+            <label className="flex items-start gap-3 text-[15px] text-ink">
+              <input type="checkbox" className="mt-0.5 size-6 shrink-0 accent-band" checked={commerciale} onChange={(e) => setCommerciale(e.target.checked)} />
+              <span>Acconsento a essere contattato da Lostar Technology per proposte commerciali su Piazzale</span>
+            </label>
+            <Button type="submit" size="lg" className="w-full" disabled={attesa || !azienda || !nome || !email || !password || !condizioni}>
               {attesa ? "Registrazione…" : "Registrati"}
             </Button>
             {prova && <p className="text-center text-[13px] text-ink-3">Ambiente di prova: nessun addebito vero</p>}

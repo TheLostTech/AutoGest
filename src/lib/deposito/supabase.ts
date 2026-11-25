@@ -18,7 +18,7 @@ export interface SpazioFile {
 }
 
 // Stessi controlli del disco (disco.ts)
-const TIPI: readonly TipoDocumento[] = ["archivio", "abbonamento", "collegamenti", "ebay", "richieste"];
+const TIPI: readonly TipoDocumento[] = ["archivio", "abbonamento", "collegamenti", "ebay", "richieste", "registrazione"];
 const CARTELLE: readonly CartellaFile[] = ["foto", "allegati", "visure", "richieste"];
 const NOME_FILE = /^[A-Za-z0-9._-]{1,128}$/;
 

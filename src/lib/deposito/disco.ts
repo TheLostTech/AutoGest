@@ -14,6 +14,8 @@ const FILE_DOCUMENTO: Record<TipoDocumento, { file: string; mode: number }> = {
   collegamenti: { file: "collegamenti.json", mode: 0o600 },
   ebay: { file: "ebay.json", mode: 0o600 },
   richieste: { file: path.join("richieste", "registro.json"), mode: 0o666 },
+  // Scheda della registrazione: contatti del titolare e consensi, solo il proprietario la legge
+  registrazione: { file: "registrazione.json", mode: 0o600 },
 };
 const NOME_FILE = /^[A-Za-z0-9._-]{1,128}$/;
 const assente = (e: unknown) => (e as NodeJS.ErrnoException).code === "ENOENT";

@@ -1,21 +1,23 @@
-// Registrazione del titolare su invito: crea l'azienda, l'archivio vuoto, il titolare e l'abbonamento "nuovo".
-// Pubblica (senza sessione): l'accesso lo fa poi la pagina, come /accesso. Spec registrazione-pagamento, sezione 1.
+// Registrazione libera del titolare: crea l'azienda, l'archivio vuoto, il titolare, la scheda con i consensi
+// e l'abbonamento "nuovo" senza fine della prova. Pubblica (senza sessione) e senza accesso: il titolare entra
+// dopo aver confermato l'email, che fa partire i 15 giorni. Spec prova-15-giorni, sezione 3.
+import { checkBotId } from "botid/server";
 import { ABBONAMENTO_NUOVO } from "@/lib/abbonamento";
 import { aggiornaAbbonamento } from "@/lib/abbonamento-server";
 import { rispostaNonPronta } from "@/lib/accesso/pronta";
 import { registrazioneConsentita, validaRegistrazione } from "@/lib/accesso/registrazione";
+import { registrazioneDaRobot } from "@/lib/accesso/robot";
 import { ipCliente } from "@/lib/auth/intestazioni-ip";
 import { aggiungiEventi, creaStatoAzienda } from "@/lib/archivio-azienda";
 import { creaAzienda, creaMembro, slugDa } from "@/lib/piattaforma/crea";
-import { usaInvito, verificaInvito } from "@/lib/piattaforma/inviti";
 import { contesto, daAltroSito, errore, leggiJson, ok, type Contesto } from "@/lib/piattaforma/server";
 import { DEFAULT_LISTINI } from "@/lib/pricing";
 import { modalitaStripe } from "@/lib/stripe/server";
+import { schedaRegistrazione } from "@/lib/consensi";
 import { deposito } from "@/lib/deposito";
 import { statoVuoto } from "@/lib/stato-iniziale";
 import { WAREHOUSES } from "@/lib/warehouse";
 
-const INVITO_NON_VALIDO = "Codice invito non valido";
 const EMAIL_USATA = "Non è stato possibile registrarti con questa email. Se hai già un account, accedi.";
 
 // Toglie quello che la registrazione aveva creato. Un guasto qui finisce nel log, mai nella risposta.
@@ -46,31 +48,31 @@ export async function POST(req: Request) {
   if (nonPronta) return nonPronta;
   const x = daAltroSito(req, true);
   if (x) return x;
-  if (!registrazioneConsentita(ipCliente(req.headers), Date.now())) {
+  const ip = ipCliente(req.headers);
+  if (!registrazioneConsentita(ip, Date.now())) {
     return errore(429, "Troppe registrazioni da questo indirizzo: riprova più tardi.");
   }
+  // Dopo il limite per indirizzo, che costa meno: BotID chiede a Vercel a ogni richiesta
+  if (await registrazioneDaRobot(() => checkBotId())) return errore(403, "Registrazione non riuscita.");
   const v = validaRegistrazione(await leggiJson(req));
   if ("errore" in v) return errore(400, v.errore);
   const d = v.ok;
   const c = await contesto();
-  // Controllo anticipato (nessuna scrittura): il passo che conta è usaInvito, alla fine.
-  if (!(await verificaInvito(c, d.invito))) return errore(400, INVITO_NON_VALIDO);
   if (await c.internalAdapter.findUserByEmail(d.email)) return errore(409, EMAIL_USATA);
 
   const org = await creaAzienda(c, d.azienda, slugDa(d.azienda), false, { registrata: true });
   let userId: string | null = null;
   try {
     await creaStatoAzienda(org.id, statoVuoto({ listini: DEFAULT_LISTINI, warehouses: WAREHOUSES }));
+    // Contatti e consensi (versione dei testi, ora, indirizzo): annulla la toglie con il resto dell'azienda
+    if (!(await deposito().creaDocumento(org.id, "registrazione", schedaRegistrazione(d, ip, Date.now())))) {
+      throw new Error("Scheda della registrazione già presente");
+    }
     // creaMembro, se fallisce, toglie da sé l'utente che aveva creato
     userId = await creaMembro(c, org.id, { nome: d.nome, ruoli: ["responsabile"], email: d.email, password: d.password });
-    // prova: vero salvo con le chiavi vere (anche senza chiave: un'azienda nata così non va sincronizzata col conto vero)
+    // prova: vero salvo con le chiavi vere (anche senza chiave: un'azienda nata così non va sincronizzata col conto vero).
+    // fineProva resta null: i 15 giorni partono dalla conferma dell'email
     await aggiornaAbbonamento(org.id, () => ABBONAMENTO_NUOVO(modalitaStripe() !== "live", Date.now()));
-    if (!(await usaInvito(c, d.invito, org.id))) {
-      // Lo stesso codice usato da un'altra registrazione nel frattempo
-      console.warn("Registrazione annullata: invito già usato", org.id);
-      await annulla(c, org.id, userId);
-      return errore(400, INVITO_NON_VALIDO);
-    }
   } catch (e) {
     console.error("Registrazione non riuscita", e);
     await annulla(c, org.id, userId);
@@ -84,5 +86,6 @@ export async function POST(req: Request) {
   } catch (e) {
     console.error("Registro attività non aggiornato", org.id, e);
   }
-  return ok({ ok: true }, 201);
+  // Niente accesso qui: il titolare entra dopo la conferma dell'email
+  return ok({ ok: true, conferma: true }, 201);
 }

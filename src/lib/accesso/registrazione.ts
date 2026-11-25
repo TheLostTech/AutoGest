@@ -1,7 +1,14 @@
-// Registrazione del titolare su invito: controllo dei campi e limite per indirizzo. Nessun accesso a file o database.
-import { formatoCodice } from "./inviti-regole";
+// Registrazione libera del titolare: controllo dei campi e limite per indirizzo. Nessun accesso a file o database.
 
-export type DatiRegistrazione = { azienda: string; nome: string; email: string; password: string; invito: string; condizioni: true };
+export type DatiRegistrazione = {
+  azienda: string;
+  nome: string;
+  email: string;
+  password: string;
+  telefono: string | null;
+  condizioni: true;
+  commerciale: boolean;
+};
 
 export const PASSWORD_MIN = 10;
 // Come Better Auth: oltre non si accetta (creaMembro fa l'hash senza passare dai suoi controlli)
@@ -25,10 +32,15 @@ export function validaRegistrazione(corpo: unknown): { ok: DatiRegistrazione } |
   const password = typeof b.password === "string" ? b.password : "";
   if (password.length < PASSWORD_MIN) return { errore: "La password deve avere almeno 10 caratteri." };
   if (password.length > PASSWORD_MAX) return { errore: "La password può avere al massimo 128 caratteri." };
+  // Facoltativo: vuoto o assente è null; se c'è, solo cifre, spazi e + (da 6 a 20 caratteri)
+  let telefono: string | null = null;
+  if (b.telefono !== undefined && b.telefono !== null) {
+    const t = typeof b.telefono === "string" ? b.telefono.trim() : null;
+    if (t === null || (t && !/^[0-9 +]{6,20}$/.test(t))) return { errore: "Scrivi un numero di telefono valido o lascia vuoto." };
+    telefono = t || null;
+  }
   if (b.condizioni !== true) return { errore: "Per registrarti devi accettare le condizioni del servizio." };
-  const invito = typeof b.invito === "string" ? formatoCodice(b.invito) : null;
-  if (!invito) return { errore: "Codice invito non valido" };
-  return { ok: { azienda, nome, email, password, invito, condizioni: true } };
+  return { ok: { azienda, nome, email, password, telefono, condizioni: true, commerciale: b.commerciale === true } };
 }
 
 // Al massimo 3 registrazioni all'ora per indirizzo (ipCliente: x-real-ip su Vercel, altrimenti cf-connecting-ip).

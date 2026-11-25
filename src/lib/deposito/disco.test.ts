@@ -36,7 +36,8 @@ test("disco: collegamenti ed ebay hanno permessi 0o600", async () => {
   const d = depositoDisco();
   await d.aggiornaDocumento("az-permessi", "collegamenti", () => ({ dati: { a: 1 }, risultato: 0 }));
   await d.creaDocumento("az-permessi", "ebay", { a: 1 });
-  for (const f of ["collegamenti.json", "ebay.json"]) {
+  await d.creaDocumento("az-permessi", "registrazione", { a: 1 });
+  for (const f of ["collegamenti.json", "ebay.json", "registrazione.json"]) {
     assert.equal((await stat(path.join(cartellaAzienda("az-permessi"), f))).mode & 0o777, 0o600);
   }
 });

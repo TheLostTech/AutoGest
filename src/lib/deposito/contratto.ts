@@ -77,9 +77,12 @@ export function provaContratto(nome: string, crea: () => Promise<Deposito>, puli
     for (const az of ["az-togli-a", "az-togli-b"]) {
       await d.aggiornaDocumento<{ n: number }, string>(az, "archivio", inc);
       await d.salvaFile(az, "foto", "f.jpg", Uint8Array.from([3]));
+      assert.equal(await d.creaDocumento(az, "registrazione", { titolare: az }), true);
     }
     await d.togliAzienda("az-togli-a");
     assert.equal(await d.leggiDocumento("az-togli-a", "archivio"), null);
+    assert.equal(await d.leggiDocumento("az-togli-a", "registrazione"), null);
+    assert.deepEqual(await d.leggiDocumento("az-togli-b", "registrazione"), { titolare: "az-togli-b" });
     assert.equal(await d.leggiFile("az-togli-a", "foto", "f.jpg"), null);
     assert.deepEqual(await d.leggiDocumento("az-togli-b", "archivio"), { n: 1 });
     assert.deepEqual([...(await d.leggiFile("az-togli-b", "foto", "f.jpg"))!], [3]);

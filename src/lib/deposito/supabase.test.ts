@@ -190,6 +190,13 @@ test("creaDocumento: insert … on conflict do nothing returning 1", async () =>
   assert.equal(await d.creaDocumento("az-1", "abbonamento", { v: 2 }), false);
 });
 
+test("creaDocumento: la scheda della registrazione è un tipo valido", async () => {
+  const f = finto(() => [{ "?column?": 1 }]);
+  const d = creaDepositoPostgres(f.pool, nessunFile);
+  assert.equal(await d.creaDocumento("az-1", "registrazione", { titolare: "Mario" }), true);
+  assert.deepEqual(f.chiamate[0].v, ["az-1", "registrazione", '{"titolare":"Mario"}']);
+});
+
 test("id, tipi e cartelle non validi: rifiutati prima di toccare il database o lo spazio", async () => {
   const f = finto();
   const d = creaDepositoPostgres(f.pool, nessunFile);

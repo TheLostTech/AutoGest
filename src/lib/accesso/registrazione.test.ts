@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { registrazioneConsentita, validaRegistrazione } from "./registrazione.ts";
 
-const buono = { azienda: "Rossi Autodemolizioni", nome: "Mario Rossi", email: "mario@rossi.it", password: "unapassword", invito: "ABCD-EFGH-JKLM", condizioni: true };
+const buono = { azienda: "Rossi Autodemolizioni", nome: "Mario Rossi", email: "mario@rossi.it", password: "unapassword", telefono: "+39 333 1234567", condizioni: true, commerciale: true };
 
 const errore = (corpo: unknown) => {
   const r = validaRegistrazione(corpo);
@@ -51,10 +51,37 @@ test("validaRegistrazione: condizioni da accettare", () => {
   assert.match(errore(senza), /condizioni/);
 });
 
-test("validaRegistrazione: codice invito di formato sbagliato", () => {
-  for (const invito of ["", "ABCD", "ABCD-EFGH-JKL0", 12]) assert.equal(errore({ ...buono, invito }), "Codice invito non valido", String(invito));
-  const r = validaRegistrazione({ ...buono, invito: " abcd efgh jklm " });
-  assert.ok("ok" in r && r.ok.invito === "ABCD-EFGH-JKLM");
+test("validaRegistrazione: senza codice invito, e un invito mandato lo stesso non conta", () => {
+  const r = validaRegistrazione({ ...buono, invito: "ABCD" });
+  assert.ok("ok" in r);
+  assert.deepEqual(r.ok, buono);
+  assert.equal("invito" in r.ok, false);
+});
+
+test("validaRegistrazione: telefono facoltativo, vuoto o assente diventa null", () => {
+  for (const telefono of ["", "   ", undefined, null]) {
+    const r = validaRegistrazione({ ...buono, telefono });
+    assert.ok("ok" in r && r.ok.telefono === null, String(telefono));
+  }
+  const r = validaRegistrazione({ ...buono, telefono: "  0471 123456 " });
+  assert.ok("ok" in r && r.ok.telefono === "0471 123456");
+});
+
+test("validaRegistrazione: telefono solo cifre, spazi e +, da 6 a 20 caratteri", () => {
+  const msg = "Scrivi un numero di telefono valido o lascia vuoto.";
+  for (const telefono of ["abc", "333-1234567", "12345", "1".repeat(21), 333123456, "+39 (333) 12"]) assert.equal(errore({ ...buono, telefono }), msg, String(telefono));
+  for (const telefono of ["123456", "1".repeat(20), "+393331234567"]) assert.ok("ok" in validaRegistrazione({ ...buono, telefono }), telefono);
+});
+
+test("validaRegistrazione: consenso commerciale facoltativo, solo true lo dà", () => {
+  const { commerciale: _, ...senza } = buono;
+  void _;
+  const r = validaRegistrazione(senza);
+  assert.ok("ok" in r && r.ok.commerciale === false);
+  for (const commerciale of [false, "true", 1]) {
+    const x = validaRegistrazione({ ...buono, commerciale });
+    assert.ok("ok" in x && x.ok.commerciale === false, String(commerciale));
+  }
 });
 
 test("validaRegistrazione: corpo mancante o non oggetto", () => {

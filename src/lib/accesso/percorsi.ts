@@ -1,5 +1,18 @@
 // Pagine che si aprono senza accesso. Puro: lo usano il proxy, il caricamento del client e la sincronizzazione.
-const PUBBLICI = ["/accesso", "/demo", "/registrati", "/condizioni", "/negozio", "/ebay-simulato", "/scopri", "/news"];
+// L'ultimo è il percorso di BotID di Vercel (botid/next/config lo gira a Vercel): il controllo dei robot sulla
+// registrazione lo usa prima dell'accesso, quindi non va mandato alla pagina di accesso.
+const PUBBLICI = [
+  "/accesso",
+  "/demo",
+  "/registrati",
+  "/condizioni",
+  "/privacy",
+  "/negozio",
+  "/ebay-simulato",
+  "/scopri",
+  "/news",
+  "/149e9513-01fa-4fb0-aad4-566afd725d1b",
+];
 const FILE_PUBBLICI = ["/robots.txt", "/sitemap.xml", "/favicon.ico"];
 
 export function percorsoPubblico(percorso: string): boolean {

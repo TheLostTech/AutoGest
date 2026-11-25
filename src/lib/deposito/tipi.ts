@@ -2,7 +2,7 @@
 // Ha due realizzazioni: su disco (prototipo, prove) e su Supabase. Le prove di contratto sono le stesse per entrambe.
 import type { StatoAccount } from "../accesso/tentativi-account";
 
-export type TipoDocumento = "archivio" | "abbonamento" | "collegamenti" | "ebay" | "richieste";
+export type TipoDocumento = "archivio" | "abbonamento" | "collegamenti" | "ebay" | "richieste" | "registrazione";
 export type CartellaFile = "foto" | "allegati" | "visure" | "richieste";
 
 /** Esito di una modifica: i dati nuovi, il valore da restituire a chi chiama e, se serve, il "non scrivere nulla". */

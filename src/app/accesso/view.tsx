@@ -170,7 +170,7 @@ function AccessoEmail({ da, onNomi }: { da: string; onNomi?: () => void }) {
         </form>
         <div className="mt-4 text-center">
           <Link href="/registrati" className="inline-flex min-h-11 items-center px-2 text-[14px] font-semibold text-band underline">
-            Non hai un account? Registrati
+            Non hai un account? Registrati gratis
           </Link>
         </div>
         {onNomi && (
