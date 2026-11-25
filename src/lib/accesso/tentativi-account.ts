@@ -11,7 +11,8 @@
 // parallele non passano tutte: errori recenti + tentativi in corso non superano mai il massimo. Ogni prenotazione ha
 // il suo gettone; l'esito (password sbagliata, giusta, altro) toglie proprio quel gettone e, se sbagliata, conta un
 // errore. Un gettone rimasto senza esito (errore imprevisto del server) scade da solo dopo IN_VOLO_MS.
-// Un account bloccato mentre la richiesta era in corso resta bloccato. Puro.
+// Un timestamp nel futuro (orologi di istanze diverse, o richieste che prendono il lock fuori ordine) non si scarta mai:
+// si scartano solo le voci troppo vecchie. Un account bloccato mentre la richiesta era in corso resta bloccato. Puro.
 export const ACCOUNT_ERRORI_MAX = 10;
 export const ACCOUNT_FINESTRA_MS = 15 * 60_000;
 export const ACCOUNT_BLOCCO_MS = 15 * 60_000;
@@ -22,9 +23,9 @@ export const SCONOSCIUTI_FINESTRA_MS = 60_000;
 export type StatoAccount = { errori: number[]; bloccatoFino: number | null; inVolo: Map<string, number> };
 export type Conti = Map<string, StatoAccount>;
 
-const recenti = (s: StatoAccount, ora: number) => s.errori.filter((t) => ora - t < ACCOUNT_FINESTRA_MS && t <= ora);
+const recenti = (s: StatoAccount, ora: number) => s.errori.filter((t) => ora - t < ACCOUNT_FINESTRA_MS);
 function scadiInVolo(s: StatoAccount, ora: number) {
-  for (const [g, t] of s.inVolo) if (!(ora - t < IN_VOLO_MS && t <= ora)) s.inVolo.delete(g);
+  for (const [g, t] of s.inVolo) if (!(ora - t < IN_VOLO_MS)) s.inVolo.delete(g);
 }
 
 export function accountBloccato(s: StatoAccount | undefined, ora: number): boolean {

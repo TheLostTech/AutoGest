@@ -34,10 +34,10 @@ const troppi = () => new APIError("TOO_MANY_REQUESTS", { message: "Troppi tentat
 const codice = (r: unknown): number | undefined => (r && typeof r === "object" && "statusCode" in r ? Number((r as { statusCode: unknown }).statusCode) : undefined);
 const vuoto = (): StatoAccount => ({ errori: [], bloccatoFino: null, inVolo: new Map() });
 // prenota/chiudi lavorano su una Map: si passa quella con il solo conto di questa chiave e si rimette il risultato
-function sulConto<R>(k: string, op: (conti: Map<string, StatoAccount>) => R) {
+function sulConto<R>(k: string, op: (conti: Map<string, StatoAccount>, ora: number) => R) {
   return deposito().aggiornaContoAccount(k, (prima) => {
     const conti = new Map<string, StatoAccount>(prima ? [[k, prima]] : []);
-    const risultato = op(conti);
+    const risultato = op(conti, Date.now()); // l'ora si prende col lock in mano, non prima dell'attesa
     return { stato: conti.get(k) ?? vuoto(), risultato };
   });
 }
@@ -61,7 +61,7 @@ export const tentativiAccount = {
           }
           const k = `u:${u.user.id}`;
           const gettone = randomUUID();
-          if ((await sulConto(k, (conti) => prenota(conti, k, gettone, ora))) === "bloccato") throw troppi();
+          if ((await sulConto(k, (conti, adesso) => prenota(conti, k, gettone, adesso))) === "bloccato") throw troppi();
           stato.inCorso.set(ctx.request, { k, gettone, userId: u.user.id });
         }),
       },
@@ -75,8 +75,7 @@ export const tentativiAccount = {
           stato.inCorso.delete(ctx.request);
           const st = codice(ctx.context.returned);
           const esito: Esito = st === 401 ? "sbagliata" : st === undefined || st < 400 ? "giusta" : "altro";
-          const ora = Date.now();
-          if (await sulConto(p.k, (conti) => chiudi(conti, p.k, p.gettone, ora, esito))) await registraBlocco(ctx.context, p.userId);
+          if (await sulConto(p.k, (conti, adesso) => chiudi(conti, p.k, p.gettone, adesso, esito))) await registraBlocco(ctx.context, p.userId);
         }),
       },
     ],

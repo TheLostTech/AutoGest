@@ -120,3 +120,20 @@ test("chiave per email senza maiuscole e spazi; password giusta azzera gli error
   chiudi(c, K, g, ORA + 10_000, "giusta");
   assert.equal(c.has(K), false);
 });
+
+test("un errore e un gettone con timestamp futuro (lock preso fuori ordine) non vengono scartati", () => {
+  const conti: Conti = new Map();
+  const errori = Array.from({ length: ACCOUNT_ERRORI_MAX - 2 }, (_, i) => ORA + 5000 + i);
+  conti.set(K, { errori, bloccatoFino: null, inVolo: new Map([["futuro", ORA + 5000]]) });
+  // 8 errori futuri + 1 gettone futuro = 9: ne resta uno solo, il secondo viene rifiutato
+  assert.equal(prenota(conti, K, gettone(), ORA), "ok");
+  assert.equal(conti.get(K)!.errori.length, ACCOUNT_ERRORI_MAX - 2);
+  assert.ok(conti.get(K)!.inVolo.has("futuro"));
+  assert.equal(prenota(conti, K, gettone(), ORA), "bloccato");
+  chiudi(conti, K, "futuro", ORA, "giusta");
+  assert.equal(conti.get(K)!.errori.length, 0); // giusta: si riparte da zero, come prima
+  // chiudi con "altro" non cancella il gettone futuro di un'altra richiesta
+  conti.set(K, { errori: [], bloccatoFino: null, inVolo: new Map([["a", ORA + 5000], ["b", ORA]]) });
+  chiudi(conti, K, "b", ORA, "altro");
+  assert.ok(conti.get(K)!.inVolo.has("a"));
+});
