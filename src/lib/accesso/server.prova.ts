@@ -216,6 +216,30 @@ test("20 accessi in parallelo sullo stesso account da 20 IP: al massimo 10 arriv
   assert.ok(stati.filter((s) => s === 429).length >= 10, stati.join());
 });
 
+test("10 password sbagliate a gruppi di 5 in parallelo sullo stesso account: nessun tentativo perso, l'11° è 429 e il blocco finisce nel registro", async () => {
+  const email = "gruppi@prova.invalid";
+  const u = await c.internalAdapter.createUser({ name: "Gruppi", email, emailVerified: true }, { method: "admin" });
+  const prova = (ip: string) =>
+    m.auth.auth.handler(
+      new Request("http://localhost:3000/api/auth/sign-in/email", {
+        method: "POST",
+        headers: { origin: "http://localhost:3000", "content-type": "application/json", "cf-connecting-ip": ip },
+        body: JSON.stringify({ email, password: "sbagliata-123" }),
+      }),
+    );
+  const stati: number[] = [];
+  for (let gruppo = 0; gruppo < 2; gruppo++) {
+    const r = await Promise.all(Array.from({ length: 5 }, (_, i) => prova(`192.0.2.${100 + gruppo * 5 + i}`)));
+    stati.push(...r.map((x) => x.status));
+  }
+  assert.ok(stati.every((s) => s === 401), stati.join());
+  const undicesimo = await prova("192.0.2.200");
+  assert.equal(undicesimo.status, 429);
+  const { deposito } = await import("../deposito/index.ts");
+  const dopo = await deposito().aggiornaContoAccount(`u:${u.id}`, (p) => ({ stato: p ?? { errori: [], bloccatoFino: null, inVolo: new Map() }, risultato: p }));
+  assert.ok(dopo && dopo.bloccatoFino !== null && dopo.bloccatoFino > Date.now(), "il conto nel deposito deve risultare bloccato");
+});
+
 test("email inesistenti: contatore comune da 30 al minuto, l'account vero intanto entra", async () => {
   const prova = (email: string, password: string, ip: string) =>
     m.auth.auth.handler(
