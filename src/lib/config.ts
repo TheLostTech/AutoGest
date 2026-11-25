@@ -10,6 +10,11 @@ export const BRAND = {
 export const PRODUTTORE = {
   nome: "Lostar Technology",
   sito: "https://lostartechnology.com",
+  ragioneSociale: "LOSTAR S.R.L.S.",
+  sede: "Corso Massimo d'Azeglio 60, 10126 Torino (TO)",
+  piva: "13018890015",
+  rea: "TO-1333294",
+  pec: "gustipreziosisrls@pec.cgn.it",
 } as const;
 
 export const DEMO_NOTICE = "Prototipo · dati dimostrativi";

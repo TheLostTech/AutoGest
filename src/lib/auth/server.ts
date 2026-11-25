@@ -3,6 +3,7 @@ import Database from "better-sqlite3";
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { admin, organization, twoFactor } from "better-auth/plugins";
+import { indirizzoPubblico, originiVercel } from "@/lib/email/indirizzo";
 import { pool } from "@/lib/db/pool";
 import { sceltaDeposito } from "@/lib/deposito";
 import { DATA_DIR, DB_FILE } from "@/lib/server-data";
@@ -51,7 +52,13 @@ export const auth = betterAuth({
   },
   emailAndPassword: { enabled: true, disableSignUp: true },
   advanced: { useSecureCookies: false, ipAddress: { ipAddressHeaders: intestazioniIp(process.env) } },
-  trustedOrigins: process.env.INDIRIZZO_GESTIONALE ? [process.env.INDIRIZZO_GESTIONALE] : [],
+  // Indirizzo pubblico fisso (BETTER_AUTH_URL, o quello Vercel): toglie l'avviso "Base URL is not set". Senza, si deduce
+  // dalla richiesta come prima. Su Vercel gli altri indirizzi dello stesso deploy restano fidati.
+  ...(indirizzoPubblico(process.env) ? { baseURL: indirizzoPubblico(process.env)! } : {}),
+  trustedOrigins: [
+    ...(process.env.INDIRIZZO_GESTIONALE ? [process.env.INDIRIZZO_GESTIONALE] : []),
+    ...originiVercel(process.env),
+  ],
   plugins: [
     organization({ ac: acAzienda, roles: ruoliAzienda, allowUserToCreateOrganization: false }),
     admin({ ac: acPiattaforma, roles: ruoliPiattaforma, adminRoles: ["superadmin"], defaultRole: "user" }),
