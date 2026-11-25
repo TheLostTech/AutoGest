@@ -4,19 +4,31 @@
 // Il file arriva nelle funzioni di Vercel grazie a outputFileTracingIncludes in next.config.ts.
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { Pool, type PoolConfig } from "pg";
+import { Client, Pool, type ClientConfig, type PoolConfig } from "pg";
 import { parse } from "pg-connection-string";
 
 export const FILE_CA = path.join(/*turbopackIgnore: true*/ process.cwd(), "src", "lib", "db", "supabase-ca.crt");
 const LOCALE = new Set(["localhost", "127.0.0.1", "::1"]);
 // Parametri dell'indirizzo che pg userebbe al posto di `ssl` qui sotto (sslmode=no-verify spegne la verifica)
 const PARAMETRO_SSL = /^(ssl.*|uselibpqcompat)$/i;
-// Un database che non risponde non deve tenere ferma una richiesta: 5 secondi per avere una connessione.
+// Un database che non risponde non deve tenere ferma una richiesta: 5 secondi per aprire una connessione (TCP, TLS,
+// accesso), 30 per aspettarne una libera nel pool. Sono due limiti diversi perché in pg-pool connectionTimeoutMillis
+// vale anche per l'attesa in coda: a 5 secondi una raffica di salvataggi sulla stessa azienda (in fila sulla riga
+// bloccata, 3 connessioni per istanza) fallirebbe pur con il database sano. 30 secondi stanno sopra i 15 del limite
+// per istruzione, quindi una connessione occupata si libera sempre prima.
 // I limiti dentro il database (istruzione e transazione lasciata aperta: 15 secondi) non si passano qui come
 // parametri d'avvio (options / statement_timeout di pg): con il pooler di Supabase in modalità transazione la
 // connessione al server è condivisa tra i client e i parametri d'avvio del singolo client non valgono. Si mettono
 // con set_config(..., true), cioè SET LOCAL, all'inizio di ogni transazione del deposito (deposito/supabase.ts).
 export const ATTESA_CONNESSIONE_MS = 5000;
+export const ATTESA_POOL_MS = 30_000;
+
+/** Il client del pool: stesse opzioni, ma 5 secondi per collegarsi (il pool gli passerebbe i suoi 30). */
+export class ClientConAttesa extends Client {
+  constructor(c?: string | ClientConfig) {
+    super({ ...(typeof c === "string" ? { connectionString: c } : c), connectionTimeoutMillis: ATTESA_CONNESSIONE_MS });
+  }
+}
 
 export function opzioniPool(url: string, fileCa: string = FILE_CA): PoolConfig {
   let u: URL;
@@ -32,14 +44,14 @@ export function opzioniPool(url: string, fileCa: string = FILE_CA): PoolConfig {
   const connectionString = tolti.length ? u.toString() : url;
   // Locale o no si decide sull'host che pg userà davvero: lo legge con questo stesso parse, e un ?host= nell'indirizzo
   // vince sul nome dopo la @ (postgresql://localhost/db?host=remoto va su remoto, quindi con il TLS)
-  if (LOCALE.has(parse(connectionString).host ?? "")) return { connectionString, max: 3, connectionTimeoutMillis: ATTESA_CONNESSIONE_MS, ssl: false };
+  if (LOCALE.has(parse(connectionString).host ?? "")) return { connectionString, max: 3, Client: ClientConAttesa, connectionTimeoutMillis: ATTESA_POOL_MS, ssl: false };
   let ca: string;
   try {
     ca = readFileSync(fileCa, "utf8");
   } catch {
     throw new Error("Certificato CA di Supabase mancante: src/lib/db/supabase-ca.crt");
   }
-  return { connectionString, max: 3, connectionTimeoutMillis: ATTESA_CONNESSIONE_MS, ssl: { ca } };
+  return { connectionString, max: 3, Client: ClientConAttesa, connectionTimeoutMillis: ATTESA_POOL_MS, ssl: { ca } };
 }
 
 // Un solo pool per processo, sulla globalThis: le route di Next possono avere ognuna la propria copia del modulo.

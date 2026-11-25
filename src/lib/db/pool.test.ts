@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { opzioniPool } from "./pool.ts";
+import { ClientConAttesa, opzioniPool } from "./pool.ts";
 
 const REMOTO = "postgresql://postgres.abc:segreta@aws-0-eu-central-1.pooler.supabase.com:6543/postgres";
 const caFinto = () => {
@@ -19,7 +19,6 @@ test("localhost, 127.0.0.1 e ::1: niente TLS, al massimo 3 connessioni", () => {
     const o = opzioniPool(url, "/non/esiste.crt");
     assert.equal(o.ssl, false);
     assert.equal(o.max, 3);
-    assert.equal(o.connectionTimeoutMillis, 5000);
     assert.equal(o.connectionString, url);
   }
 });
@@ -28,7 +27,6 @@ test("database remoto: TLS con il certificato di Supabase, verifica mai spenta",
   const f = caFinto();
   const o = opzioniPool(REMOTO, f);
   assert.equal(o.max, 3);
-  assert.equal(o.connectionTimeoutMillis, 5000);
   assert.ok(o.ssl && typeof o.ssl === "object");
   assert.match(String(o.ssl.ca), /BEGIN CERTIFICATE/);
   assert.notEqual(o.ssl.rejectUnauthorized, false);
@@ -68,11 +66,24 @@ test("socket o host vuoto: non è localhost, TLS richiesto", () => {
   assert.throws(() => opzioniPool("postgresql://u:p@localhost/db?host=/var/run/postgresql", "/non/esiste.crt"), /Certificato CA/);
 });
 
-test("niente parametri d'avvio per i tempi (il pooler in modalità transazione non li applica): stanno nelle transazioni", () => {
+test("tempi: 5 secondi per aprire una connessione, 30 per aspettarne una libera; niente parametri d'avvio", () => {
   for (const o of [opzioniPool(REMOTO, caFinto()), opzioniPool("postgresql://u:p@localhost/piazzale", "/non/esiste.crt")]) {
-    assert.equal(o.connectionTimeoutMillis, 5000);
+    // In pg-pool connectionTimeoutMillis è anche l'attesa in coda: 30 secondi, sopra i 15 del limite per istruzione
+    assert.equal(o.connectionTimeoutMillis, 30_000);
+    assert.equal(o.Client, ClientConAttesa);
+    // Il pooler di Supabase in modalità transazione non applica i parametri d'avvio: i limiti stanno nelle transazioni
     assert.equal(o.options, undefined);
     assert.equal(o.statement_timeout, undefined);
     assert.equal(o.idle_in_transaction_session_timeout, undefined);
   }
+});
+
+test("il client del pool si collega con 5 secondi di limite, qualunque cosa gli passi il pool", () => {
+  const c = new ClientConAttesa({ ...opzioniPool("postgresql://u:p@localhost/piazzale", "/non/esiste.crt") });
+  assert.equal((c as unknown as { _connectionTimeoutMillis: number })._connectionTimeoutMillis, 5000);
+  assert.equal(c.host, "localhost");
+  assert.equal(c.database, "piazzale");
+  const d = new ClientConAttesa("postgresql://u:p@localhost:5433/altro");
+  assert.equal((d as unknown as { _connectionTimeoutMillis: number })._connectionTimeoutMillis, 5000);
+  assert.equal(d.port, 5433);
 });
