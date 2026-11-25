@@ -41,8 +41,14 @@ export const kgText = (n: number) => n.toLocaleString("it-IT", { useGrouping: fa
 
 export const isDraft = (m: WasteMove) => m.numero === undefined;
 
+// Dati salvati prima del 25/11/2026: la causale «ricevuto da terzi» era scritta "*T", il RENTRI vuole "T*".
+// Si converte alla lettura (dal dispositivo e dal server), senza cambiare la versione dell'archivio.
+export function normalizzaMovimenti<T extends { causale?: string }>(moves: T[]): T[] {
+  return moves.some((m) => m.causale === "*T") ? moves.map((m) => (m.causale === "*T" ? { ...m, causale: "T*" } : m)) : moves;
+}
+
 export const CAUSALE_LABEL: Record<NonNullable<WasteMove["causale"]>, string> = {
-  "*T": "ricevuto da terzi",
+  "T*": "ricevuto da terzi",
   NP: "nuovo produttore",
   I: "scarico interno",
   aT: "a terzi",
@@ -61,7 +67,7 @@ export function missingFields(m: WasteMove, all?: WasteMove[]): MissingField[] {
     const c = all.find((x) => x.id === m.caricoRif);
     if (c && isDraft(c)) out.push("carico");
   }
-  if (m.causale === "*T" && m.vfu) {
+  if (m.causale === "T*" && m.vfu) {
     if (!m.produttore?.nome?.trim()) out.push("produttore");
     if (!m.produttore?.cf?.trim()) out.push("cf-produttore");
     if (!m.certificato?.numero?.trim()) out.push("certificato");
@@ -85,7 +91,7 @@ export function workingDaysAfter(iso: string, n: number): string {
   return d.toISOString();
 }
 
-export type IssueCode = "bozza" | "esito-mancante" | "respinto" | "kg-diversi" | "fir-formato" | "oltre-limite" | "peso-diverso" | "diff-pesata";
+export type IssueCode = "bozza" | "hp-mancanti" | "esito-mancante" | "respinto" | "kg-diversi" | "fir-formato" | "oltre-limite" | "peso-diverso" | "diff-pesata";
 export interface Issue {
   code: IssueCode;
   text: string;
@@ -110,7 +116,12 @@ export function moveIssues(m: WasteMove, fir?: Fir, corrected = false, all?: Was
   }
   const out: Issue[] = [];
   if (m.verificato) return [];
-  if (m.causale === "*T" && m.pesoPesa && m.kgLibretto && Math.abs(m.kg - m.kgLibretto) / m.kgLibretto > 0.25)
+  // Codice pericoloso senza classi di pericolo: nel formulario RENTRI sono obbligatorie (API formulari, campo
+  // caratteristiche_pericolo «richiesta se e solo se il Codice EER si riferisce ad un rifiuto pericoloso»).
+  // Nel registro sono facoltative: si avvisa solo finché il mese non è trasmesso; una rettifica le completa.
+  if (m.causale !== "ANN" && m.rentri !== "trasmesso" && !corrected && m.eer.trim().endsWith("*") && !m.hp?.length)
+    out.push({ code: "hp-mancanti", text: "Codice pericoloso senza classi di pericolo (HP): una rettifica le completa", blocking: false });
+  if (m.causale === "T*" && m.pesoPesa && m.kgLibretto && Math.abs(m.kg - m.kgLibretto) / m.kgLibretto > 0.25)
     out.push({ code: "peso-diverso", text: `Pesa ${kgText(m.kg)} kg, libretto ${kgText(m.kgLibretto)} kg: controlla`, blocking: false });
   if (m.causale === "DIFF" && !corrected)
     out.push({ code: "diff-pesata", text: `Differenza di pesata (${m.kind === "carico" ? "+" : "−"}${kgText(m.kg)} kg): verificala`, blocking: false });
@@ -283,3 +294,66 @@ export function bonificaStato(intakeIso: string, now: Date = new Date()): Bonifi
 // Lo stesso formulario (stesso numero, spazi e maiuscole a parte) non si registra due volte
 const firKey = (n: string) => n.replace(/\s+/g, "").toUpperCase();
 export const firNumberTaken = (firs: Fir[], numero: string) => firs.some((f) => f.numero && firKey(f.numero) === firKey(numero));
+
+// ——— MUD, Comunicazione veicoli fuori uso, Scheda AUT ———
+// Il 16 01 04 ricevuto nell'anno va diviso tra veicoli prodotti prima e dopo il 1° gennaio 1980, dove «come anno di
+// produzione si intende l'anno di immatricolazione» (DPCM MUD 30/01/2026, Allegato 1, §7.2.1.1).
+// Si contano i carichi «ricevuto da terzi» dei veicoli fuori uso, numerati, con rettifiche e annullamenti applicati.
+export interface MudVeicoli {
+  anno: number;
+  veicoli: number;
+  totaleKg: number;
+  prima1980Kg: number;
+  dal1980Kg: number;
+  senzaAnno: number; // veicoli senza anno di immatricolazione: da completare prima della dichiarazione
+}
+
+export function mudVeicoliRicevuti(moves: WasteMove[], annoDi: (vehicleId: string) => number | undefined, anno: number): MudVeicoli {
+  const annullate = new Set(moves.filter((m) => m.causale === "ANN" && !isDraft(m) && m.annullaDi).map((m) => m.annullaDi!));
+  const out: MudVeicoli = { anno, veicoli: 0, totaleKg: 0, prima1980Kg: 0, dal1980Kg: 0, senzaAnno: 0 };
+  for (const m of moves) {
+    if (m.causale !== "T*" || !m.vfu || isDraft(m) || annullate.has(m.id)) continue;
+    if (new Date(m.at).getFullYear() !== anno) continue;
+    const kg = currentKg(moves, m.id) ?? m.kg;
+    const imm = annoDi(m.origin);
+    out.veicoli++;
+    out.totaleKg += kg;
+    if (!imm) out.senzaAnno++;
+    else if (imm < 1980) out.prima1980Kg += kg;
+    else out.dal1980Kg += kg;
+  }
+  const r = (n: number) => Math.round(n * 10) / 10;
+  return { ...out, totaleKg: r(out.totaleKg), prima1980Kg: r(out.prima1980Kg), dal1980Kg: r(out.dal1980Kg) };
+}
+
+// ——— Riga del registro come la vuole il RENTRI ———
+// Rettifica e annullamento non sono causali: la rettifica ripete la causale della registrazione che corregge e ne
+// indica il numero (numero_registrazione_rettifica), l'annullamento indica il numero di quella annullata
+// (numero_registrazione_annullata). Manuale RENTRI del registro, §3.2.5–3.2.6.
+// La nostra «differenza di pesata» in più è un carico NP (rifiuto prodotto dal trattamento); quella in meno non ha
+// una causale RENTRI: la consulente la registra come rettifica dei carichi stimati.
+export interface RigaRentri {
+  causale: string;
+  rettificaDi?: string; // numero/anno della registrazione rettificata
+  annullaDi?: string; // numero/anno della registrazione annullata
+  provenienza: "U" | "S";
+  nota?: string;
+}
+
+const numeroAnno = (m?: WasteMove) => (m?.numero !== undefined ? `${m.numero}/${new Date(m.registeredAt ?? m.at).getFullYear()}` : undefined);
+
+export function rigaRentri(m: WasteMove, all: WasteMove[]): RigaRentri {
+  const provenienza = m.provenienza ?? "S";
+  const causaleDi = (x: WasteMove | undefined, depth = 0): string => {
+    if (!x || depth > 5) return "";
+    if (x.causale === "RETT") return causaleDi(all.find((y) => y.id === x.rettificaDi), depth + 1);
+    if (x.causale === "DIFF") return x.kind === "carico" ? "NP" : "";
+    if (x.causale === "ANN") return "";
+    return x.causale ?? "";
+  };
+  if (m.causale === "ANN") return { causale: "", annullaDi: numeroAnno(all.find((y) => y.id === m.annullaDi)), provenienza };
+  if (m.causale === "RETT") return { causale: causaleDi(m), rettificaDi: numeroAnno(all.find((y) => y.id === m.rettificaDi)), provenienza };
+  if (m.causale === "DIFF" && m.kind === "scarico")
+    return { causale: "", provenienza, nota: "Differenza di pesata in meno: senza causale RENTRI, va registrata come rettifica dei carichi stimati" };
+  return { causale: causaleDi(m), provenienza };
+}

@@ -23,6 +23,8 @@ export default function BonificaVeicolo() {
 
   if (!v) return <Empty title={`Veicolo ${id} non trovato`} />;
   const done = !bonificaRegistrabile(v.bonifica);
+  // Data che decide il codice delle batterie di trazione: quella della bonifica registrata, altrimenti oggi
+  const oggi = done && v.bonifica ? v.bonifica.at : new Date().toISOString();
   const removedKg = items.reduce((a, i) => a + itemKg(i), 0);
   const w = Number(weight) || 0;
   const residual = Math.max(0, Math.round(w - removedKg));
@@ -91,7 +93,8 @@ export default function BonificaVeicolo() {
       </label>
 
       <ul className="divide-y divide-hair-soft rounded-md border border-hair bg-label">
-        {BONIFICA.map((b) => {
+        {/* Solo le voci di questo veicolo (il serbatoio del gas per GPL e metano, la batteria di trazione per elettriche e ibride) */}
+        {BONIFICA.filter((b) => items.some((x) => x.key === b.key)).map((b) => {
           const it = items.find((x) => x.key === b.key)!;
           return (
             <li key={b.key} className={`flex items-center gap-3 px-3 py-3 sm:px-4 ${it.done ? "" : "opacity-60"}`}>
@@ -105,7 +108,7 @@ export default function BonificaVeicolo() {
               />
               <span className="min-w-0 flex-1">
                 <span className="block font-semibold leading-snug">{b.label}</span>
-                <span className="code block text-[13px] text-ink-3">EER {b.eer(v)} · ~{fmtKg(itemKg(it))} stimati</span>
+                <span className="code block text-[13px] text-ink-3">EER {b.eer(v, oggi)} · ~{fmtKg(itemKg(it))} stimati</span>
               </span>
               <span className="flex shrink-0 items-center gap-1.5">
                 <input

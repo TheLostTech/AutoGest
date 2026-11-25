@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { CircleCheck, Download, Send } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { EER, eerByCode, fmtKg } from "@/lib/ambiente";
-import { CAUSALE_LABEL, canTransmit, correctedIds, duplicateIds, isDraft, kgText, MISSING_TEXT, missingFields, monthStock, moveIssues, parseKg, periodsOf, type Period } from "@/lib/periodo";
+import { CAUSALE_LABEL, canTransmit, correctedIds, duplicateIds, isDraft, kgText, MISSING_TEXT, missingFields, monthStock, moveIssues, parseKg, periodsOf, rigaRentri, type Period } from "@/lib/periodo";
 import { dateIt } from "@/lib/logic";
 import { Button, Field, Notice, PageTitle, Panel } from "@/components/ui";
 import type { Fir, Vehicle, WasteMove } from "@/lib/types";
@@ -69,7 +69,7 @@ function Periodo() {
           const r = transmitPeriod(p.key);
           setMsg(r.ok ? { tone: "ok", text: `Periodo di ${p.label} trasmesso. Ricevuta ${r.value} (trasmissione simulata).` } : { tone: "danger", text: r.error });
         }}
-        onDownload={() => downloadCsv(p, firById)}
+        onDownload={() => downloadCsv(p, firById, wasteMoves)}
       />
 
       <Panel title={`Totali per codice · ${p.label}`} className="mt-6">
@@ -223,6 +223,7 @@ function Riga({
       </div>
       <p className="mt-0.5">
         <span className="code font-semibold">{m.eer}</span> <span className="text-ink-2">{e?.short}</span>
+        <span className="text-sm text-ink-3"> · provenienza {m.provenienza ?? "S"}</span>
         {m.statoFisico && <span className="text-sm text-ink-3"> · stato {m.statoFisico}</span>}
         {!!m.hp?.length && <span className="text-sm text-ink-3"> · {m.hp.join(", ")}</span>}
         {m.operazione && <span className="text-sm text-ink-3"> · {m.operazione}</span>}
@@ -230,7 +231,7 @@ function Riga({
       <p className="text-sm text-ink-2">
         {m.vfu && <>Veicolo fuori uso · </>}
         {m.stimato && <>peso stimato per modello · </>}
-        {m.causale === "*T" && m.kgLibretto && <>libretto {fmtKg(m.kgLibretto)} · </>}
+        {m.causale === "T*" && m.kgLibretto && <>libretto {fmtKg(m.kgLibretto)} · </>}
         {m.verificato && <>controllata da {m.verificato.by} · </>}
         {m.produttore && <>{m.produttore.nome}{m.produttore.cf ? <> · <span className="code">{m.produttore.cf}</span></> : ""} · </>}
         {m.certificato && <>certificato <span className="code">{m.certificato.numero}</span> del {dateIt(m.certificato.data)} · </>}
@@ -360,8 +361,12 @@ function Riga({
 }
 
 // Riepilogo del periodo (la strada di riserva: la consulente lo può caricare con un suo strumento)
-function downloadCsv(p: Period, firById: Map<string, Fir>) {
-  const cols = ["numero", "data registrazione", "data operazione", "causale", "carico/scarico", "codice EER", "stato fisico", "classi di pericolo", "kg", "attivita", "veicolo fuori uso", "certificato rottamazione", "data certificato", "produttore", "codice fiscale", "formulario", "destinatario", "rettifica di", "annullamento di", "motivo", "RENTRI"];
+// Colonne e codici come nel registro RENTRI: causale (T*, NP, I, aT), provenienza (U/S), classi HP01–HP15,
+// rettifica e annullamento con il numero/anno della registrazione richiamata.
+function downloadCsv(p: Period, firById: Map<string, Fir>, all: WasteMove[]) {
+  const cols = ["numero", "data registrazione", "data operazione", "causale RENTRI", "carico/scarico", "codice EER", "provenienza", "stato fisico", "classi di pericolo", "kg", "attivita", "veicolo fuori uso", "certificato rottamazione", "data certificato", "produttore", "codice fiscale", "formulario", "destinatario", "rettifica reg. nr.", "annulla reg. nr.", "motivo", "nota", "RENTRI"];
+  // Dati salvati con «HP3»: il RENTRI vuole HP03
+  const hpRentri = (hp?: string[]) => hp?.map((h) => h.replace(/^HP(\d)$/, "HP0$1")).join(" ");
   // Un testo che inizia con = + - @ verrebbe eseguito come formula da Excel: si neutralizza con un apostrofo
   const cell = (v: unknown) => {
     const t = String(v ?? "");
@@ -369,15 +374,17 @@ function downloadCsv(p: Period, firById: Map<string, Fir>) {
   };
   const lines = p.moves.map((m) => {
     const f = m.fir ? firById.get(m.fir) : undefined;
+    const r = rigaRentri(m, all);
     return [
       m.numero ?? "bozza",
       m.registeredAt?.slice(0, 10),
       m.at.slice(0, 10),
-      m.causale,
+      r.causale,
       m.kind,
       m.eer,
+      r.provenienza,
       m.statoFisico,
-      m.hp?.join(" "),
+      hpRentri(m.hp),
       String(m.kg).replace(".", ","),
       m.operazione,
       m.vfu ? "si" : "",
@@ -387,9 +394,10 @@ function downloadCsv(p: Period, firById: Map<string, Fir>) {
       m.produttore?.cf,
       f?.numero,
       f?.destinatario,
-      m.rettificaDi,
-      m.annullaDi,
+      r.rettificaDi,
+      r.annullaDi,
       m.motivo,
+      r.nota,
       m.rentri,
     ].map(cell).join(";");
   });

@@ -78,11 +78,14 @@ export interface Bonifica {
   semplice?: boolean; // segnata come fatta senza il modulo Ambiente: nessun materiale, nessun movimento nel registro
 }
 
-// Causali del registro per un impianto (manuale RENTRI §3.3): *T carico ricevuto da terzi, NP carico nuovo
-// produttore (rifiuti nati dal trattamento), I scarico interno, aT scarico a terzi. RETT e ANN sono le
-// registrazioni di rettifica e annullamento: una registrazione numerata non si modifica mai.
-export type Causale = "*T" | "NP" | "I" | "aT" | "RETT" | "ANN" | "DIFF"; // DIFF: differenza tra giacenza stimata e pesata all'uscita
+// Causali del registro per un impianto (manuale RENTRI §3.3, codici come nelle API RENTRI): T* carico ricevuto
+// da terzi, NP carico nuovo produttore (rifiuti nati dal trattamento), I scarico interno, aT scarico a terzi.
+// RETT, ANN e DIFF sono nostre: per il RENTRI rettifica e annullamento non sono causali ma registrazioni che
+// richiamano il numero di quella da correggere (vedi rentriRiga in periodo.ts). Una registrazione numerata non si
+// modifica mai. I dati salvati prima del 25/11/2026 hanno "*T": li converte normalizzaMovimenti.
+export type Causale = "T*" | "NP" | "I" | "aT" | "RETT" | "ANN" | "DIFF"; // DIFF: differenza tra giacenza stimata e pesata all'uscita
 export type StatoFisico = "S" | "SP" | "L" | "FP" | "VS";
+export type Provenienza = "U" | "S"; // rifiuto urbano o speciale (obbligatoria nel registro e nel formulario RENTRI)
 
 export interface WasteMove {
   id: string; // M-000001: identificativo interno
@@ -102,6 +105,7 @@ export interface WasteMove {
   causale?: Causale;
   statoFisico?: StatoFisico;
   hp?: string[]; // classi di pericolo
+  provenienza?: Provenienza; // assente nei dati salvati prima del 25/11/2026: vale S
   operazione?: string; // attività a destinazione, es. R13
   vfu?: boolean; // veicolo fuori uso (impianti del D.Lgs. 209/2003)
   certificato?: { numero: string; data: string }; // certificato di rottamazione (RVFU)

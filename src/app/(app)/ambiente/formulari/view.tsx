@@ -5,7 +5,7 @@ import { Suspense, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Camera, FilePlus2, X } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { eerByCode, fmtKg, stockByEer } from "@/lib/ambiente";
+import { datiRifiuto, eerByCode, fmtKg, pericoloso, stockByEer } from "@/lib/ambiente";
 import { firNumberLooksValid, kgText, parseKg } from "@/lib/periodo";
 import { savePhoto } from "@/lib/services";
 import { dateIt } from "@/lib/logic";
@@ -202,7 +202,7 @@ function NuovoFormulario({
         <Field label="Data di emissione">
           <input type="date" className="field" value={emesso} onChange={(e) => setEmesso(e.target.value)} />
         </Field>
-        <Field label="Rifiuto">
+        <Field label="Rifiuto" hint={eer ? datiDaControllare(eer) : undefined}>
           <select className="field" value={eer} onChange={(e) => setEer(e.target.value)}>
             {inStock.map((s) => <option key={s.code} value={s.code}>{s.code} · {s.short} · {fmtKg(s.kg)} in giacenza</option>)}
           </select>
@@ -377,4 +377,11 @@ function FotoFormulario({ foto, onChange, compact = false }: { foto: string[]; o
       />
     </div>
   );
+}
+
+// Quello che il formulario deve riportare per il codice scelto: si confronta con la copia ricevuta
+function datiDaControllare(eer: string) {
+  const d = datiRifiuto(eer);
+  const hp = pericoloso(eer) ? (d.hp.length ? `classi di pericolo ${d.hp.join(", ")}` : "classi di pericolo da indicare") : "non pericoloso";
+  return `Sul formulario: provenienza speciale (S) · stato fisico ${d.statoFisico} · ${hp}`;
 }

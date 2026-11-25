@@ -11,7 +11,7 @@ export const bonificaRegistrabile = (b?: Bonifica) => !b || !!b.semplice;
  * il carico ancora in bozza manca la pesata (o un altro dato del registro).
  */
 export function statoDatiRegistro(v: Vehicle, moves: WasteMove[]): "completo" | "manca-pesata" | "da-compilare" {
-  const carico = moves.find((m) => m.origin === v.id && m.causale === "*T");
+  const carico = moves.find((m) => m.origin === v.id && m.causale === "T*");
   if (carico?.numero !== undefined) return "completo";
   const scritti = !!(v.conferente?.nome && v.conferente.cf && v.dossier.number && v.presaInCarico);
   return carico && scritti ? "manca-pesata" : "da-compilare";
