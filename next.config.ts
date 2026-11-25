@@ -1,8 +1,13 @@
 import type { NextConfig } from "next";
 import { withBotId } from "botid/next/config";
 
+// Su Vercel (VERCEL=1 anche durante la build): solo lì c'è BotID, il controllo dei robot sulla registrazione
+const suVercel = process.env.VERCEL === "1";
+
 const nextConfig: NextConfig = {
   devIndicators: false,
+  // Costante scritta nel codice al momento della build: instrumentation-client.ts avvia BotID solo su Vercel
+  env: { PIAZZALE_BOTID: suVercel ? "1" : "0" },
   // Apertura dal telefono sulla rete locale (es. http://192.168.1.100:3210):
   // senza questa voce Next blocca il canale di sviluppo e la pagina resta in caricamento.
   allowedDevOrigins: ["192.168.*.*", "10.*.*.*", "*.local"],
@@ -21,5 +26,5 @@ const nextConfig: NextConfig = {
   },
 };
 
-// BotID di Vercel (controllo dei robot sulla registrazione): aggiunge i percorsi che girano la verifica a Vercel
-export default withBotId(nextConfig);
+// BotID di Vercel: aggiunge i percorsi che girano la verifica a Vercel. Fuori da Vercel niente rewrite verso api.vercel.com
+export default suVercel ? withBotId(nextConfig) : nextConfig;

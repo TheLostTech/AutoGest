@@ -67,10 +67,10 @@ test("validaRegistrazione: telefono facoltativo, vuoto o assente diventa null", 
   assert.ok("ok" in r && r.ok.telefono === "0471 123456");
 });
 
-test("validaRegistrazione: telefono solo cifre, spazi e +, da 6 a 20 caratteri", () => {
+test("validaRegistrazione: telefono solo cifre, spazi e +, da 6 a 20 caratteri, almeno 6 cifre", () => {
   const msg = "Scrivi un numero di telefono valido o lascia vuoto.";
-  for (const telefono of ["abc", "333-1234567", "12345", "1".repeat(21), 333123456, "+39 (333) 12"]) assert.equal(errore({ ...buono, telefono }), msg, String(telefono));
-  for (const telefono of ["123456", "1".repeat(20), "+393331234567"]) assert.ok("ok" in validaRegistrazione({ ...buono, telefono }), telefono);
+  for (const telefono of ["abc", "333-1234567", "12345", "1".repeat(21), 333123456, "+39 (333) 12", "++++++", "+ 1 2 3", "12 34 5"]) assert.equal(errore({ ...buono, telefono }), msg, String(telefono));
+  for (const telefono of ["123456", "1".repeat(20), "+393331234567", "+1 23 456"]) assert.ok("ok" in validaRegistrazione({ ...buono, telefono }), telefono);
 });
 
 test("validaRegistrazione: consenso commerciale facoltativo, solo true lo dà", () => {
