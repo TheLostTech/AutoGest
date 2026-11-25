@@ -20,7 +20,7 @@ import { buildSeed } from "@/lib/seed";
 import { DATA_DIR, cartellaAzienda } from "@/lib/server-data";
 import { WAREHOUSES } from "@/lib/warehouse";
 import { creaAzienda, creaMembro } from "@/lib/piattaforma/crea";
-import { segnaPiattaformaNonPronta } from "./pronta";
+import { eUltimoAvvio, nuovoAvvio, segnaPiattaformaNonPronta } from "./pronta";
 import { UTENTI_DEMO } from "./demo-utenti";
 
 const eDemo = (metadata: unknown): boolean => {
@@ -202,6 +202,7 @@ async function ricifraDueFattori(c: AuthContext) {
 
 /** true se l'avvio è riuscito. Non lancia mai: su errore la piattaforma resta "non pronta" (pronta.ts la riprova). */
 export async function avviaPiattaforma(): Promise<boolean> {
+  const mio = nuovoAvvio();
   try {
     const { runMigrations } = await getMigrations(auth.options);
     await runMigrations();
@@ -220,7 +221,8 @@ export async function avviaPiattaforma(): Promise<boolean> {
     segnaPiattaformaNonPronta(false);
     return true;
   } catch (e) {
-    segnaPiattaformaNonPronta(true);
+    // Un avvio appeso che fallisce quando ne è già partito un altro non decide più lo stato: lo decide l'ultimo
+    if (eUltimoAvvio(mio)) segnaPiattaformaNonPronta(true);
     console.error("[avvio] avvio della piattaforma non riuscito: le API rispondono 503 e l'avvio si riprova (al massimo ogni 30 secondi).", e);
     return false;
   }

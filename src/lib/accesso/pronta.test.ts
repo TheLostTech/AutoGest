@@ -2,7 +2,7 @@
 // Orologio finto e avvio finto. Si eseguono con: npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { RIPROVA_AVVIO_MS, riprovaAvvio, type StatoAvvio } from "./pronta.ts";
+import { RIPROVA_AVVIO_MS, TEMPO_MASSIMO_AVVIO_MS, riprovaAvvio, type StatoAvvio } from "./pronta.ts";
 
 const nonPronta = (ultimoTentativo: number): StatoAvvio => ({ nonPronta: true, ultimoTentativo, inCorso: null });
 const orologio = (inizio: number) => {
@@ -104,4 +104,58 @@ test("avvio che lancia (subito o dopo): non pronta, nessun tentativo rimasto app
     c.avanti(RIPROVA_AVVIO_MS);
     assert.equal(await riprovaAvvio(s, async () => true, c.ora), true);
   }
+});
+
+// Timer finto: scatta solo quando lo dice il test
+const timerFinto = () => {
+  const attivi = new Map<number, { fn: () => void; ms: number }>();
+  let n = 0;
+  return {
+    timer: (fn: () => void, ms: number) => {
+      const id = n++;
+      attivi.set(id, { fn, ms });
+      return () => void attivi.delete(id);
+    },
+    attivi,
+    scatta: () => [...attivi.values()].forEach((t) => t.fn()),
+  };
+};
+
+test("avvio appeso: dopo 60 secondi il tentativo conta come fallito, il prossimo dopo altri 30", async () => {
+  assert.equal(TEMPO_MASSIMO_AVVIO_MS, 60_000);
+  let chiamate = 0;
+  const c = orologio(1_000_000);
+  const t = timerFinto();
+  const s = nonPronta(c.ora() - RIPROVA_AVVIO_MS);
+  const appeso = () => (chiamate++, new Promise<boolean>(() => {}));
+  const attesa = zitto(() => riprovaAvvio(s, appeso, c.ora, RIPROVA_AVVIO_MS, TEMPO_MASSIMO_AVVIO_MS, t.timer));
+  await new Promise((r) => setImmediate(r));
+  assert.equal(chiamate, 1);
+  assert.ok(s.inCorso, "il tentativo è in corso");
+  assert.deepEqual([...t.attivi.values()].map((x) => x.ms), [60_000]);
+  // Una seconda richiesta durante l'attesa aspetta lo stesso tentativo
+  const seconda = riprovaAvvio(s, appeso, c.ora, RIPROVA_AVVIO_MS, TEMPO_MASSIMO_AVVIO_MS, t.timer);
+  c.avanti(60_000);
+  t.scatta();
+  assert.equal(await attesa, false);
+  assert.equal(await seconda, false);
+  assert.equal(chiamate, 1);
+  assert.equal(s.inCorso, null);
+  assert.equal(s.nonPronta, true);
+  assert.equal(s.ultimoTentativo, c.ora());
+  // Il prossimo tentativo solo 30 secondi dopo la fine di questo
+  c.avanti(RIPROVA_AVVIO_MS - 1);
+  assert.equal(await riprovaAvvio(s, appeso, c.ora, RIPROVA_AVVIO_MS, TEMPO_MASSIMO_AVVIO_MS, t.timer), false);
+  assert.equal(chiamate, 1);
+  c.avanti(1);
+  assert.equal(await riprovaAvvio(s, async () => (chiamate++, true), c.ora, RIPROVA_AVVIO_MS, TEMPO_MASSIMO_AVVIO_MS, t.timer), true);
+  assert.equal(chiamate, 2);
+  assert.equal(s.nonPronta, false);
+});
+
+test("avvio finito in tempo: il timer si toglie", async () => {
+  const t = timerFinto();
+  const s = nonPronta(0);
+  assert.equal(await riprovaAvvio(s, async () => true, () => RIPROVA_AVVIO_MS, RIPROVA_AVVIO_MS, TEMPO_MASSIMO_AVVIO_MS, t.timer), true);
+  assert.equal(t.attivi.size, 0);
 });

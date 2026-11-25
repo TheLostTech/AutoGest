@@ -3,7 +3,34 @@
 // RLS accesa e nessuna regola, su queste e su tutte le altre tabelle di public (proteggiTabelle): dalle chiavi pubbliche
 // di Supabase (Data API) non si legge né si scrive nulla; il server entra con DATABASE_URL (proprietario delle
 // tabelle), che la RLS non ferma.
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
+
+// All'avvio un'istruzione di schema non deve restare in attesa per sempre di un lock (5 secondi) né girare all'infinito
+// (30 secondi). Con il pooler di Supabase in modalità transazione un SET di sessione non resta tra un'istruzione e
+// l'altra (la connessione al server cambia): le istruzioni girano su una sola connessione presa dal pool, dentro una
+// transazione, con SET LOCAL (vale fino al commit). Il DDL di Postgres è transazionale: se una istruzione fallisce
+// non resta nulla a metà.
+export const SQL_TEMPI_AVVIO = ["set local lock_timeout = '5s'", "set local statement_timeout = '30s'"];
+
+async function conTempiMassimi(p: Pool, corpo: (c: PoolClient) => Promise<void>): Promise<void> {
+  const c = await p.connect();
+  let rotta: Error | undefined;
+  try {
+    await c.query("begin");
+    for (const q of SQL_TEMPI_AVVIO) await c.query(q);
+    await corpo(c);
+    await c.query("commit");
+  } catch (e) {
+    try {
+      await c.query("rollback");
+    } catch (e2) {
+      rotta = e2 instanceof Error ? e2 : new Error("rollback non riuscito");
+    }
+    throw e;
+  } finally {
+    c.release(rotta);
+  }
+}
 
 export const SQL_SCHEMA: string[] = [
   "create table if not exists documento (azienda_id text not null, tipo text not null, dati jsonb, aggiornato timestamptz not null default now(), primary key (azienda_id, tipo));",
@@ -13,7 +40,9 @@ export const SQL_SCHEMA: string[] = [
 ];
 
 export async function preparaSchema(p: Pool): Promise<void> {
-  for (const q of SQL_SCHEMA) await p.query(q);
+  await conTempiMassimi(p, async (c) => {
+    for (const q of SQL_SCHEMA) await c.query(q);
+  });
 }
 
 // Ruoli delle chiavi pubbliche di Supabase: ci sono su Supabase, non su un Postgres qualsiasi
@@ -57,6 +86,8 @@ order by c.relname`;
 // Si esegue a ogni avvio dopo le migrazioni, così anche le tabelle nuove restano chiuse. Ma "enable row level security"
 // prende un lock esclusivo sulla tabella: si esegue solo dove manca qualcosa, e a regime l'avvio fa una lettura e basta.
 export async function proteggiTabelle(p: Pool): Promise<void> {
-  const r = await p.query<StatoTabella>(SQL_STATO_TABELLE);
-  for (const q of sqlProtezioneMancante(r.rows)) await p.query(q);
+  await conTempiMassimi(p, async (c) => {
+    const r = await c.query<StatoTabella>(SQL_STATO_TABELLE);
+    for (const q of sqlProtezioneMancante(r.rows)) await c.query(q);
+  });
 }

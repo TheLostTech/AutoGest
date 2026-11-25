@@ -3,7 +3,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Pool } from "pg";
-import { SQL_SCHEMA, SQL_STATO_TABELLE, preparaSchema, proteggiTabelle, sqlProtezione, sqlProtezioneMancante } from "./schema.ts";
+import { SQL_SCHEMA, SQL_STATO_TABELLE, SQL_TEMPI_AVVIO, preparaSchema, proteggiTabelle, sqlProtezione, sqlProtezioneMancante } from "./schema.ts";
+
+// Un pool finto: connect() dà un client che registra tutto in `log`; `query` decide le risposte
+const poolFinto = (query: (q: string) => Promise<{ rows: unknown[] }>, log: string[] = [], rilasci: unknown[] = []) =>
+  ({
+    connect: async () => ({
+      query: async (q: string) => (log.push(q), query(q)),
+      release: (e?: Error) => void rilasci.push(e),
+    }),
+  }) as unknown as Pool;
 
 const RLS = /^alter table (\w+) enable row level security;?$/;
 
@@ -19,25 +28,41 @@ test("documento e conto_account ci sono entrambe, con la RLS accesa", () => {
   }
 });
 
-test("preparaSchema esegue le istruzioni una dopo l'altra, nell'ordine", async () => {
-  const eseguite: string[] = [];
+test("preparaSchema: una connessione, transazione con i tempi massimi (5s lock, 30s istruzione), istruzioni in ordine", async () => {
+  const log: string[] = [];
+  const rilasci: unknown[] = [];
   let inCorso = 0;
-  const finto = {
-    query: async (q: string) => {
+  const finto = poolFinto(
+    async () => {
       assert.equal(inCorso++, 0, "due istruzioni insieme");
       await new Promise((r) => setTimeout(r, 1));
-      eseguite.push(q);
       inCorso--;
       return { rows: [] };
     },
-  } as unknown as Pool;
+    log,
+    rilasci,
+  );
   await preparaSchema(finto);
-  assert.deepEqual(eseguite, SQL_SCHEMA);
+  assert.deepEqual(SQL_TEMPI_AVVIO, ["set local lock_timeout = '5s'", "set local statement_timeout = '30s'"]);
+  assert.deepEqual(log, ["begin", ...SQL_TEMPI_AVVIO, ...SQL_SCHEMA, "commit"]);
+  assert.deepEqual(rilasci, [undefined]);
 });
 
-test("un errore del database arriva a chi chiama", async () => {
-  const finto = { query: async () => { throw new Error("permesso negato"); } } as unknown as Pool;
+test("un errore del database arriva a chi chiama: rollback e connessione restituita", async () => {
+  const log: string[] = [];
+  const rilasci: unknown[] = [];
+  const finto = poolFinto(async (q) => { if (q.startsWith("create")) throw new Error("permesso negato"); return { rows: [] }; }, log, rilasci);
   await assert.rejects(preparaSchema(finto), /permesso negato/);
+  assert.equal(log.at(-1), "rollback");
+  assert.ok(!log.includes("commit"));
+  assert.deepEqual(rilasci, [undefined]);
+});
+
+test("rollback che non riesce: la connessione si butta", async () => {
+  const rilasci: unknown[] = [];
+  const finto = poolFinto(async (q) => { if (q !== "begin") throw new Error(q === "rollback" ? "rotta" : "permesso negato"); return { rows: [] }; }, [], rilasci);
+  await assert.rejects(preparaSchema(finto), /permesso negato/);
+  assert.equal((rilasci[0] as Error).message, "rotta");
 });
 
 test("sqlProtezione: RLS su ogni tabella, nomi tra virgolette (twoFactor resta twoFactor)", () => {
@@ -91,29 +116,23 @@ test("lettura dello stato: tabelle di public, RLS, permessi di tabella e colonne
   assert.match(SQL_STATO_TABELLE, /aclexplode\(att\.attacl\)/);
 });
 
-test("proteggiTabelle: una lettura, poi solo le istruzioni che mancano (a regime nessuna)", async () => {
+test("proteggiTabelle: una lettura, poi solo le istruzioni che mancano (a regime nessuna), con i tempi massimi", async () => {
   let stato = [
     { tabella: "user", rls: false, ruoli: ["anon"] },
     { tabella: "rateLimit", rls: true, ruoli: [] },
   ];
-  const eseguite: string[] = [];
-  const finto = {
-    query: async (q: string) => {
-      if (q === SQL_STATO_TABELLE) return { rows: stato };
-      eseguite.push(q);
-      return { rows: [] };
-    },
-  } as unknown as Pool;
+  const log: string[] = [];
+  const finto = poolFinto(async (q) => ({ rows: q === SQL_STATO_TABELLE ? stato : [] }), log);
   await proteggiTabelle(finto);
-  assert.deepEqual(eseguite, sqlProtezione(["user"], ["anon"]));
+  assert.deepEqual(log, ["begin", ...SQL_TEMPI_AVVIO, SQL_STATO_TABELLE, ...sqlProtezione(["user"], ["anon"]), "commit"]);
   // Secondo avvio, tutto già protetto: nessun alter, nessun revoke
-  eseguite.length = 0;
+  log.length = 0;
   stato = stato.map((t) => ({ ...t, rls: true, ruoli: [] }));
   await proteggiTabelle(finto);
-  assert.deepEqual(eseguite, []);
+  assert.deepEqual(log, ["begin", ...SQL_TEMPI_AVVIO, SQL_STATO_TABELLE, "commit"]);
 });
 
 test("proteggiTabelle: un errore del database arriva a chi chiama", async () => {
-  const finto = { query: async () => { throw new Error("permesso negato"); } } as unknown as Pool;
+  const finto = poolFinto(async (q) => { if (q === SQL_STATO_TABELLE) throw new Error("permesso negato"); return { rows: [] }; });
   await assert.rejects(proteggiTabelle(finto), /permesso negato/);
 });
