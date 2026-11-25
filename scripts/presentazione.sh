@@ -15,7 +15,7 @@ fi
 # 1. Server del gestionale
 if ! lsof -nP -iTCP:$PORT -sTCP:LISTEN >/dev/null 2>&1; then
   [[ -f .next/BUILD_ID ]] || { echo "Preparo il gestionale (1-2 minuti)…"; npx next build >/dev/null || exit 1; }
-  nohup npx next start -p $PORT > .demo-data/server.log 2>&1 &
+  PIAZZALE_SENZA_BOTID=1 nohup npx next start -p $PORT > .demo-data/server.log 2>&1 &
   for i in {1..30}; do curl -s -o /dev/null "http://localhost:$PORT" && break; sleep 1; done
 fi
 curl -s -o /dev/null "http://localhost:$PORT" || { echo "Il server non parte: guarda .demo-data/server.log"; exit 1; }

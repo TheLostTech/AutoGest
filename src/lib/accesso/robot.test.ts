@@ -7,51 +7,62 @@ const guasto = async (): Promise<{ isBot: boolean }> => {
   throw new Error("The 'x-vercel-oidc-token' header is missing from the request.");
 };
 
-// Fa girare fn con le variabili date (undefined = tolta) e con i log raccolti, poi rimette tutto com'era
-async function con<T>(env: Record<string, string | undefined>, fn: (log: string[]) => Promise<T>): Promise<T> {
-  const prima = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
-  const { info, error } = console;
+// Fa girare fn con i log raccolti, poi rimette la console com'era
+async function conLog<T>(fn: (log: string[]) => Promise<T>): Promise<T> {
+  const { info, warn, error } = console;
   const log: string[] = [];
-  console.info = (...a: unknown[]) => void log.push(a.map(String).join(" "));
-  console.error = (...a: unknown[]) => void log.push(a.map(String).join(" "));
-  const metti = (v: Record<string, string | undefined>) => {
-    for (const [k, x] of Object.entries(v)) if (x === undefined) delete process.env[k];
-    else process.env[k] = x;
-  };
-  metti(env);
+  const scrivi = (...a: unknown[]) => void log.push(a.map(String).join(" "));
+  console.info = console.warn = console.error = scrivi;
   try {
     return await fn(log);
   } finally {
-    metti(prima);
-    console.info = info;
-    console.error = error;
+    Object.assign(console, { info, warn, error });
   }
 }
 
-test("registrazioneDaRobot su Vercel: segue la risposta di BotID", async () => {
-  await con({ VERCEL: "1" }, async () => {
-    assert.equal(await registrazioneDaRobot(async () => ({ isBot: true })), true);
-    assert.equal(await registrazioneDaRobot(async () => ({ isBot: false })), false);
-  });
-});
+// Un controllo che non va mai chiamato fuori da Vercel
+function spia(isBot: boolean) {
+  const s = { chiamate: 0, controlla: async () => (s.chiamate++, { isBot }) };
+  return s;
+}
 
-test("registrazioneDaRobot su Vercel: se BotID non risponde si rifiuta, con l'errore nel log", async () => {
-  await con({ VERCEL: "1", NODE_ENV: "production" }, async (log) => {
-    assert.equal(await registrazioneDaRobot(guasto), true);
+test("su Vercel: segue la risposta di BotID; se non risponde si rifiuta, con l'errore nel log", async () => {
+  await conLog(async (log) => {
+    const env = { VERCEL: "1", NODE_ENV: "production" };
+    assert.equal(await registrazioneDaRobot(async () => ({ isBot: true }), env), true);
+    assert.equal(await registrazioneDaRobot(async () => ({ isBot: false }), env), false);
+    assert.equal(await registrazioneDaRobot(guasto, env), true);
     assert.ok(log.some((r) => r.includes("Controllo dei robot non riuscito")));
   });
 });
 
-test("registrazioneDaRobot fuori da Vercel, anche in produzione: si salta BotID con una riga nel log", async () => {
-  await con({ VERCEL: undefined, NODE_ENV: "production" }, async (log) => {
-    let chiamato = false;
-    const robot = async () => {
-      chiamato = true;
-      return { isBot: true };
-    };
-    assert.equal(await registrazioneDaRobot(robot), false);
-    assert.equal(await registrazioneDaRobot(guasto), false);
-    assert.equal(chiamato, false);
+test("fuori da Vercel, in sviluppo e nelle prove: si salta BotID con una riga nel log", async () => {
+  await conLog(async (log) => {
+    for (const NODE_ENV of ["development", "test", undefined]) {
+      const s = spia(true);
+      assert.equal(await registrazioneDaRobot(s.controlla, { NODE_ENV }), false, String(NODE_ENV));
+      assert.equal(s.chiamate, 0);
+    }
     assert.ok(log.some((r) => r.includes("saltato fuori da Vercel")));
+  });
+});
+
+test("fuori da Vercel, in produzione con PIAZZALE_SENZA_BOTID=1: si salta e il log dice che la rinuncia è attiva", async () => {
+  await conLog(async (log) => {
+    const s = spia(true);
+    assert.equal(await registrazioneDaRobot(s.controlla, { NODE_ENV: "production", PIAZZALE_SENZA_BOTID: "1" }), false);
+    assert.equal(s.chiamate, 0);
+    assert.ok(log.some((r) => r.includes("PIAZZALE_SENZA_BOTID=1")));
+  });
+});
+
+test("fuori da Vercel, in produzione senza rinuncia: si rifiuta e il log spiega perché", async () => {
+  await conLog(async (log) => {
+    for (const PIAZZALE_SENZA_BOTID of [undefined, "", "0", "true"]) {
+      const s = spia(false);
+      assert.equal(await registrazioneDaRobot(s.controlla, { NODE_ENV: "production", PIAZZALE_SENZA_BOTID }), true, String(PIAZZALE_SENZA_BOTID));
+      assert.equal(s.chiamate, 0);
+    }
+    assert.ok(log.some((r) => r.includes("serve BotID oppure la rinuncia esplicita PIAZZALE_SENZA_BOTID=1")));
   });
 });

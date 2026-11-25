@@ -62,7 +62,7 @@ if [[ -n "$(server_pid)" && "$(cat "$DATI/indirizzo" 2>/dev/null)" != "$URL" ]];
 fi
 if [[ -z "$(server_pid)" ]]; then
   echo "$URL" > "$DATI/indirizzo"
-  DATI_DIR="$DATI" DEMO_PUBBLICA=1 DEMO_UTENTI=1 INDIRIZZO_GESTIONALE="$URL" \
+  DATI_DIR="$DATI" DEMO_PUBBLICA=1 DEMO_UTENTI=1 INDIRIZZO_GESTIONALE="$URL" PIAZZALE_SENZA_BOTID=1 \
     nohup npx next start -p $PORT > "$DATI/server.log" 2>&1 &
   for i in {1..60}; do curl -s -o /dev/null "http://localhost:$PORT/scopri" && break; sleep 1; done
 fi

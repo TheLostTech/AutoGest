@@ -13,6 +13,7 @@
 | `DEMO_UTENTI` | Con `NODE_ENV=production` gli utenti demo si creano solo se vale `1`. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_LIVE` | Chiave di Stripe (di prova `sk_test_…`), segreto degli avvisi e consenso alle chiavi vere. Senza chiave Stripe è spento. Dettagli in `docs/PAGAMENTI.md`. |
 | `DEMO_PUBBLICA` | Solo per la vetrina online (Vercel): con `1` "Apri la demo" (`/demo`) entra senza credenziali nell'azienda demo come la responsabile, e chi non ha una sessione ci rientra da solo. Il login vero resta su `/accesso?manuale=1`. Va con `DEMO_UTENTI=1` e `DATI_DIR` in una cartella scrivibile (su Vercel `/tmp/...`, che si azzera da sola). Mai sul server di un'azienda. |
+| `PIAZZALE_SENZA_BOTID` | Con `1` la registrazione in produzione fuori da Vercel salta BotID (resta il limite di 3 all'ora per indirizzo); senza, fuori da Vercel in produzione ogni registrazione è rifiutata. Solo per i server sul Mac (`scripts/piazzale-test.sh`, `scripts/presentazione.sh`). |
 | `INDIRIZZO_GESTIONALE` | Indirizzo pubblico del gestionale (es. quello del tunnel): è l'unico altro sito da cui Better Auth accetta le richieste. |
 
 ## Primo avvio
