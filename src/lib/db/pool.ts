@@ -11,6 +11,12 @@ export const FILE_CA = path.join(/*turbopackIgnore: true*/ process.cwd(), "src",
 const LOCALE = new Set(["localhost", "127.0.0.1", "::1"]);
 // Parametri dell'indirizzo che pg userebbe al posto di `ssl` qui sotto (sslmode=no-verify spegne la verifica)
 const PARAMETRO_SSL = /^(ssl.*|uselibpqcompat)$/i;
+// Un database che non risponde non deve tenere ferma una richiesta: 5 secondi per avere una connessione.
+// I limiti dentro il database (istruzione e transazione lasciata aperta: 15 secondi) non si passano qui come
+// parametri d'avvio (options / statement_timeout di pg): con il pooler di Supabase in modalità transazione la
+// connessione al server è condivisa tra i client e i parametri d'avvio del singolo client non valgono. Si mettono
+// con set_config(..., true), cioè SET LOCAL, all'inizio di ogni transazione del deposito (deposito/supabase.ts).
+export const ATTESA_CONNESSIONE_MS = 5000;
 
 export function opzioniPool(url: string, fileCa: string = FILE_CA): PoolConfig {
   let u: URL;
@@ -26,14 +32,14 @@ export function opzioniPool(url: string, fileCa: string = FILE_CA): PoolConfig {
   const connectionString = tolti.length ? u.toString() : url;
   // Locale o no si decide sull'host che pg userà davvero: lo legge con questo stesso parse, e un ?host= nell'indirizzo
   // vince sul nome dopo la @ (postgresql://localhost/db?host=remoto va su remoto, quindi con il TLS)
-  if (LOCALE.has(parse(connectionString).host ?? "")) return { connectionString, max: 3, ssl: false };
+  if (LOCALE.has(parse(connectionString).host ?? "")) return { connectionString, max: 3, connectionTimeoutMillis: ATTESA_CONNESSIONE_MS, ssl: false };
   let ca: string;
   try {
     ca = readFileSync(fileCa, "utf8");
   } catch {
     throw new Error("Certificato CA di Supabase mancante: src/lib/db/supabase-ca.crt");
   }
-  return { connectionString, max: 3, ssl: { ca } };
+  return { connectionString, max: 3, connectionTimeoutMillis: ATTESA_CONNESSIONE_MS, ssl: { ca } };
 }
 
 // Un solo pool per processo, sulla globalThis: le route di Next possono avere ognuna la propria copia del modulo.

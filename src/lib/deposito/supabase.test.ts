@@ -9,7 +9,7 @@ import { Pool, type PoolClient } from "pg";
 import { opzioniPool } from "../db/pool.ts";
 import { preparaSchema } from "../db/schema.ts";
 import { provaContratto } from "./contratto.ts";
-import { creaDepositoPostgres, creaDepositoSupabase, tipoContenuto, type SpazioFile } from "./supabase.ts";
+import { SQL_TEMPI, creaDepositoPostgres, creaDepositoSupabase, json, tipoContenuto, type SpazioFile } from "./supabase.ts";
 import type { Deposito } from "./tipi.ts";
 
 // Il deposito vero sotto id azienda e chiavi con un suffisso casuale: le prove non toccano mai dati già presenti
@@ -114,17 +114,18 @@ const nessunFile: SpazioFile = {
   leggi: async () => assert.fail("nessun file"),
   togliSotto: async () => assert.fail("nessun file"),
 };
-const passi = (c: Chiamata[]) => c.map((x) => x.q.split(" ").slice(0, 2).join(" "));
+// I limiti di tempo della transazione (SQL_TEMPI) compaiono come "tempi"
+const passi = (c: Chiamata[]) => c.map((x) => (x.q === SQL_TEMPI ? "tempi" : x.q.split(" ").slice(0, 2).join(" ")));
 
 test("aggiornaDocumento: begin, riga se manca, lettura bloccata, update, commit, connessione resa", async () => {
   const f = finto((q) => (q.startsWith("select") ? [{ dati: { n: 1 } }] : []));
   const d = creaDepositoPostgres(f.pool, nessunFile);
   const r = await d.aggiornaDocumento<{ n: number }, string>("az-1", "richieste", (p) => ({ dati: { n: p!.n + 1 }, risultato: "ok" }));
   assert.equal(r, "ok");
-  assert.deepEqual(passi(f.chiamate), ["begin", "insert into", "select dati", "update documento", "commit"]);
-  assert.match(f.chiamate[1].q, /on conflict do nothing/);
-  assert.match(f.chiamate[2].q, /for update$/);
-  assert.deepEqual(f.chiamate[3].v, ["az-1", "richieste", '{"n":2}']);
+  assert.deepEqual(passi(f.chiamate), ["begin", "tempi", "insert into", "select dati", "update documento", "commit"]);
+  assert.match(f.chiamate[2].q, /on conflict do nothing/);
+  assert.match(f.chiamate[3].q, /for update$/);
+  assert.deepEqual(f.chiamate[4].v, ["az-1", "richieste", '{"n":2}']);
   assert.deepEqual(f.rilasci, [undefined]);
 });
 
@@ -132,14 +133,14 @@ test("aggiornaDocumento: un elenco si salva come JSON, non come array di Postgre
   const f = finto();
   const d = creaDepositoPostgres(f.pool, nessunFile);
   await d.aggiornaDocumento("az-1", "richieste", () => ({ dati: [{ a: 1 }], risultato: 0 }));
-  assert.equal(f.chiamate[3].v![2], '[{"a":1}]');
+  assert.equal(f.chiamate[4].v![2], '[{"a":1}]');
 });
 
 test("aggiornaDocumento: nonScrivere annulla la transazione (la riga vuota non resta)", async () => {
   const f = finto();
   const d = creaDepositoPostgres(f.pool, nessunFile);
   assert.equal(await d.aggiornaDocumento("az-1", "ebay", () => ({ dati: {}, risultato: 7, nonScrivere: true })), 7);
-  assert.deepEqual(passi(f.chiamate), ["begin", "insert into", "select dati", "rollback"]);
+  assert.deepEqual(passi(f.chiamate), ["begin", "tempi", "insert into", "select dati", "rollback"]);
   assert.deepEqual(f.rilasci, [undefined]);
 });
 
@@ -152,7 +153,7 @@ test("aggiornaDocumento: errore in fn → rollback, connessione resa, errore a c
     }),
     /rotto/,
   );
-  assert.deepEqual(passi(f.chiamate), ["begin", "insert into", "select dati", "rollback"]);
+  assert.deepEqual(passi(f.chiamate), ["begin", "tempi", "insert into", "select dati", "rollback"]);
   assert.deepEqual(f.rilasci, [undefined]);
 });
 
@@ -239,8 +240,8 @@ test("conto account: inVolo salvata come oggetto e riletta come Map", async () =
     return { stato: { ...p!, inVolo: new Map([["h", 7]]) }, risultato: "fatto" };
   });
   assert.equal(r, "fatto");
-  assert.deepEqual(passi(f.chiamate), ["begin", "insert into", "select stato", "update conto_account", "commit"]);
-  assert.deepEqual(JSON.parse(f.chiamate[3].v![1] as string), { errori: [1], bloccatoFino: null, inVolo: { h: 7 } });
+  assert.deepEqual(passi(f.chiamate), ["begin", "tempi", "insert into", "select stato", "update conto_account", "commit"]);
+  assert.deepEqual(JSON.parse(f.chiamate[4].v![1] as string), { errori: [1], bloccatoFino: null, inVolo: { h: 7 } });
   assert.deepEqual(f.rilasci, [undefined]);
 });
 
@@ -249,6 +250,30 @@ test("conto account: la riga appena creata (stato null) arriva come undefined", 
   const d = creaDepositoPostgres(f.pool, nessunFile);
   const r = await d.aggiornaContoAccount("u:y", (p) => ({ stato: { errori: [], bloccatoFino: null, inVolo: new Map() }, risultato: p }));
   assert.equal(r, undefined);
+});
+
+test("transazioni: limiti di tempo solo per la transazione (SET LOCAL), subito dopo begin", () => {
+  assert.match(SQL_TEMPI, /set_config\('statement_timeout', '15s', true\)/);
+  assert.match(SQL_TEMPI, /set_config\('idle_in_transaction_session_timeout', '15s', true\)/);
+});
+
+test("JSON per jsonb: il carattere NUL si toglie da testi e nomi dei campi, il resto resta com'è", () => {
+  const dati = { nome: "Ro\u0000ssi", note: ["a\u0000", "b"], annidato: { "chi\u0000ave": "v", n: 1, vero: true, nullo: null } };
+  const testo = json(dati);
+  assert.ok(!testo.includes("\\u0000"));
+  assert.deepEqual(JSON.parse(testo), { nome: "Rossi", note: ["a", "b"], annidato: { chiave: "v", n: 1, vero: true, nullo: null } });
+  // Un testo che contiene davvero la sequenza \u0000 scritta (barra e lettere) non si tocca
+  assert.deepEqual(JSON.parse(json({ t: "\\u0000" })), { t: "\\u0000" });
+  assert.equal(json([{ a: 1 }]), '[{"a":1}]');
+});
+
+test("aggiornaDocumento e creaDocumento mandano a Postgres il JSON senza NUL", async () => {
+  const f = finto();
+  const d = creaDepositoPostgres(f.pool, nessunFile);
+  await d.aggiornaDocumento("az-1", "archivio", () => ({ dati: { x: "a\u0000b" }, risultato: 0 }));
+  assert.equal(f.chiamate[4].v![2], '{"x":"ab"}');
+  await d.creaDocumento("az-1", "abbonamento", { y: "\u0000" });
+  assert.equal(f.chiamate.at(-1)!.v![2], '{"y":""}');
 });
 
 test("tipo del contenuto dal nome del file", () => {

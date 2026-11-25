@@ -40,6 +40,12 @@ function percorsoFile(aziendaId: string, cartella: CartellaFile, nome: string): 
   return `${aziendaId}/${cartella}/${nome}`;
 }
 
+// Limiti dentro il database, solo per questa transazione (come SET LOCAL): un'istruzione che dura più di 15 secondi
+// si ferma, e così una transazione lasciata aperta senza lavoro (che terrebbe bloccata la riga "for update").
+// Qui e non nei parametri d'avvio della connessione: il pooler di Supabase (modalità transazione) non li applica.
+export const SQL_TEMPI =
+  "select set_config('statement_timeout', '15s', true), set_config('idle_in_transaction_session_timeout', '15s', true)";
+
 /**
  * Una transazione su una connessione del pool. `corpo` dice se confermare (commit) o annullare (rollback);
  * su errore si annulla. La connessione torna sempre al pool, e si butta se nemmeno il rollback riesce.
@@ -49,6 +55,7 @@ async function transazione<R>(p: Pool, corpo: (c: PoolClient) => Promise<{ risul
   let rotta: Error | undefined;
   try {
     await c.query("begin");
+    await c.query(SQL_TEMPI);
     const { risultato, conferma } = await corpo(c);
     await c.query(conferma ? "commit" : "rollback");
     return risultato;
@@ -64,8 +71,18 @@ async function transazione<R>(p: Pool, corpo: (c: PoolClient) => Promise<{ risul
   }
 }
 
-// I dati vanno a Postgres come testo JSON: pg trasformerebbe un array JS in un array di Postgres, non in jsonb
-const json = (v: unknown) => JSON.stringify(v);
+// I dati vanno a Postgres come testo JSON: pg trasformerebbe un array JS in un array di Postgres, non in jsonb.
+// jsonb non accetta il carattere NUL (\u0000): uno solo, incollato in un campo, farebbe fallire ogni salvataggio
+// successivo dell'azienda. Si toglie da testi e nomi dei campi.
+const senzaNul = (s: string) => s.replaceAll("\0", "");
+export const json = (v: unknown) =>
+  JSON.stringify(v, (_k, x: unknown) => {
+    if (typeof x === "string") return senzaNul(x);
+    if (x && typeof x === "object" && !Array.isArray(x) && Object.keys(x).some((k) => k.includes("\0"))) {
+      return Object.fromEntries(Object.entries(x).map(([k, val]) => [senzaNul(k), val]));
+    }
+    return x;
+  });
 
 type StatoSalvato = { errori: number[]; bloccatoFino: number | null; inVolo: Record<string, number> };
 const statoDaSalvare = (s: StatoAccount): StatoSalvato => ({
