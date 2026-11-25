@@ -200,7 +200,8 @@ async function ricifraDueFattori(c: AuthContext) {
   }
 }
 
-export async function avviaPiattaforma(): Promise<void> {
+/** true se l'avvio è riuscito. Non lancia mai: su errore la piattaforma resta "non pronta" (pronta.ts la riprova). */
+export async function avviaPiattaforma(): Promise<boolean> {
   try {
     const { runMigrations } = await getMigrations(auth.options);
     await runMigrations();
@@ -217,9 +218,11 @@ export async function avviaPiattaforma(): Promise<void> {
     }
     await superadmin(c);
     segnaPiattaformaNonPronta(false);
+    return true;
   } catch (e) {
     segnaPiattaformaNonPronta(true);
-    console.error("[avvio] avvio della piattaforma non riuscito: le API rispondono 503 finché non si risolve.", e);
+    console.error("[avvio] avvio della piattaforma non riuscito: le API rispondono 503 e l'avvio si riprova (al massimo ogni 30 secondi).", e);
+    return false;
   }
 }
 

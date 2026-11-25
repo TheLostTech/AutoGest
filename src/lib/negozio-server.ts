@@ -32,7 +32,7 @@ const eDemo = (metadata: unknown): boolean => {
  */
 export async function datiNegozio(): Promise<DatiNegozio | null> {
   const c = g.__aziendaNegozio;
-  if (rispostaNonPronta()) return null; // avvio non riuscito: come senza negozio (catalogo vuoto, ordini 503)
+  if (await rispostaNonPronta()) return null; // avvio non riuscito: come senza negozio (catalogo vuoto, ordini 503)
   if (c && c.fino > Date.now()) return c.dati;
   let dati: DatiNegozio | null = null;
   try {

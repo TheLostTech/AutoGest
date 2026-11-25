@@ -66,7 +66,7 @@ function aziendaVista(o: { id: string; name: string; metadata?: unknown } | null
 }
 
 export async function accessoDaRichiesta(req: Request, opzioni: { attivitaAlle?: number } = {}): Promise<Accesso | Response> {
-  const nonPronta = rispostaNonPronta();
+  const nonPronta = await rispostaNonPronta();
   if (nonPronta) return nonPronta;
   const dati = await leggiSessione(req);
   const ora = Date.now();
@@ -192,7 +192,7 @@ export function soloRuoli(a: Accesso, ...r: Role[]): Response | null {
 }
 
 export async function superadminDaRichiesta(req: Request): Promise<{ utente: { id: string; nome: string } } | Response> {
-  const nonPronta = rispostaNonPronta();
+  const nonPronta = await rispostaNonPronta();
   if (nonPronta) return nonPronta;
   const dati = await leggiSessione(req);
   if (!dati) return negata(401, "nessuna-sessione");

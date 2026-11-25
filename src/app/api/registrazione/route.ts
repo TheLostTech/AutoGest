@@ -42,7 +42,7 @@ async function annulla(c: Contesto, aziendaId: string, userId: string | null) {
 }
 
 export async function POST(req: Request) {
-  const nonPronta = rispostaNonPronta();
+  const nonPronta = await rispostaNonPronta();
   if (nonPronta) return nonPronta;
   const x = daAltroSito(req, true);
   if (x) return x;

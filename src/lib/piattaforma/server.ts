@@ -50,7 +50,7 @@ export function eSuperadmin(role: string | null | undefined): boolean {
 
 /** Sessione con password di un super admin, anche prima del codice dal telefono (serve alla pagina Sicurezza). */
 export async function superadminBase(req: Request) {
-  const nonPronta = rispostaNonPronta();
+  const nonPronta = await rispostaNonPronta();
   if (nonPronta) return { risposta: nonPronta };
   const dati = await auth.api.getSession({ headers: req.headers, query: { disableCookieCache: true, disableRefresh: true } });
   if (!dati) return { risposta: errore(401, "Accedi per continuare.", "nessuna-sessione") };
