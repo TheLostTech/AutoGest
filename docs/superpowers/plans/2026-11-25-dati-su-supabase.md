@@ -198,3 +198,62 @@
 - [ ] **Step 7: Commit della documentazione** — `git commit -m "Documentazione: Supabase, variabili e progetti"`
 
 Su `main` e sulla produzione non si tocca niente in questo piano: l'unione arriva alla fine del piano 3. La riga "spazio usato" nella Piattaforma (spec, "Limiti del piano gratuito") è nel piano 3.
+
+## Esito (26/11/2026)
+
+Fatto sul ramo `registrazione-pagamento` (855c692..a056a2a): 529 test, contratto del deposito su Supabase vero 27/27, anteprima Vercel avviata su "Piazzale prove" con 15 tabelle tutte con RLS e nessun accesso per anon/authenticated. Revisione finale del ramo e correzioni fatte.
+
+### Decisioni prese durante la costruzione
+
+- T7 step 1 (creare "Piazzale prove") lo faccio io dal browser prima di T5; le chiavi PROVA_* le chiedo ad Alessandro quando T5 è pronto da provare; se non arrivano, T5 si chiude con il contratto Supabase saltato e la prova vera resta in T7 — costa: un errore Supabase scoperto più tardi.
+- T6 step 2 — il test è di caratterizzazione (blocca regressioni), può passare anche prima della modifica — costa: nessuna prova che il percorso nuovo sia esercitato oltre al resto della suite.
+- ebay/archivio aggiornaArchivio accetta fn asincrone che possono chiamare eBay: su Postgres tengono aperta la transazione; accettato per ora (una azienda, poche chiamate) — costa: blocchi lunghi su una riga se eBay è lento.
+- foto sul dispositivo (decisione di Alessandro 25/11, 'solo in vendita') — piano a parte dopo questo; Task 3 resta com'è (copie online, allegati, visure sul deposito) — costa: niente se il piano foto arriva; il codice foto di Task 3 resta valido per le copie online
+- Task 2 — abbonamento/ebay/richieste illeggibili ora lanciano invece di essere sovrascritti — coerente con il vincolo "un JSON illeggibile non si sovrascrive mai" (spec: niente dati persi) — costa: un'azienda con abbonamento.json rovinato resta ferma finché qualcuno lo sistema a mano.
+- Task 2 — creaStatoAzienda con archivio già presente non lancia (il brief diceva EEXIST, il codice di prima lo inghiottiva) — si tiene il comportamento reale — costa: nessuno.
+- Task 3 step 6 (prova nel browser) la faccio io dopo il task: l'implementatore non ha il browser integrato — costa: nessuno.
+- Task 3 — controllo dimensione anche in PraticaPanel.tsx (fuori elenco) per avvisare prima dell'invio — coerente con il limite — costa: nessuno.
+- Task 4 — il certificato CA di Supabase si scarica dal pannello (serve l'accesso): pool.ts lo legge da src/lib/db/supabase-ca.crt; il file lo aggiungo io nel Task 7 col via di Alessandro per il download; senza file in modalità supabase errore chiaro, mai TLS senza verifica — costa: Task 4 non provabile online fino al Task 7.
+- Task 4 — indirizzo IP per i limiti su Vercel: con VERCEL=1 si legge x-real-ip (scritto da Vercel, non falsificabile dal client), altrimenti cf-connecting-ip come oggi — senza, tutti gli utenti online condividono 5 accessi/min — costa: se Vercel cambiasse intestazione, torna il contatore comune (più severo, non più debole).
+- Task 5 — senza le variabili PROVA_* il contratto Supabase si prova sulla parte documenti con un Postgres locale (come ha fatto Task 4) e i file solo con Supabase vero; le chiavi le chiedo ad Alessandro ora, in parallelo — costa: la parte file si prova solo quando arrivano.
+- Task 5 — nonScrivere chiude con rollback (non lascia righe segnaposto) e conto_account usa 'null'::jsonb come segnaposto — meglio del brief, stesso comportamento visibile — costa: nessuno.
+- Task 7 step 5 — la prova completa (azienda, veicolo, foto, PDF, redeploy) richiede il super admin con codice dal telefono: si fa ora solo avvio, tabelle con RLS, pagina di accesso e limite su Postgres; azienda+foto+redeploy si provano nel piano 2 con la registrazione libera — costa: la persistenza di foto/archivio online si vede solo col piano 2.
+- regione delle funzioni Vercel (iad1 → fra1, vicino a Supabase eu-central-1) — impostazione del progetto che vale anche per la produzione: la chiedo ad Alessandro, non la cambio io — costa: latenza transatlantica finché non si decide.
+- fix wave — pool: 5 s per aprire una connessione, 30 s per aspettarne una libera (con 5 s i 20 aggiornamenti in parallelo fallivano su Supabase vero) — costa: sotto carico forte una richiesta può aspettare fino a 30 s prima dell'errore.
+- fix wave — statement_timeout/idle_in_transaction 15 s via SET LOCAL nelle transazioni del deposito (il pooler ignora options) — costa: le query di Better Auth e le letture singole restano senza limite lato server.
+- residuo avvio appeso — parcheggiato, da fare nel piano 2 (timeout di ~60 s sull'avvio o lock_timeout sulle DDL) — reale ma raro (serve un lock lungo su una tabella al primo avvio) — costa: in quel caso le richieste di un'istanza restano in attesa invece di avere 503.
+
+### Rimandato (da piani 2-3 o prima di unire in main)
+
+- creaFileUnaVolta duplica creaUnaVolta (allargare il tipo a string|Uint8Array)
+- scrivi lascia il .tmp se rename fallisce
+- salvaFile(az,"richieste","registro.json") può sovrascrivere il documento richieste senza fila (da chiudere in Task 2/3)
+- togliAzienda non in fila con aggiornamenti in volo
+- cartella non validata a runtime per chiamanti JS
+- contratto senza test di nome non valido in lettura file
+- ⚠️ FK su aziende per Supabase — non reale: lo schema del Task 4 non ha FK su azienda_id
+- collegamenti save con file rovinato lancia DocumentoIlleggibile grezzo invece di CollegamentiIlleggibili
+- aggiornaStato/aggiornaAbbonamento con id non valido ora rifiutano in modo asincrono (prima subito)
+- richieste/registro.json ora compatto, prima indentato
+- leggiStatoDaFile e collegamenti-file usati solo dai loro test (codice morto)
+- visura MAX_PDF 10 MB (scaricata dal server, non dal corpo: ok su Vercel; da controllare col limite per oggetto di Supabase)
+- richieste/registro.json resta 0o666 su disco (com'era prima del piano)
+- file già su disco con 0o666 restano così (vale solo in locale)
+- migrazioni in gara al primo avvio con più istanze (solo il primo avvio)
+- verificare con next build che supabase-ca.crt finisca nelle funzioni (Task 7)
+- migrazioni senza advisory lock (vedi sopra)
+- ⚠️ server-only non aggiunto (romperebbe i test node) — ruling: si controlla nella revisione finale che nessun componente client importi auth/server o db/pool
+- pg-connection-string diretto può divergere da quello interno di pg
+- limite registrazioni in memoria per istanza (da piano 2)
+- pool max 3 con fn sotto lock: sotto carico si fa la fila
+- pool max 3 senza connectionTimeoutMillis: fn che richiama il deposito potrebbe restare appesa
+- StorageUnknownError può contenere il nome host supabase.co nel cause (mai serializzarlo al client)
+- dati undefined → riga null; \u0000 rifiutato da jsonb
+- chiudi che toglie l'account salva una riga vuota invece di niente
+- ⚠️ errore del deposito nell'hook "after" con password giusta → 500; sessione forse già creata (da controllare nella revisione finale)
+- avviso Better Auth "Base URL is not set" → BETTER_AUTH_URL nel piano 2 (link delle email)
+- foto pubbliche leggono tutto l'archivio a ogni immagine (cache per istanza più avanti)
+- misurare la risposta di GET demo-state rispetto ai 4,5 MB di Vercel prima della produzione
+- negozioAttivo con errore transitorio chiude il negozio di chi paga per quella richiesta (com'era prima)
+- cambiaModuli può dire "Stripe non risponde" se la rilettura fallisce dopo la modifica su Stripe (il webhook risincronizza)
+- controllare come reagisce la sincronizzazione del client al 500 di demo-state
