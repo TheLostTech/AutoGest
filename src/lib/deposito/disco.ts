@@ -25,6 +25,8 @@ const percorsoDocumento = (aziendaId: string, tipo: TipoDocumento) => {
 };
 function percorsoFile(aziendaId: string, cartella: CartellaFile, nome: string): string {
   if (!NOME_FILE.test(nome) || nome.includes("..")) throw new Error("Nome di file non valido");
+  // il registro delle richieste è un documento, non un file
+  if (cartella === "richieste" && nome === "registro.json") throw new Error("Nome di file non valido");
   return path.join(cartellaAzienda(aziendaId), cartella, nome);
 }
 
@@ -64,7 +66,12 @@ async function scrivi(percorso: string, contenuto: string | Uint8Array, mode: nu
   await mkdir(path.dirname(percorso), { recursive: true });
   const tmp = `${percorso}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
   await writeFile(tmp, contenuto, { mode });
-  await rename(tmp, percorso);
+  try {
+    await rename(tmp, percorso);
+  } catch (e) {
+    await unlink(tmp).catch(() => undefined);
+    throw e;
+  }
 }
 
 // Conti dei tentativi di accesso: in memoria sulla globalThis, come oggi (un solo processo Node).
@@ -75,7 +82,7 @@ export function depositoDisco(): Deposito {
   return {
     leggiDocumento: (aziendaId, tipo) => leggi(aziendaId, tipo),
 
-    aggiornaDocumento(aziendaId, tipo, fn) {
+    async aggiornaDocumento(aziendaId, tipo, fn) {
       const { percorso, mode } = percorsoDocumento(aziendaId, tipo);
       return inFilaPer("deposito-documento", `${aziendaId}/${tipo}`, async () => {
         const m = await fn(await leggi(aziendaId, tipo));
@@ -84,7 +91,7 @@ export function depositoDisco(): Deposito {
       });
     },
 
-    creaDocumento(aziendaId, tipo, dati) {
+    async creaDocumento(aziendaId, tipo, dati) {
       const { percorso, mode } = percorsoDocumento(aziendaId, tipo);
       return inFilaPer("deposito-documento", `${aziendaId}/${tipo}`, async () => {
         await mkdir(path.dirname(percorso), { recursive: true });

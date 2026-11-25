@@ -68,6 +68,9 @@ export function provaContratto(nome: string, crea: () => Promise<Deposito>, puli
     await assert.rejects(d.salvaFile(A, "foto", "a/b.jpg", b));
     await assert.rejects(d.salvaFile(A, "foto", "", b));
     await assert.rejects(d.leggiDocumento("../x", "archivio"));
+    await assert.rejects(d.aggiornaDocumento("../x", "archivio", () => ({ dati: {}, risultato: 0 })));
+    await assert.rejects(d.creaDocumento("../x", "archivio", {}));
+    await assert.rejects(d.salvaFile(A, "richieste", "registro.json", b));
   });
 
   t("togliAzienda toglie solo quell'azienda", async (d) => {
