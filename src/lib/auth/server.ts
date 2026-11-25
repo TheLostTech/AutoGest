@@ -7,7 +7,9 @@ import { indirizzoPubblico, originiVercel } from "@/lib/email/indirizzo";
 import { pool } from "@/lib/db/pool";
 import { sceltaDeposito } from "@/lib/deposito";
 import { DATA_DIR, DB_FILE } from "@/lib/server-data";
+import type { AuthContext } from "better-auth";
 import { assistenzaPlugin } from "./assistenza";
+import { confermaTitolare, opzioniConferma } from "./conferma-titolare";
 import { intestazioniIp } from "./intestazioni-ip";
 import { invitiPlugin } from "./inviti";
 import { segretoAccesso } from "./segreto";
@@ -48,9 +50,15 @@ export const auth = betterAuth({
       "/pin-dispositivo/entra": AL_MINUTO(10),
       "/pin-dispositivo/registra": AL_MINUTO(5),
       "/pin-dispositivo/sblocca": AL_MINUTO(10),
+      // "Rimanda l'email" dalla pagina di accesso: come la regola di serie di Better Auth, scritta qui
+      "/send-verification-email": AL_MINUTO(3),
     },
   },
   emailAndPassword: { enabled: true, disableSignUp: true },
+  // Conferma dell'email del titolare registrato (conferma-titolare.ts): link valido 48 ore, al click parte la prova e
+  // si entra. Niente requireEmailVerification: i dipendenti con email non verificata devono continuare a entrare; il
+  // titolare in attesa lo ferma l'hook di confermaTitolare. Il contesto si legge alla chiamata (auth è già pronto).
+  emailVerification: opzioniConferma((): Promise<AuthContext> => auth.$context as unknown as Promise<AuthContext>),
   advanced: { useSecureCookies: false, ipAddress: { ipAddressHeaders: intestazioniIp(process.env) } },
   // Indirizzo pubblico fisso (BETTER_AUTH_URL, o quello Vercel): toglie l'avviso "Base URL is not set". Senza, si deduce
   // dalla richiesta come prima. Su Vercel gli altri indirizzi dello stesso deploy restano fidati.
@@ -65,6 +73,8 @@ export const auth = betterAuth({
     // Blocco per account sul codice dal telefono: 10 codici sbagliati di fila → 15 minuti (scritto qui, non solo di serie)
     twoFactor({ issuer: "Piazzale", accountLockout: { enabled: true, maxFailedAttempts: 10, durationSeconds: 900 } }),
     tentativiAccount,
+    // Dopo tentativiAccount: un account bloccato resta bloccato anche se aspetta la conferma
+    confermaTitolare,
     assistenzaPlugin,
     invitiPlugin,
     pinDispositivo(),

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { authClient } from "@/lib/auth/client";
 import type { NomiDispositivo } from "@/lib/auth/pin-dispositivo-client";
 import { NomiPin } from "./nomi-pin";
+import { RimandaEmail } from "./rimanda-email";
+import { CODICE_DA_CONFERMARE, MESSAGGIO_DA_CONFERMARE, type Avviso } from "@/lib/accesso/conferma";
 import { BRAND } from "@/lib/config";
 import { Button, Field, Notice } from "@/components/ui";
 
@@ -30,10 +32,11 @@ async function dopoAccesso(da: string) {
   return da;
 }
 
-export function AccessoView({ da }: { da: string }) {
+export function AccessoView({ da, avviso = null }: { da: string; avviso?: Avviso | null }) {
   // Dispositivo dell'azienda (cookie valido): elenco dei nomi + PIN. Altrimenti, o su richiesta, email e password.
+  // Dal link dell'email di conferma si va dritti all'accesso con email.
   const [dispositivo, setDispositivo] = useState<NomiDispositivo | null | undefined>(undefined);
-  const [conEmail, setConEmail] = useState(false);
+  const [conEmail, setConEmail] = useState(!!avviso);
   const leggiNomi = useCallback(() => leggiNomiDispositivo().then((d) => setDispositivo(d)), []);
   useEffect(() => {
     void leggiNomiDispositivo().then((d) => setDispositivo(d));
@@ -49,17 +52,39 @@ export function AccessoView({ da }: { da: string }) {
       </main>
     );
   }
-  return <AccessoEmail da={da} onNomi={dispositivo ? () => setConEmail(false) : undefined} />;
+  return <AccessoEmail da={da} avviso={avviso} onNomi={dispositivo ? () => setConEmail(false) : undefined} />;
 }
 
-function AccessoEmail({ da, onNomi }: { da: string; onNomi?: () => void }) {
+function AccessoEmail({ da, avviso, onNomi }: { da: string; avviso: Avviso | null; onNomi?: () => void }) {
   const [passo, setPasso] = useState<Passo>("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [codice, setCodice] = useState("");
   const [recupero, setRecupero] = useState(false);
   const [errore, setErrore] = useState("");
+  // Titolare che non ha ancora confermato l'email: messaggio e "Rimanda l'email"
+  const [daConfermare, setDaConfermare] = useState(false);
   const [attesa, setAttesa] = useState(false);
+  // Email appena confermata: Better Auth ha già aperto la sessione, si entra senza password
+  const [entrando, setEntrando] = useState(avviso?.tono === "ok");
+
+  useEffect(() => {
+    if (avviso?.tono !== "ok") return;
+    let vivo = true;
+    void (async () => {
+      const s = await authClient.getSession().catch(() => null);
+      if (!vivo) return;
+      if (!s?.data?.user) return setEntrando(false);
+      try {
+        window.location.assign(await dopoAccesso(da));
+      } catch {
+        if (vivo) setEntrando(false);
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, [avviso, da]);
 
   async function concludi() {
     try {
@@ -79,10 +104,16 @@ function AccessoEmail({ da, onNomi }: { da: string; onNomi?: () => void }) {
   async function invia(ev: React.FormEvent) {
     ev.preventDefault();
     setErrore("");
+    setDaConfermare(false);
     setAttesa(true);
     try {
       if (passo === "password") {
         const r = await authClient.signIn.email({ email: email.trim(), password });
+        if (r.error?.code === CODICE_DA_CONFERMARE) {
+          setDaConfermare(true);
+          setAttesa(false);
+          return;
+        }
         if (r.error) {
           setErrore("Email o password non corrette.");
           setAttesa(false);
@@ -123,6 +154,17 @@ function AccessoEmail({ da, onNomi }: { da: string; onNomi?: () => void }) {
         </div>
         <form onSubmit={invia} className="label-sheet space-y-4 p-5" noValidate>
           <h1 className="code text-[18px] font-bold uppercase tracking-wide text-ink">{passo === "password" ? "Accedi" : "Codice dal telefono"}</h1>
+          {avviso && !daConfermare && (
+            <div role="status">
+              <Notice tone={avviso.tono}>{entrando ? `${avviso.testo} Entro…` : avviso.testo}</Notice>
+            </div>
+          )}
+          {daConfermare && (
+            <div role="alert" className="space-y-3">
+              <Notice tone="warn">{MESSAGGIO_DA_CONFERMARE}</Notice>
+              <RimandaEmail email={email} />
+            </div>
+          )}
           {errore && (
             <div role="alert">
               <Notice tone="danger">{errore}</Notice>
@@ -164,7 +206,7 @@ function AccessoEmail({ da, onNomi }: { da: string; onNomi?: () => void }) {
               </button>
             </>
           )}
-          <Button type="submit" size="lg" className="w-full" disabled={attesa || (passo === "password" ? !email || !password : !codice)}>
+          <Button type="submit" size="lg" className="w-full" disabled={attesa || entrando || (passo === "password" ? !email || !password : !codice)}>
             {attesa ? "Controllo…" : passo === "password" ? "Entra" : "Conferma"}
           </Button>
         </form>

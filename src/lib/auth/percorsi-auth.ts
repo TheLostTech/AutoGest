@@ -7,6 +7,9 @@ const PERMESSI: Record<string, "GET" | "POST"> = {
   "/get-session": "GET",
   "/sign-in/email": "POST",
   "/sign-out": "POST",
+  // Conferma dell'email del titolare: "Rimanda l'email" dalla pagina di accesso e il link dell'email
+  "/send-verification-email": "POST",
+  "/verify-email": "GET",
   "/organization/list": "GET",
   "/organization/set-active": "POST",
   "/two-factor/enable": "POST",

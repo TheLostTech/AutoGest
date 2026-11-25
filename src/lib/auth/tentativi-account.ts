@@ -54,6 +54,16 @@ export async function chiudiTentativo(c: AuthContext, p: { k: string; gettone: s
     console.error("[tentativi] esito dell'accesso non registrato (il gettone scade da solo in 60 secondi)", e);
   }
 }
+/**
+ * Per un hook "before" che gira dopo questo e rifiuta l'accesso (conferma-titolare.ts): l'hook "after" allora non
+ * gira, e il gettone di questa richiesta si chiude da qui con il suo esito. Non lancia mai.
+ */
+export async function chiudiTentativoDellaRichiesta(c: AuthContext, request: Request | undefined, esito: Esito): Promise<void> {
+  const p = request ? stato.inCorso.get(request) : undefined;
+  if (!p || !request) return;
+  stato.inCorso.delete(request);
+  await chiudiTentativo(c, p, esito);
+}
 const chiaveDi = (ctx: { body?: unknown }) => chiaveAccount((ctx.body as { email?: unknown } | undefined)?.email);
 
 export const tentativiAccount = {

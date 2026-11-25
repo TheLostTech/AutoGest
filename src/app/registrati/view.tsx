@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { BRAND } from "@/lib/config";
 import { Button, Field, Notice } from "@/components/ui";
+import { RimandaEmail } from "../accesso/rimanda-email";
 
 // Registrazione libera: dopo l'invio non si entra, si conferma l'email (il link fa partire la prova di 15 giorni).
 export function RegistratiView({ prova }: { prova: boolean }) {
@@ -18,6 +19,8 @@ export function RegistratiView({ prova }: { prova: boolean }) {
   const [errore, setErrore] = useState("");
   const [attesa, setAttesa] = useState(false);
   const [fatta, setFatta] = useState(false);
+  // false: la registrazione c'è, ma l'email di conferma non è partita (si rimanda da qui o dalla pagina di accesso)
+  const [inviata, setInviata] = useState(true);
 
   async function invia(ev: React.FormEvent) {
     ev.preventDefault();
@@ -41,6 +44,8 @@ export function RegistratiView({ prova }: { prova: boolean }) {
       setAttesa(false);
       return;
     }
+    const corpo = (await r.json().catch(() => null)) as { inviata?: boolean } | null;
+    setInviata(corpo?.inviata !== false);
     setFatta(true);
     setAttesa(false);
   }
@@ -58,11 +63,16 @@ export function RegistratiView({ prova }: { prova: boolean }) {
           <div className="label-sheet space-y-4 p-5">
             <h1 className="code text-[18px] font-bold uppercase tracking-wide text-ink">Registrazione fatta</h1>
             <div role="status">
-              <Notice tone="ok">Controlla la posta: ti abbiamo mandato il link per attivare la prova.</Notice>
+              {inviata ? (
+                <Notice tone="ok">Controlla la posta: ti abbiamo mandato il link per attivare la prova.</Notice>
+              ) : (
+                <Notice tone="warn">La registrazione è fatta, ma non sono riuscito a mandarti l&apos;email con il link per attivare la prova. Rimandala tra qualche minuto.</Notice>
+              )}
             </div>
             <p className="text-[15px] text-ink-2">
               L&apos;email arriva a <span className="font-semibold text-ink">{email.trim().toLowerCase()}</span>. Se non la trovi, guarda anche nella posta indesiderata.
             </p>
+            <RimandaEmail email={email} />
           </div>
         ) : (
           <form onSubmit={invia} className="label-sheet space-y-4 p-5" noValidate>
