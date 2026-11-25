@@ -2,16 +2,28 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { sceltaDeposito } from "@/lib/deposito";
 import { creaUnaVolta } from "@/lib/file-una-volta";
 import { DATA_DIR } from "@/lib/server-data";
 
 const KEY_FILE = path.join(DATA_DIR, ".chiave-collegamenti");
 
+/**
+ * La chiave da CHIAVE_COLLEGAMENTI (64 caratteri esadecimali). In cloud (deposito Supabase) è l'unica fonte: se manca
+ * o non è valida è un errore. Su disco, se manca, null: si usa il file .chiave-collegamenti della cartella dati.
+ */
+export function chiaveDalleVariabili(variabili: Record<string, string | undefined>): Buffer | null {
+  const env = variabili.CHIAVE_COLLEGAMENTI;
+  if (env && /^[0-9a-f]{64}$/i.test(env)) return Buffer.from(env, "hex");
+  if (sceltaDeposito(variabili) === "supabase") throw new Error("CHIAVE_COLLEGAMENTI mancante o non valida");
+  return null;
+}
+
 let chiave: Buffer | undefined;
 async function key() {
   if (chiave) return chiave;
-  const env = process.env.CHIAVE_COLLEGAMENTI;
-  if (env && /^[0-9a-f]{64}$/i.test(env)) return (chiave = Buffer.from(env, "hex"));
+  const daVariabili = chiaveDalleVariabili(process.env);
+  if (daVariabili) return (chiave = daVariabili);
   try {
     return (chiave = Buffer.from((await readFile(KEY_FILE, "utf8")).trim(), "hex"));
   } catch (e) {

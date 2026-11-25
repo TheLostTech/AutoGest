@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "postinstall": "node -e \"require('fs').mkdirSync('public/zxing',{recursive:true});require('fs').copyFileSync('node_modules/zxing-wasm/dist/reader/zxing_reader.wasm','public/zxing/zxing_reader.wasm')\"",
-    "test": "node --import ./scripts/alias-ts.mjs --test src/lib/*.test.ts src/lib/ebay/*.test.ts src/lib/accesso/*.test.ts src/lib/auth/*.test.ts src/lib/accesso/server.prova.ts src/lib/abbonamento-server.prova.ts src/lib/piattaforma/inviti.prova.ts src/lib/stripe/*.test.ts src/lib/deposito/*.test.ts",
+    "test": "node --import ./scripts/alias-ts.mjs --test src/lib/*.test.ts src/lib/ebay/*.test.ts src/lib/accesso/*.test.ts src/lib/auth/*.test.ts src/lib/accesso/server.prova.ts src/lib/abbonamento-server.prova.ts src/lib/piattaforma/inviti.prova.ts src/lib/stripe/*.test.ts src/lib/deposito/*.test.ts src/lib/db/*.test.ts",
     "prova:accesso": "node --import ./scripts/alias-ts.mjs --test src/lib/accesso/server.prova.ts src/lib/abbonamento-server.prova.ts src/lib/piattaforma/inviti.prova.ts"
   },
   "dependencies": {
@@ -18,6 +18,7 @@
     "jsbarcode": "^3.12.3",
     "lucide-react": "^1.73.0",
     "next": "16.4.6",
+    "pg": "^8.23.1",
     "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -28,6 +29,7 @@
     "@tailwindcss/turbopack": "4.3.3",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",

@@ -1,5 +1,7 @@
 // Avvio della piattaforma (chiamato una volta da instrumentation.ts): tabelle, azienda demo con i suoi utenti,
 // passaggio dei dati di prima, primo super admin. Ogni passo si può ripetere senza duplicare nulla.
+// Con il deposito Supabase (cloud) solo tabelle (Better Auth e dati) e super admin: niente azienda demo, niente dati
+// di prima, nessun file scritto (il disco non c'è o non è condiviso tra le istanze).
 // Solo server.
 import { randomBytes, randomInt } from "node:crypto";
 import { copyFile, cp, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
@@ -10,6 +12,9 @@ import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
 import { SEGRETO_DI_PROVA } from "@/lib/auth/segreto";
 import { auth } from "@/lib/auth/server";
 import { creaStatoAzienda } from "@/lib/archivio-azienda";
+import { pool } from "@/lib/db/pool";
+import { preparaSchema } from "@/lib/db/schema";
+import { sceltaDeposito } from "@/lib/deposito";
 import { DEFAULT_LISTINI } from "@/lib/pricing";
 import { buildSeed } from "@/lib/seed";
 import { DATA_DIR, cartellaAzienda } from "@/lib/server-data";
@@ -202,8 +207,12 @@ export async function avviaPiattaforma(): Promise<void> {
     const c = (await auth.$context) as unknown as AuthContext;
     await ricifraDueFattori(c);
 
-    const demo = await aziendaDemo(c);
-    if (demo && !demo.preparata) await preparaDemo(c, demo.id);
+    if (sceltaDeposito(process.env) === "supabase") {
+      await preparaSchema(pool());
+    } else {
+      const demo = await aziendaDemo(c);
+      if (demo && !demo.preparata) await preparaDemo(c, demo.id);
+    }
     await superadmin(c);
     segnaPiattaformaNonPronta(false);
   } catch (e) {

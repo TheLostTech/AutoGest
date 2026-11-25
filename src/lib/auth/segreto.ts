@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { sceltaDeposito } from "@/lib/deposito";
 import { creaUnaVoltaSync } from "@/lib/file-una-volta";
 import { DATA_DIR } from "@/lib/server-data";
 
@@ -8,14 +9,15 @@ import { DATA_DIR } from "@/lib/server-data";
 // Da BETTER_AUTH_SECRET se c'è; altrimenti un valore casuale generato al primo avvio nel file .segreto-accesso della
 // cartella dati, leggibile solo dal proprietario (come .chiave-collegamenti). Mai il valore di prova di Better Auth,
 // che è pubblico: con quello chiunque potrebbe firmare un cookie di sessione valido.
-// Nel prodotto vero il segreto va in un archivio di segreti, non accanto ai dati.
+// In cloud (deposito Supabase) solo dalla variabile: niente file, il disco non c'è o non è condiviso tra le istanze.
 export const FILE_SEGRETO = path.join(DATA_DIR, ".segreto-accesso");
 // Il valore di prova di Better Auth: serve solo a ricifrare i codici del secondo fattore salvati con quello (avvio.ts)
 export const SEGRETO_DI_PROVA = "better-auth-secret-12345678901234567890";
 
-export function segretoAccesso(): string {
-  const env = process.env.BETTER_AUTH_SECRET?.trim();
+export function segretoAccesso(variabili: Record<string, string | undefined> = process.env): string {
+  const env = variabili.BETTER_AUTH_SECRET?.trim();
   if (env) return env;
+  if (sceltaDeposito(variabili) === "supabase") throw new Error("BETTER_AUTH_SECRET mancante");
   try {
     const v = readFileSync(FILE_SEGRETO, "utf8").trim();
     if (v.length >= 32) return v;
