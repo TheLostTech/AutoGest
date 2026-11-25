@@ -41,6 +41,19 @@ test("disco: collegamenti ed ebay hanno permessi 0o600", async () => {
   }
 });
 
+test("disco: allegati, visure e richieste hanno permessi 0o600", async () => {
+  const { depositoDisco } = await import("./disco.ts");
+  const { cartellaAzienda } = await import("../server-data.ts");
+  const d = depositoDisco();
+  for (const c of ["allegati", "visure", "richieste"] as const) {
+    await d.salvaFile("az-permessi-file", c, "a.pdf", new Uint8Array([1]));
+    await d.salvaFile("az-permessi-file", c, "b.pdf", new Uint8Array([1]), { soloSeNuovo: true });
+    for (const n of ["a.pdf", "b.pdf"]) {
+      assert.equal((await stat(path.join(cartellaAzienda("az-permessi-file"), c, n))).mode & 0o777, 0o600, `${c}/${n}`);
+    }
+  }
+});
+
 test("archivio illeggibile → ArchivioIlleggibile, e il file resta com'era", async () => {
   const { leggiStato, aggiornaStato } = await import("../archivio-azienda.ts");
   const { ArchivioIlleggibile } = await import("../archivio-file.ts");

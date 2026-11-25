@@ -6,7 +6,7 @@ import { accessoDaRichiesta, soloRuoli } from "@/lib/accesso/server";
 import { richiestaDellApp } from "@/lib/collegamenti-server";
 import { moduloAttivoSulServer } from "@/lib/moduli-server";
 import { deposito } from "@/lib/deposito";
-import { controllaDimensione } from "@/lib/limiti-file";
+import { controllaDimensione, MAX_FILE_BYTES, MESSAGGIO_TROPPO_GRANDE } from "@/lib/limiti-file";
 
 const PREFIX = "data:application/pdf;base64,";
 
@@ -21,6 +21,8 @@ export async function POST(req: Request) {
   if (!(await moduloAttivoSulServer(acc.azienda, "accettazione"))) return Response.json({ error: "Il modulo Accettazione non è attivo" }, { status: 403 });
   const { data } = (await req.json().catch(() => ({}))) as { data?: unknown };
   if (typeof data !== "string" || !data.startsWith(PREFIX)) return Response.json({ error: "Serve un file PDF" }, { status: 400 });
+  // Prima di decodificare: una stringa enorme non deve diventare un buffer enorme
+  if (data.length - PREFIX.length > Math.ceil((MAX_FILE_BYTES * 4) / 3) + 4) return Response.json({ error: MESSAGGIO_TROPPO_GRANDE }, { status: 413 });
   const bytes = Buffer.from(data.slice(PREFIX.length), "base64");
   const dim = controllaDimensione(bytes.length);
   if (!dim.ok) return Response.json({ error: dim.messaggio }, { status: 413 });

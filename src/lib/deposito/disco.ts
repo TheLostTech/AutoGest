@@ -23,6 +23,8 @@ const percorsoDocumento = (aziendaId: string, tipo: TipoDocumento) => {
   if (!d) throw new Error("Tipo di documento non valido");
   return { ...d, percorso: path.join(cartellaAzienda(aziendaId), d.file) };
 };
+// Permessi dei file per cartella: allegati, visure e richieste hanno dati personali, solo il proprietario li legge.
+const MODO_FILE: Record<CartellaFile, number> = { foto: 0o666, allegati: 0o600, visure: 0o600, richieste: 0o600 };
 function percorsoFile(aziendaId: string, cartella: CartellaFile, nome: string): string {
   if (!NOME_FILE.test(nome) || nome.includes("..")) throw new Error("Nome di file non valido");
   // il registro delle richieste è un documento, non un file
@@ -102,10 +104,10 @@ export function depositoDisco(): Deposito {
     async salvaFile(aziendaId, cartella, nome, dati, opz) {
       const percorso = percorsoFile(aziendaId, cartella, nome);
       if (!opz?.soloSeNuovo) {
-        await scrivi(percorso, dati, 0o666);
+        await scrivi(percorso, dati, MODO_FILE[cartella]);
         return true;
       }
-      return creaFileUnaVolta(percorso, dati, 0o666);
+      return creaFileUnaVolta(percorso, dati, MODO_FILE[cartella]);
     },
 
     async leggiFile(aziendaId, cartella, nome) {
