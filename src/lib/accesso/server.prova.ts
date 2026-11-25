@@ -216,7 +216,7 @@ test("20 accessi in parallelo sullo stesso account da 20 IP: al massimo 10 arriv
   assert.ok(stati.filter((s) => s === 429).length >= 10, stati.join());
 });
 
-test("10 password sbagliate a gruppi di 5 in parallelo sullo stesso account: nessun tentativo perso, l'11° è 429 e il blocco finisce nel registro", async () => {
+test("10 password sbagliate a gruppi di 5 in parallelo sullo stesso account: nessun tentativo perso, l'11° è 429 e il conto nel deposito è bloccato", async () => {
   const email = "gruppi@prova.invalid";
   const u = await c.internalAdapter.createUser({ name: "Gruppi", email, emailVerified: true }, { method: "admin" });
   const prova = (ip: string) =>
