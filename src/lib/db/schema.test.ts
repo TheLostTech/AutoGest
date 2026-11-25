@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Pool } from "pg";
-import { SQL_SCHEMA, preparaSchema, proteggiTabelle, sqlProtezione } from "./schema.ts";
+import { SQL_SCHEMA, SQL_STATO_TABELLE, preparaSchema, proteggiTabelle, sqlProtezione, sqlProtezioneMancante } from "./schema.ts";
 
 const RLS = /^alter table (\w+) enable row level security;?$/;
 
@@ -56,23 +56,64 @@ test("sqlProtezione: con i ruoli di Supabase si tolgono anche tutti i permessi",
   assert.deepEqual(sqlProtezione([], ["anon"]), []);
 });
 
-test("proteggiTabelle legge tabelle di public e ruoli esistenti, poi esegue le istruzioni", async () => {
+test("sqlProtezioneMancante: solo RLS spente e ruoli pubblici con permessi; tutto a posto = nessuna istruzione", () => {
+  assert.deepEqual(
+    sqlProtezioneMancante([
+      { tabella: "user", rls: true, ruoli: [] },
+      { tabella: "twoFactor", rls: false, ruoli: [] },
+      { tabella: "session", rls: true, ruoli: ["anon"] },
+      { tabella: 'strano"nome', rls: false, ruoli: ["anon", "authenticated"] },
+    ]),
+    [
+      'alter table public."twoFactor" enable row level security;',
+      'revoke all on table public."session" from "anon";',
+      'alter table public."strano""nome" enable row level security;',
+      'revoke all on table public."strano""nome" from "anon", "authenticated";',
+    ],
+  );
+  assert.deepEqual(sqlProtezioneMancante([{ tabella: "user", rls: true, ruoli: [] }]), []);
+  assert.deepEqual(sqlProtezioneMancante([]), []);
+});
+
+test("sqlProtezioneMancante dà le stesse istruzioni di sqlProtezione quando manca tutto", () => {
+  assert.deepEqual(
+    sqlProtezioneMancante([{ tabella: "session", rls: false, ruoli: ["anon", "authenticated"] }]),
+    sqlProtezione(["session"], ["anon", "authenticated"]),
+  );
+});
+
+test("lettura dello stato: tabelle di public, RLS, permessi di tabella e colonne dei soli ruoli pubblici", () => {
+  assert.match(SQL_STATO_TABELLE, /n\.nspname = 'public'/);
+  assert.match(SQL_STATO_TABELLE, /relkind in \('r', 'p'\)/);
+  assert.match(SQL_STATO_TABELLE, /relrowsecurity as rls/);
+  assert.match(SQL_STATO_TABELLE, /rolname in \('anon', 'authenticated'\)/);
+  assert.match(SQL_STATO_TABELLE, /aclexplode\(c\.relacl\)/);
+  assert.match(SQL_STATO_TABELLE, /aclexplode\(att\.attacl\)/);
+});
+
+test("proteggiTabelle: una lettura, poi solo le istruzioni che mancano (a regime nessuna)", async () => {
+  let stato = [
+    { tabella: "user", rls: false, ruoli: ["anon"] },
+    { tabella: "rateLimit", rls: true, ruoli: [] },
+  ];
   const eseguite: string[] = [];
   const finto = {
     query: async (q: string) => {
-      if (/from pg_tables/.test(q)) {
-        assert.match(q, /schemaname = 'public'/);
-        return { rows: [{ tablename: "user" }, { tablename: "rateLimit" }] };
-      }
-      if (/from pg_roles/.test(q)) {
-        assert.match(q, /'anon'/);
-        assert.match(q, /'authenticated'/);
-        return { rows: [{ rolname: "anon" }] };
-      }
+      if (q === SQL_STATO_TABELLE) return { rows: stato };
       eseguite.push(q);
       return { rows: [] };
     },
   } as unknown as Pool;
   await proteggiTabelle(finto);
-  assert.deepEqual(eseguite, sqlProtezione(["user", "rateLimit"], ["anon"]));
+  assert.deepEqual(eseguite, sqlProtezione(["user"], ["anon"]));
+  // Secondo avvio, tutto già protetto: nessun alter, nessun revoke
+  eseguite.length = 0;
+  stato = stato.map((t) => ({ ...t, rls: true, ruoli: [] }));
+  await proteggiTabelle(finto);
+  assert.deepEqual(eseguite, []);
+});
+
+test("proteggiTabelle: un errore del database arriva a chi chiama", async () => {
+  const finto = { query: async () => { throw new Error("permesso negato"); } } as unknown as Pool;
+  await assert.rejects(proteggiTabelle(finto), /permesso negato/);
 });
