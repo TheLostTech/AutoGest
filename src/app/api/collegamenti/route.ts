@@ -5,26 +5,18 @@
 // cartella dati. Nel prodotto vero la chiave va in un archivio di segreti, non accanto ai dati.
 import { connection } from "next/server";
 import { accessoDaRichiesta, soloRuoli } from "@/lib/accesso/server";
-import { servizioById, type StatoServizio } from "@/lib/collegamenti";
-import { cifra } from "@/lib/cifratura";
-import { altroSito, inFilaCollegamenti, load, save, MAX_TEXT, type Salvato } from "@/lib/collegamenti-server";
-
-const MAX_FILE = 64 * 1024; // un certificato .p12 pesa pochi KB
-
-function pubblico(s?: Salvato): StatoServizio {
-  return {
-    valori: s?.valori ?? {},
-    segreti: Object.fromEntries(Object.keys(s?.segreti ?? {}).map((k) => [k, true])),
-    file: Object.fromEntries(Object.entries(s?.file ?? {}).map(([k, f]) => [k, { nome: f.nome, byte: f.byte }])),
-    aggiornato: s?.aggiornato,
-  };
-}
+import { servizioById } from "@/lib/collegamenti";
+import {
+  altroSito,
+  erroreSalvataggio,
+  load,
+  modificaServizio,
+  pubblico,
+  scollegaServizio,
+  type ModificaCollegamento,
+} from "@/lib/collegamenti-server";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
-
-// Campi che dicono dove mandare le credenziali: se cambiano, la password salvata va reinserita,
-// così nessuno può dirottarla verso un altro indirizzo senza conoscerla
-const INDIRIZZI = ["endpoint"];
 
 export async function GET(req: Request) {
   await connection();
@@ -39,83 +31,26 @@ export async function GET(req: Request) {
   }
 }
 
-interface Modifica {
-  id: string;
-  valori?: Record<string, unknown>;
-  segreti?: Record<string, unknown>; // solo quelli nuovi; vuoto = invariato
-  file?: Record<string, { nome?: unknown; dati?: unknown }>; // dati in base64
-  togli?: string[]; // segreti o file da cancellare
-}
-
-// Un blocco per azienda: le modifiche della stessa azienda vanno in fila (coda condivisa da tutte le route)
-const inFila = inFilaCollegamenti;
-
 async function soloResponsabile(req: Request) {
   const acc = await accessoDaRichiesta(req);
   if (acc instanceof Response) return acc;
   return soloRuoli(acc, "responsabile") ?? acc;
 }
 
+// Lettura, modifica e scrittura stanno in un solo aggiornamento del deposito (modificaServizio): due salvataggi
+// insieme, anche da istanze diverse, vanno uno dopo l'altro e nessuno perde le credenziali dell'altro.
 export async function PUT(req: Request) {
   const acc = await soloResponsabile(req);
   if (acc instanceof Response) return acc;
   if (altroSito(req)) return json({ error: "Richiesta da un altro sito" }, 403);
-  const body = (await req.json().catch(() => null)) as Modifica | null;
+  const body = (await req.json().catch(() => null)) as ModificaCollegamento | null;
   const serv = body && servizioById(String(body.id));
   if (!body || !serv) return json({ error: "Servizio sconosciuto" }, 400);
-  const campo = (k: string) => serv.campi.find((c) => c.key === k);
-
-  const aid = acc.azienda.id;
-  const run = inFila(aid, async () => {
-    const a = await load(aid);
-    const s: Salvato = a[serv.id] ?? { valori: {}, segreti: {}, file: {} };
-
-    // Valgono solo le password già salvate e reinserite tutte in questa richiesta
-    const nuoviSegreti = Object.keys(s.segreti).every((k) => {
-      const v = body.segreti?.[k];
-      return typeof v === "string" && !!v;
-    });
-    const cambiaIndirizzo = INDIRIZZI.some((k) => {
-      const v = body.valori?.[k];
-      return typeof v === "string" && v.trim() !== (s.valori[k] ?? "");
-    });
-    if (cambiaIndirizzo && Object.keys(s.segreti).length && !nuoviSegreti) {
-      throw new Error("Hai cambiato l'indirizzo del servizio: reinserisci la password per confermare.");
-    }
-
-    for (const [k, v] of Object.entries(body.valori ?? {})) {
-      const c = campo(k);
-      if (!c || c.tipo === "segreto" || c.tipo === "file") continue;
-      if (c.tipo === "multipla") {
-        if (Array.isArray(v)) s.valori[k] = v.filter((x): x is string => typeof x === "string" && !!c.opzioni?.includes(x));
-      } else if (typeof v === "string") {
-        if (c.tipo === "scelta" && v && !c.opzioni?.includes(v)) continue;
-        s.valori[k] = v.trim().slice(0, MAX_TEXT);
-      }
-    }
-    for (const [k, v] of Object.entries(body.segreti ?? {})) {
-      if (campo(k)?.tipo !== "segreto" || typeof v !== "string" || !v) continue;
-      s.segreti[k] = await cifra(Buffer.from(v.slice(0, MAX_TEXT), "utf8"));
-    }
-    for (const [k, f] of Object.entries(body.file ?? {})) {
-      if (campo(k)?.tipo !== "file" || typeof f?.dati !== "string") continue;
-      const bytes = Buffer.from(f.dati, "base64");
-      if (!bytes.length || bytes.length > MAX_FILE) throw new Error("File vuoto o troppo grande (massimo 64 KB)");
-      s.file[k] = { nome: String(f.nome ?? "certificato").slice(0, 200), byte: bytes.length, dati: await cifra(bytes) };
-    }
-    for (const k of body.togli ?? []) {
-      delete s.segreti[k];
-      delete s.file[k];
-    }
-    s.aggiornato = new Date().toISOString();
-    a[serv.id] = s;
-    await save(aid, a);
-    return pubblico(s);
-  });
   try {
-    return json(await run);
+    return json(await modificaServizio(acc.azienda.id, serv, body));
   } catch (e) {
-    return json({ error: e instanceof Error ? e.message : "Salvataggio non riuscito" }, 400);
+    const r = erroreSalvataggio(e);
+    return json({ error: r.error }, r.status);
   }
 }
 
@@ -126,13 +61,8 @@ export async function DELETE(req: Request) {
   if (altroSito(req)) return json({ error: "Richiesta da un altro sito" }, 403);
   const id = new URL(req.url).searchParams.get("id") ?? "";
   if (!servizioById(id)) return json({ error: "Servizio sconosciuto" }, 400);
-  const aid = acc.azienda.id;
   try {
-    await inFila(aid, async () => {
-      const a = await load(aid);
-      delete a[id];
-      await save(aid, a);
-    });
+    await scollegaServizio(acc.azienda.id, id);
   } catch (e) {
     console.error("Collegamenti non leggibili", e);
     return json({ error: "Il file dei collegamenti non si legge: non è stato modificato. Avvisa l'assistenza." }, 500);
