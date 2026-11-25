@@ -4,6 +4,7 @@ import { ABBONAMENTO_NUOVO } from "@/lib/abbonamento";
 import { aggiornaAbbonamento } from "@/lib/abbonamento-server";
 import { rispostaNonPronta } from "@/lib/accesso/pronta";
 import { registrazioneConsentita, validaRegistrazione } from "@/lib/accesso/registrazione";
+import { ipCliente } from "@/lib/auth/intestazioni-ip";
 import { aggiungiEventi, creaStatoAzienda } from "@/lib/archivio-azienda";
 import { creaAzienda, creaMembro, slugDa } from "@/lib/piattaforma/crea";
 import { usaInvito, verificaInvito } from "@/lib/piattaforma/inviti";
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
   if (nonPronta) return nonPronta;
   const x = daAltroSito(req, true);
   if (x) return x;
-  if (!registrazioneConsentita(req.headers.get("cf-connecting-ip"), Date.now())) {
+  if (!registrazioneConsentita(ipCliente(req.headers), Date.now())) {
     return errore(429, "Troppe registrazioni da questo indirizzo: riprova più tardi.");
   }
   const v = validaRegistrazione(await leggiJson(req));

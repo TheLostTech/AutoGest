@@ -13,7 +13,7 @@ import { SEGRETO_DI_PROVA } from "@/lib/auth/segreto";
 import { auth } from "@/lib/auth/server";
 import { creaStatoAzienda } from "@/lib/archivio-azienda";
 import { pool } from "@/lib/db/pool";
-import { preparaSchema } from "@/lib/db/schema";
+import { preparaSchema, proteggiTabelle } from "@/lib/db/schema";
 import { sceltaDeposito } from "@/lib/deposito";
 import { DEFAULT_LISTINI } from "@/lib/pricing";
 import { buildSeed } from "@/lib/seed";
@@ -209,6 +209,8 @@ export async function avviaPiattaforma(): Promise<void> {
 
     if (sceltaDeposito(process.env) === "supabase") {
       await preparaSchema(pool());
+      // Dopo le migrazioni e lo schema: RLS e niente permessi per le chiavi pubbliche su ogni tabella di public
+      await proteggiTabelle(pool());
     } else {
       const demo = await aziendaDemo(c);
       if (demo && !demo.preparata) await preparaDemo(c, demo.id);

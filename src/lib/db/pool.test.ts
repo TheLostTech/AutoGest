@@ -14,8 +14,8 @@ const caFinto = () => {
   return f;
 };
 
-test("localhost e 127.0.0.1: niente TLS, al massimo 3 connessioni", () => {
-  for (const url of ["postgresql://u:p@localhost:5432/piazzale", "postgres://u:p@127.0.0.1/piazzale"]) {
+test("localhost, 127.0.0.1 e ::1: niente TLS, al massimo 3 connessioni", () => {
+  for (const url of ["postgresql://u:p@localhost:5432/piazzale", "postgres://u:p@127.0.0.1/piazzale", "postgresql://u:p@[::1]:5432/piazzale"]) {
     const o = opzioniPool(url, "/non/esiste.crt");
     assert.equal(o.ssl, false);
     assert.equal(o.max, 3);
@@ -50,4 +50,18 @@ test("indirizzo illeggibile: errore senza l'indirizzo dentro (c'è la password)"
     () => opzioniPool("postgresql://u:segreta@@:x/", "/non/esiste.crt"),
     (e: Error & { input?: unknown }) => e.message === "DATABASE_URL non valido" && !JSON.stringify({ ...e, m: e.message }).includes("segreta"),
   );
+});
+
+test("host= nell'indirizzo decide dove ci si collega: localhost davanti non basta per togliere il TLS", () => {
+  assert.throws(() => opzioniPool("postgresql://u:p@localhost/db?host=db.remoto.example", "/non/esiste.crt"), {
+    message: "Certificato CA di Supabase mancante: src/lib/db/supabase-ca.crt",
+  });
+  const o = opzioniPool("postgresql://u:p@localhost/db?host=db.remoto.example", caFinto());
+  assert.ok(o.ssl && typeof o.ssl === "object" && o.ssl.ca);
+  // Al contrario: verso localhost davvero, anche se l'indirizzo dice altro, niente TLS
+  assert.equal(opzioniPool(`${REMOTO}?host=127.0.0.1`, "/non/esiste.crt").ssl, false);
+});
+
+test("socket o host vuoto: non è localhost, TLS richiesto", () => {
+  assert.throws(() => opzioniPool("postgresql://u:p@localhost/db?host=/var/run/postgresql", "/non/esiste.crt"), /Certificato CA/);
 });

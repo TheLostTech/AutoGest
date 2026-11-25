@@ -5,9 +5,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Pool, type PoolConfig } from "pg";
+import { parse } from "pg-connection-string";
 
 export const FILE_CA = path.join(/*turbopackIgnore: true*/ process.cwd(), "src", "lib", "db", "supabase-ca.crt");
-const LOCALE = new Set(["localhost", "127.0.0.1"]);
+const LOCALE = new Set(["localhost", "127.0.0.1", "::1"]);
 // Parametri dell'indirizzo che pg userebbe al posto di `ssl` qui sotto (sslmode=no-verify spegne la verifica)
 const PARAMETRO_SSL = /^(ssl.*|uselibpqcompat)$/i;
 
@@ -23,7 +24,9 @@ export function opzioniPool(url: string, fileCa: string = FILE_CA): PoolConfig {
   for (const k of tolti) u.searchParams.delete(k);
   // Se non c'era nulla da togliere l'indirizzo resta com'era (nessuna ricodifica della password)
   const connectionString = tolti.length ? u.toString() : url;
-  if (LOCALE.has(u.hostname)) return { connectionString, max: 3, ssl: false };
+  // Locale o no si decide sull'host che pg userà davvero: lo legge con questo stesso parse, e un ?host= nell'indirizzo
+  // vince sul nome dopo la @ (postgresql://localhost/db?host=remoto va su remoto, quindi con il TLS)
+  if (LOCALE.has(parse(connectionString).host ?? "")) return { connectionString, max: 3, ssl: false };
   let ca: string;
   try {
     ca = readFileSync(fileCa, "utf8");

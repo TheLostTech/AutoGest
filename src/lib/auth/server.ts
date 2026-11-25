@@ -7,6 +7,7 @@ import { pool } from "@/lib/db/pool";
 import { sceltaDeposito } from "@/lib/deposito";
 import { DATA_DIR, DB_FILE } from "@/lib/server-data";
 import { assistenzaPlugin } from "./assistenza";
+import { intestazioniIp } from "./intestazioni-ip";
 import { invitiPlugin } from "./inviti";
 import { segretoAccesso } from "./segreto";
 import { pinDispositivo } from "./pin-dispositivo";
@@ -23,10 +24,11 @@ const cloud = sceltaDeposito(process.env) === "supabase";
 if (!cloud) mkdirSync(DATA_DIR, { recursive: true });
 
 // Tentativi di accesso: Better Auth limita le richieste solo in produzione; qui sempre, anche con `next dev` sul tunnel.
-// Per indirizzo IP: quello di cf-connecting-ip, che Cloudflare Tunnel riscrive sempre (x-forwarded-for lo può scrivere
-// chiunque). Senza quell'intestazione (localhost, rete interna) tutte le richieste condividono un contatore per percorso,
-// che è più severo. Chi cambia IP a ogni tentativo trova comunque il blocco per account (tentativi-account.ts) e, sul
-// secondo fattore, quello di Better Auth (10 codici sbagliati → 15 minuti). Su disco in memoria: un solo processo Node.
+// Per indirizzo IP, dall'intestazione che il davanti riscrive sempre (intestazioni-ip.ts): x-real-ip su Vercel,
+// altrimenti cf-connecting-ip di Cloudflare Tunnel (x-forwarded-for lo può scrivere chiunque). Senza quell'intestazione
+// (localhost, rete interna) tutte le richieste condividono un contatore per percorso, che è più severo. Chi cambia IP
+// a ogni tentativo trova comunque il blocco per account (tentativi-account.ts) e, sul secondo fattore, quello di
+// Better Auth (10 codici sbagliati → 15 minuti). Su disco in memoria: un solo processo Node.
 // In cloud nel database: le istanze sono più d'una e il contatore dev'essere lo stesso per tutte.
 const AL_MINUTO = (max: number) => ({ window: 60, max });
 
@@ -48,7 +50,7 @@ export const auth = betterAuth({
     },
   },
   emailAndPassword: { enabled: true, disableSignUp: true },
-  advanced: { useSecureCookies: false, ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } },
+  advanced: { useSecureCookies: false, ipAddress: { ipAddressHeaders: intestazioniIp(process.env) } },
   trustedOrigins: process.env.INDIRIZZO_GESTIONALE ? [process.env.INDIRIZZO_GESTIONALE] : [],
   plugins: [
     organization({ ac: acAzienda, roles: ruoliAzienda, allowUserToCreateOrganization: false }),

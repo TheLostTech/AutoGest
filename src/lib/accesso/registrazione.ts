@@ -31,8 +31,8 @@ export function validaRegistrazione(corpo: unknown): { ok: DatiRegistrazione } |
   return { ok: { azienda, nome, email, password, invito, condizioni: true } };
 }
 
-// Al massimo 3 registrazioni all'ora per indirizzo (cf-connecting-ip). Senza indirizzo (localhost, rete interna)
-// un contatore comune. Conta ogni richiesta all'arrivo. In memoria: un solo processo Node (docs/ACCESSO.md).
+// Al massimo 3 registrazioni all'ora per indirizzo (ipCliente: x-real-ip su Vercel, altrimenti cf-connecting-ip).
+// Senza indirizzo (localhost, rete interna) un contatore comune. Conta ogni richiesta all'arrivo. In memoria: un solo processo Node (docs/ACCESSO.md).
 export const REGISTRAZIONI_MAX = 3;
 export const REGISTRAZIONI_FINESTRA_MS = 60 * 60_000;
 
