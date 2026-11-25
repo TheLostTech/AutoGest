@@ -9,7 +9,6 @@ import { aggiornaAbbonamento } from "@/lib/abbonamento-server";
 import { rispostaNonPronta } from "@/lib/accesso/pronta";
 import { registrazioneConsentita, validaRegistrazione } from "@/lib/accesso/registrazione";
 import { registrazioneDaRobot } from "@/lib/accesso/robot";
-import { RITORNO_CONFERMA } from "@/lib/accesso/conferma";
 import { registrazioneInSospeso } from "@/lib/auth/conferma-titolare";
 import { ipCliente } from "@/lib/auth/intestazioni-ip";
 import { auth } from "@/lib/auth/server";
@@ -48,13 +47,13 @@ async function annulla(c: Contesto, aziendaId: string, userId: string | null) {
   }
 }
 
-// Con l'endpoint di Better Auth, che firma il link (valido 48 ore). La richiesta passata è nuova e senza cookie: serve
-// solo a dare l'indirizzo del sito al link quando Better Auth non ne ha uno fisso (in locale), e una sessione aperta in
-// questo browser (per esempio del super admin) non deve entrare nell'invio.
+// Con l'endpoint di Better Auth, che firma il gettone (valido 48 ore). La richiesta passata è nuova e senza cookie:
+// serve solo a dare l'indirizzo del sito al link in locale (in produzione vale solo l'indirizzo pubblico), e una
+// sessione aperta in questo browser (per esempio del super admin) non deve entrare nell'invio.
 async function inviaConferma(req: Request, email: string): Promise<boolean> {
   try {
     await auth.api.sendVerificationEmail({
-      body: { email, callbackURL: RITORNO_CONFERMA },
+      body: { email },
       request: new Request(new URL("/api/auth/send-verification-email", req.url), { method: "POST" }),
       asResponse: false,
     });
@@ -63,6 +62,23 @@ async function inviaConferma(req: Request, email: string): Promise<boolean> {
     console.error("Email di conferma non inviata", e instanceof Error ? e.message : e);
     return false;
   }
+}
+
+// Sostituzione di una registrazione mai confermata: prima l'utente (sessioni, account, utente), poi le aziende. Se
+// togliere l'utente non riesce ci si ferma e la vecchia registrazione resta intera, quindi sostituibile al prossimo
+// tentativo (togliendo prima i membri resterebbe un utente senza azienda: 409 per sempre su quell'email).
+async function togliInSospeso(c: Contesto, userId: string, aziende: string[]): Promise<boolean> {
+  try {
+    await c.adapter.deleteMany({ model: "session", where: [{ field: "userId", value: userId }] });
+    await c.adapter.deleteMany({ model: "account", where: [{ field: "userId", value: userId }] });
+    await c.adapter.delete({ model: "user", where: [{ field: "id", value: userId }] });
+  } catch (e) {
+    console.error("Registrazione in sospeso non sostituita: utente non tolto", userId, e);
+    return false;
+  }
+  // L'email ora è libera: le aziende rimaste senza titolare si tolgono al meglio (un guasto finisce nel log)
+  for (const id of aziende) await annulla(c, id, null);
+  return true;
 }
 
 export async function POST(req: Request) {
@@ -88,11 +104,10 @@ export async function POST(req: Request) {
       return null;
     });
     if (!daTogliere) return errore(409, EMAIL_USATA);
-    for (const [i, id] of daTogliere.entries()) await annulla(c, id, i === daTogliere.length - 1 ? esistente.user.id : null);
-    console.info("Registrazione mai confermata sostituita da una nuova con la stessa email", daTogliere);
-    if (await c.internalAdapter.findUserByEmail(d.email).catch(() => esistente)) {
+    if (!(await togliInSospeso(c, esistente.user.id, daTogliere)) || (await c.internalAdapter.findUserByEmail(d.email).catch(() => esistente))) {
       return errore(500, "Non è stato possibile completare la registrazione. Riprova.");
     }
+    console.info("Registrazione mai confermata sostituita da una nuova con la stessa email", daTogliere);
   }
 
   const org = await creaAzienda(c, d.azienda, slugDa(d.azienda), false, { registrata: true });

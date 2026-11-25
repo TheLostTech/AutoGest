@@ -7,9 +7,9 @@ const PERMESSI: Record<string, "GET" | "POST"> = {
   "/get-session": "GET",
   "/sign-in/email": "POST",
   "/sign-out": "POST",
-  // Conferma dell'email del titolare: "Rimanda l'email" dalla pagina di accesso e il link dell'email
+  // "Rimanda l'email" di conferma dalla pagina di accesso. Il link dell'email porta a /conferma, che chiede la password
+  // e conferma da /api/conferma: /verify-email di Better Auth (conferma senza password) dal browser non si raggiunge
   "/send-verification-email": "POST",
-  "/verify-email": "GET",
   "/organization/list": "GET",
   "/organization/set-active": "POST",
   "/two-factor/enable": "POST",

@@ -24,10 +24,10 @@ test("percorsoDaSicuro: il risultato non è mai un indirizzo con due barre inizi
 });
 
 test("percorsoPubblico", () => {
-  for (const p of ["/accesso", "/demo", "/negozio", "/negozio/carrello", "/ebay-simulato/x", "/scopri", "/news/1", "/registrati", "/condizioni", "/privacy", "/robots.txt", "/sitemap.xml", "/149e9513-01fa-4fb0-aad4-566afd725d1b/2d206a39-8ed7-437e-a3be-862e0f06eea3/a-4-a/x"]) {
+  for (const p of ["/accesso", "/conferma", "/demo", "/negozio", "/negozio/carrello", "/ebay-simulato/x", "/scopri", "/news/1", "/registrati", "/condizioni", "/privacy", "/robots.txt", "/sitemap.xml", "/149e9513-01fa-4fb0-aad4-566afd725d1b/2d206a39-8ed7-437e-a3be-862e0f06eea3/a-4-a/x"]) {
     assert.equal(percorsoPubblico(p), true, p);
   }
-  for (const p of ["/", "/ricambi", "/negozio-finto", "/accessorio", "/registratix", "/condizionix", "/privacyx", "/149e9513", "/149e9513-01fa-4fb0-aad4-566afd725d1b", "/149e9513-01fa-4fb0-aad4-566afd725d1b/altro", "/etichetta/X", "/api/demo-state"]) {
+  for (const p of ["/", "/ricambi", "/negozio-finto", "/accessorio", "/registratix", "/confermax", "/condizionix", "/privacyx", "/149e9513", "/149e9513-01fa-4fb0-aad4-566afd725d1b", "/149e9513-01fa-4fb0-aad4-566afd725d1b/altro", "/etichetta/X", "/api/demo-state"]) {
     assert.equal(percorsoPubblico(p), false, p);
   }
 });

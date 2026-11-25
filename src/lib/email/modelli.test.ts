@@ -47,6 +47,13 @@ describe("modelli email", () => {
     assert.ok(modelli.conferma.html.includes(frase));
   });
 
+  it("conferma: pulsante \"Conferma l'email\" e avviso che servirà la password della registrazione", () => {
+    assert.ok(modelli.conferma.testo.includes(`Conferma l'email: ${LINK}`), modelli.conferma.testo);
+    assert.ok(modelli.conferma.html.includes("Conferma l&#39;email</a>"));
+    const frase = "Ti chiederemo la password che hai scelto quando ti sei registrato.";
+    assert.ok(modelli.conferma.testo.includes(frase) && modelli.conferma.html.includes(frase.replace("'", "&#39;")));
+  });
+
   it("in scadenza: giorni nell'oggetto", () => {
     assert.ok(modelli.scadenza.oggetto.includes("3 giorni"));
     assert.ok(emailProvaInScadenza("M", 1, LINK).oggetto.includes("domani"));

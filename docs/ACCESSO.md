@@ -14,6 +14,8 @@
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_LIVE` | Chiave di Stripe (di prova `sk_test_…`), segreto degli avvisi e consenso alle chiavi vere. Senza chiave Stripe è spento. Dettagli in `docs/PAGAMENTI.md`. |
 | `DEMO_PUBBLICA` | Solo per la vetrina online (Vercel): con `1` "Apri la demo" (`/demo`) entra senza credenziali nell'azienda demo come la responsabile, e chi non ha una sessione ci rientra da solo. Il login vero resta su `/accesso?manuale=1`. Va con `DEMO_UTENTI=1` e `DATI_DIR` in una cartella scrivibile (su Vercel `/tmp/...`, che si azzera da sola). Mai sul server di un'azienda. |
 | `PIAZZALE_SENZA_BOTID` | Con `1` la registrazione in produzione fuori da Vercel salta BotID (resta il limite di 3 all'ora per indirizzo); senza, fuori da Vercel in produzione ogni registrazione è rifiutata. Solo per i server sul Mac (`scripts/piazzale-test.sh`, `scripts/presentazione.sh`). |
+| `BETTER_AUTH_URL` | Indirizzo pubblico del gestionale (es. `https://app.miopiazzale.it`), per Better Auth e per i link nelle email. **Obbligatoria in produzione fuori da Vercel**: senza, l'email di conferma della registrazione non parte (la registrazione resta e risponde `inviata: false`), perché in produzione il link non si costruisce mai dall'host della richiesta, che lo può scegliere chi la manda. Su Vercel, se manca, vale l'indirizzo di produzione del progetto (o del ramo, nelle anteprime). In locale (`next dev`) si deduce dalla richiesta. |
+| `RESEND_API_KEY`, `EMAIL_MITTENTE` | Invio delle email (Resend) e mittente. Senza chiave, fuori produzione le email finiscono nel log del server; in produzione, e con la chiave ma senza mittente, l'invio si ferma. |
 | `INDIRIZZO_GESTIONALE` | Indirizzo pubblico del gestionale (es. quello del tunnel): è l'unico altro sito da cui Better Auth accetta le richieste. |
 
 ## Primo avvio
@@ -34,7 +36,9 @@ Si crea impostando le variabili `SUPERADMIN_*` al primo avvio (la password non v
 
 ## Registrazione e persone
 
-Una nuova azienda si crea da sola: chi ha un codice invito (lo crea il super admin in Piattaforma, Inviti) apre `/registrati` e diventa il responsabile della sua azienda. Il responsabile crea poi gli accessi dei dipendenti da Impostazioni, Persone: nome, ruoli, email e password oppure solo PIN. Per l'abbonamento e i pagamenti vedi `docs/PAGAMENTI.md`.
+Una nuova azienda si crea da sola: chi ha un codice invito (lo crea il super admin in Piattaforma, Inviti) apre `/registrati` e diventa il responsabile della sua azienda.
+
+Conferma dell'email (registrazione libera, spec prova-15-giorni): il titolare riceve un link a `/conferma?token=…` (valido 48 ore) e lì scrive la password scelta alla registrazione; `/api/conferma` controlla la firma del gettone e la password (con il blocco per account dell'accesso), poi fa verificare l'email a Better Auth: partono i 15 giorni di prova, si chiudono le altre sessioni e si entra già nell'azienda. Prima della conferma l'accesso con email e password risponde "Conferma prima la tua email" con il pulsante "Rimanda l'email". `/api/auth/verify-email` dal browser non si raggiunge (conferma senza password). Una registrazione mai confermata si sostituisce rifacendola con la stessa email; chi la rifà con un'altra password non si fa confermare l'account dal vero titolare, perché al link serve la password giusta. Il responsabile crea poi gli accessi dei dipendenti da Impostazioni, Persone: nome, ruoli, email e password oppure solo PIN. Per l'abbonamento e i pagamenti vedi `docs/PAGAMENTI.md`.
 
 ## Dispositivi condivisi (nome e PIN)
 

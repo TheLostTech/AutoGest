@@ -64,6 +64,23 @@ export async function chiudiTentativoDellaRichiesta(c: AuthContext, request: Req
   stato.inCorso.delete(request);
   await chiudiTentativo(c, p, esito);
 }
+/**
+ * Controllo di una password fuori da /sign-in/email (conferma dell'email, api/conferma) con lo stesso blocco per
+ * account: prenota il tentativo, verifica, chiude con l'esito. 10 password sbagliate in 15 minuti → bloccato 15 minuti.
+ */
+export async function verificaConBlocco(c: AuthContext, userId: string, verifica: () => Promise<boolean>): Promise<"bloccato" | "sbagliata" | "giusta"> {
+  const p = { k: `u:${userId}`, gettone: randomUUID(), userId };
+  if ((await sulConto(p.k, (conti, adesso) => prenota(conti, p.k, p.gettone, adesso))) === "bloccato") return "bloccato";
+  let giusta: boolean;
+  try {
+    giusta = await verifica();
+  } catch (e) {
+    await chiudiTentativo(c, p, "altro");
+    throw e;
+  }
+  await chiudiTentativo(c, p, giusta ? "giusta" : "sbagliata");
+  return giusta ? "giusta" : "sbagliata";
+}
 const chiaveDi = (ctx: { body?: unknown }) => chiaveAccount((ctx.body as { email?: unknown } | undefined)?.email);
 
 export const tentativiAccount = {

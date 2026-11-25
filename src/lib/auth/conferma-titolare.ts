@@ -2,20 +2,21 @@
 // - L'email di conferma parte solo per un titolare "in attesa": email non verificata, responsabile di un'azienda
 //   registrata con abbonamento "nuovo" e senza fine della prova. Per chiunque altro l'endpoint risponde uguale e non
 //   manda nulla (niente email a dipendenti o account già confermati).
-// - Al click (afterEmailVerification): partono i 15 giorni, la scheda della registrazione segna la conferma, il registro
-//   lo scrive e si chiudono le altre sessioni dell'utente. L'accesso automatico di Better Auth crea poi la sua.
+// - Il link porta a /conferma, che chiede la password scelta alla registrazione; /api/conferma la controlla (con il
+//   blocco per account) e solo allora fa verificare l'email a Better Auth. Alla verifica (afterEmailVerification):
+//   partono i 15 giorni, la scheda della registrazione segna la conferma, il registro lo scrive e si chiudono le
+//   sessioni dell'utente; poi /api/conferma apre quella nuova.
 // - Prima della conferma il titolare non entra con email e password (hook "before" su /sign-in/email). Gli altri utenti
 //   (dipendenti con email non verificata, super admin) non sono toccati: niente requireEmailVerification.
 import type { AuthContext, BetterAuthPlugin, User } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { avviaProva } from "@/lib/abbonamento";
 import { aggiornaAbbonamento, leggiAbbonamento } from "@/lib/abbonamento-server";
-import { CODICE_DA_CONFERMARE, MESSAGGIO_DA_CONFERMARE } from "@/lib/accesso/conferma";
+import { CODICE_DA_CONFERMARE, linkConferma, MESSAGGIO_DA_CONFERMARE } from "@/lib/accesso/conferma";
 import { ruoliDaStringa } from "@/lib/accesso/ruoli";
 import { aggiungiEventi } from "@/lib/archivio-azienda";
 import type { SchedaRegistrazione } from "@/lib/consensi";
 import { deposito } from "@/lib/deposito";
-import { indirizzoPubblico } from "@/lib/email/indirizzo";
 import { inviaEmail } from "@/lib/email/invia";
 import { emailConferma } from "@/lib/email/modelli";
 import { chiudiTentativoDellaRichiesta } from "./tentativi-account";
@@ -77,22 +78,13 @@ export async function registrazioneInSospeso(c: AuthContext, user: { id: string;
   return [...inAttesa];
 }
 
-/**
- * Link assoluto per l'email. Better Auth lo costruisce dal suo indirizzo: senza indirizzo fisso (in locale) e chiamato
- * dal server (auth.api, dalla registrazione) l'indirizzo è vuoto e il link resta "/verify-email?…": si completa con
- * l'indirizzo pubblico o con l'origine della richiesta.
- */
-export function linkConferma(url: string, request?: Request): string {
-  if (/^https?:\/\//i.test(url)) return url;
-  const origine = indirizzoPubblico() ?? (request ? new URL(request.url).origin : null);
-  if (!origine) throw new Error("Indirizzo del link di conferma non disponibile");
-  return `${origine}/api/auth${url.startsWith("/") ? url : `/${url}`}`;
-}
-
 /** sendVerificationEmail: solo al titolare in attesa; per gli altri non parte nulla (la risposta resta la stessa). */
-export async function inviaConferma(c: AuthContext, d: { user: User; url: string }, request?: Request): Promise<void> {
+// Il link porta alla nostra pagina /conferma con il gettone di Better Auth (non al suo /verify-email): per confermare
+// serve anche la password scelta alla registrazione (api/conferma). In produzione l'indirizzo è solo quello pubblico.
+export async function inviaConferma(c: AuthContext, d: { user: User; token: string }, request?: Request): Promise<void> {
   if (!(await daConfermare(c, d.user))) return;
-  await inviaEmail({ ...emailConferma(d.user.name, linkConferma(d.url, request)), a: d.user.email });
+  const link = linkConferma(d.token, request ? new URL(request.url).origin : null);
+  await inviaEmail({ ...emailConferma(d.user.name, link), a: d.user.email });
 }
 
 /**
@@ -143,7 +135,8 @@ export function opzioniConferma(contesto: () => Promise<AuthContext>) {
   return {
     sendVerificationEmail: async (d: { user: User; url: string; token: string }, request?: Request) => inviaConferma(await contesto(), d, request),
     expiresIn: DURATA_LINK_S,
-    autoSignInAfterVerification: true,
+    // L'accesso lo apre /api/conferma dopo la verifica (signInEmail), già nell'azienda del titolare
+    autoSignInAfterVerification: false,
     afterEmailVerification: async (user: User) => dopoConferma(await contesto(), user),
   };
 }

@@ -5,6 +5,8 @@ const PUBBLICI = [
   "/accesso",
   "/demo",
   "/registrati",
+  // Conferma dell'email del titolare: si apre dal link dell'email, prima di poter entrare
+  "/conferma",
   "/condizioni",
   "/privacy",
   "/negozio",

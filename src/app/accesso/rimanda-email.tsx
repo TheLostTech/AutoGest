@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { authClient } from "@/lib/auth/client";
-import { esitoRimando, RITORNO_CONFERMA, type Avviso } from "@/lib/accesso/conferma";
+import { esitoRimando, type Avviso } from "@/lib/accesso/conferma";
 import { Button, Notice } from "@/components/ui";
 
 // "Rimanda l'email" di conferma (pagina di accesso e registrazione). Better Auth risponde allo stesso modo per ogni
@@ -16,7 +16,7 @@ export function RimandaEmail({ email }: { email: string }) {
     setEsito(null);
     let stato = 0;
     try {
-      const r = await authClient.sendVerificationEmail({ email: email.trim().toLowerCase(), callbackURL: RITORNO_CONFERMA });
+      const r = await authClient.sendVerificationEmail({ email: email.trim().toLowerCase() });
       stato = r.error ? r.error.status || 500 : 200;
     } catch {
       stato = 0;

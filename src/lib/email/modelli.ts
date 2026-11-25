@@ -47,8 +47,12 @@ ${c.nota ? `<p style="margin:0 0 14px;font-size:13px;line-height:1.5;color:#4b55
 export function emailConferma(nome: string, link: string): Email {
   return componi("", {
     oggetto: "Conferma la tua email su Piazzale",
-    paragrafi: [`Ciao ${nome},`, "grazie per esserti registrato a Piazzale, il gestionale per autodemolizioni di Lostar Technology. Per attivare la prova gratuita conferma il tuo indirizzo email."],
-    pulsante: "Conferma la mia email",
+    paragrafi: [
+      `Ciao ${nome},`,
+      "grazie per esserti registrato a Piazzale, il gestionale per autodemolizioni di Lostar Technology. Per attivare la prova gratuita conferma il tuo indirizzo email.",
+      "Ti chiederemo la password che hai scelto quando ti sei registrato.",
+    ],
+    pulsante: "Conferma l'email",
     link,
     nota: "Se non sei stato tu a registrarti, ignora questo messaggio: senza conferma non succede nulla.",
   });

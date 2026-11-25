@@ -11,7 +11,6 @@ test("endpoint usati dall'app: permessi con il loro metodo", () => {
   assert.equal(percorsoAuthPermesso("GET", "/api/auth/pin-dispositivo/nomi"), true);
   assert.equal(percorsoAuthPermesso("POST", "/api/auth/pin-dispositivo/entra/"), true);
   assert.equal(percorsoAuthPermesso("POST", "/api/auth/send-verification-email"), true);
-  assert.equal(percorsoAuthPermesso("GET", "/api/auth/verify-email"), true);
 });
 
 test("tutto il resto: 404 (profilo, admin, lasciare l'azienda, metodo sbagliato, varianti)", () => {
@@ -26,6 +25,8 @@ test("tutto il resto: 404 (profilo, admin, lasciare l'azienda, metodo sbagliato,
     ["POST", "/api/auth/sign-up/email"],
     ["GET", "/api/auth/sign-out"],
     ["GET", "/api/auth/send-verification-email"],
+    // Si conferma solo da /api/conferma, con la password scelta alla registrazione
+    ["GET", "/api/auth/verify-email"],
     ["POST", "/api/auth/verify-email"],
     ["POST", "/api/auth/request-password-reset"],
     ["POST", "/api/auth/get-session"],

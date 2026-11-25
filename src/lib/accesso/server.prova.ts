@@ -268,7 +268,6 @@ test("email inesistenti: contatore comune da 30 al minuto, l'account vero intant
 // ——— Conferma dell'email del titolare registrato (spec prova-15-giorni, Task 5) ———
 
 const SITO = "http://localhost:3000";
-const RITORNO = "/accesso?confermata=1";
 let ipN = 0;
 const nuovoIp = () => `198.18.${Math.floor(++ipN / 250)}.${(ipN % 250) + 1}`;
 
@@ -288,10 +287,12 @@ async function conEmail<T>(fn: () => Promise<T>): Promise<{ r: T; email: string[
   }
 }
 
-const linkDa = (testo: string) => {
-  const l = testo.match(/https?:\/\/\S*\/api\/auth\/verify-email\?\S+/)?.[0];
+/** Il gettone dal link dell'email, che porta alla nostra pagina /conferma (mai a /api/auth/verify-email). */
+const gettoneDa = (testo: string) => {
+  const l = testo.match(/https?:\/\/\S*\/conferma\?token=\S+/)?.[0];
   assert.ok(l, `nessun link di conferma in: ${testo}`);
-  return l!;
+  assert.ok(l!.startsWith(`${SITO}/conferma?token=`), l);
+  return decodeURIComponent(new URL(l!).searchParams.get("token")!);
 };
 
 async function registra(email: string, azienda = "Ricambi Conferma", password = "password-lunga-1") {
@@ -308,6 +309,18 @@ async function registra(email: string, azienda = "Ricambi Conferma", password = 
   });
 }
 
+async function conferma(token: string, password: string) {
+  const { POST } = await import("../../app/api/conferma/route.ts");
+  const r = await POST(
+    new Request(`${SITO}/api/conferma`, {
+      method: "POST",
+      headers: { origin: SITO, host: "localhost:3000", "content-type": "application/json" },
+      body: JSON.stringify({ token, password }),
+    }),
+  );
+  return { stato: r.status, corpo: (await r.json()) as { ok?: boolean; error?: string }, cookie: r.headers.getSetCookie() };
+}
+
 const entra = (email: string, password: string) =>
   m.auth.auth.handler(
     new Request(`${SITO}/api/auth/sign-in/email`, {
@@ -317,27 +330,27 @@ const entra = (email: string, password: string) =>
     }),
   );
 
-const apri = (link: string) => m.auth.auth.handler(new Request(link, { headers: { "cf-connecting-ip": nuovoIp() } }));
-
 async function aziendaDi(userId: string): Promise<string> {
   const righe = await c.adapter.findMany({ model: "member", where: [{ field: "userId", value: userId }] });
   assert.equal(righe.length, 1);
   return righe[0].organizationId;
 }
 
-test("conferma: il titolare registrato non entra prima di confermare; il link fa partire i 15 giorni e chiude le altre sessioni", async () => {
+const PASSWORD_SBAGLIATA = "Password non corretta.";
+const LINK_NON_VALIDO = "Il link non è più valido: chiedi una nuova email dalla pagina di accesso.";
+
+test("conferma: il titolare non entra prima di confermare; la conferma chiede la sua password, fa partire i 15 giorni e chiude le altre sessioni", async () => {
   const email = "titolare-conferma@prova.invalid";
   const reg = await registra(email);
   assert.equal(reg.r.stato, 201, JSON.stringify(reg.r.corpo));
   assert.deepEqual(reg.r.corpo, { ok: true, conferma: true, inviata: true });
   assert.equal(reg.email.length, 1);
   assert.ok(reg.email[0].includes(`a ${email}`));
-  const link = linkDa(reg.email[0]);
-  assert.ok(link.startsWith(`${SITO}/api/auth/verify-email?`), link);
+  assert.ok(!reg.email[0].includes("verify-email"), "il link non porta a Better Auth");
+  const token = gettoneDa(reg.email[0]);
 
-  // Password sbagliata: risponde come per tutti (401), senza dire che l'account aspetta la conferma
-  const sbagliata = await entra(email, "non-questa-123");
-  assert.equal(sbagliata.status, 401);
+  // Accesso: password sbagliata come per tutti (401); giusta → da confermare
+  assert.equal((await entra(email, "non-questa-123")).status, 401);
   const prima = await entra(email, "password-lunga-1");
   assert.equal(prima.status, 403);
   assert.equal(((await prima.json()) as { code?: string }).code, "EMAIL_DA_CONFERMARE");
@@ -345,32 +358,43 @@ test("conferma: il titolare registrato non entra prima di confermare; il link fa
   const u = (await c.internalAdapter.findUserByEmail(email)).user;
   const orgId = await aziendaDi(u.id);
   const { leggiAbbonamento } = await import("../abbonamento-server.ts");
-  assert.equal((await leggiAbbonamento(orgId))?.fineProva, null);
-  // Una sessione aperta prima della conferma (da chiunque): dopo il link non vale più
-  const vecchia = await sessione(u.id, {});
 
+  // Conferma con la password sbagliata: 401 e la prova non parte
+  const sbagliata = await conferma(token, "non-questa-123");
+  assert.equal(sbagliata.stato, 401);
+  assert.equal(sbagliata.corpo.error, PASSWORD_SBAGLIATA);
+  assert.equal(sbagliata.cookie.length, 0);
+  assert.equal((await leggiAbbonamento(orgId))?.fineProva, null);
+  assert.equal((await c.internalAdapter.findUserById(u.id)).emailVerified, false);
+
+  // Una sessione aperta prima della conferma (da chiunque): dopo non vale più
+  const vecchia = await sessione(u.id, {});
   const ora = Date.now();
-  const r = await apri(link);
-  assert.equal(r.status, 302);
-  assert.equal(r.headers.get("location"), RITORNO);
-  assert.ok((r.headers.get("set-cookie") ?? "").includes(c.authCookies.sessionToken.name), "accesso automatico dopo la conferma");
+  const giusta = await conferma(token, "password-lunga-1");
+  assert.equal(giusta.stato, 200, JSON.stringify(giusta.corpo));
+  assert.deepEqual(giusta.corpo, { ok: true });
+  assert.ok(giusta.cookie.some((x) => x.startsWith(`${c.authCookies.sessionToken.name}=`)), giusta.cookie.join(" | "));
   const a = await leggiAbbonamento(orgId);
   assert.ok(a?.fineProva !== null && Math.abs(a!.fineProva! - (ora + 15 * 86_400_000)) < 5000, String(a?.fineProva));
   assert.equal(await c.adapter.findOne({ model: "session", where: [{ field: "token", value: vecchia }] }), null);
-  assert.equal((await c.adapter.findMany({ model: "session", where: [{ field: "userId", value: u.id }] })).length, 1);
+  const sessioni = await c.adapter.findMany({ model: "session", where: [{ field: "userId", value: u.id }] });
+  assert.equal(sessioni.length, 1);
+  // La sessione nuova è già nell'azienda: si entra nell'app senza scegliere
+  assert.equal(sessioni[0].activeOrganizationId, orgId);
+  const ok = await esito(await m.accesso.accessoDaRichiesta(await richiesta(sessioni[0].token)));
+  assert.equal(ok.stato, 200);
   const { deposito } = await import("../deposito/index.ts");
   const scheda = await deposito().leggiDocumento<{ confermata: string | null }>(orgId, "registrazione");
   assert.ok(scheda?.confermata && Math.abs(Date.parse(scheda.confermata) - ora) < 5000);
   const stato = JSON.parse(await readFile(path.join(process.env.DATI_DIR!, "aziende", orgId, "state.json"), "utf8"));
   assert.ok((stato.state.audit as { action: string }[]).some((x) => x.action === "Email confermata: prova di 15 giorni iniziata"));
 
-  const dopo = await entra(email, "password-lunga-1");
-  assert.equal(dopo.status, 200);
+  assert.equal((await entra(email, "password-lunga-1")).status, 200);
 
-  // Seconda apertura dello stesso link: si torna alla pagina, la fine della prova non si sposta
-  const due = await apri(link);
-  assert.equal(due.status, 302);
-  assert.equal(due.headers.get("location"), RITORNO);
+  // Stesso link una seconda volta: niente nuova sessione, la fine della prova non si sposta
+  const due = await conferma(token, "password-lunga-1");
+  assert.equal(due.stato, 409);
+  assert.equal(due.cookie.length, 0);
   assert.equal((await leggiAbbonamento(orgId))?.fineProva, a!.fineProva);
 
   // Titolare confermato: la stessa email non si registra di nuovo
@@ -379,10 +403,36 @@ test("conferma: il titolare registrato non entra prima di confermare; il link fa
   assert.equal(ancora.email.length, 0);
 });
 
-test("conferma: link non valido torna alla pagina di accesso con l'errore", async () => {
-  const r = await apri(`${SITO}/api/auth/verify-email?token=non-valido&callbackURL=${encodeURIComponent(RITORNO)}`);
-  assert.equal(r.status, 302);
-  assert.equal(r.headers.get("location"), `${RITORNO}&error=INVALID_TOKEN`);
+test("conferma: gettone scaduto o inventato → 400; /api/auth/verify-email dal browser → 404", async () => {
+  assert.deepEqual((await conferma("non-valido", "qualsiasi-123")).corpo, { error: LINK_NON_VALIDO });
+  assert.equal((await conferma("non-valido", "qualsiasi-123")).stato, 400);
+  const email = "scaduto@prova.invalid";
+  assert.equal((await registra(email, "Scaduto Ricambi")).r.stato, 201);
+  const u = (await c.internalAdapter.findUserByEmail(email)).user;
+  const scaduto = await m.crypto.signJWT({ email, userId: u.id }, c.secret, -60);
+  const r = await conferma(scaduto, "password-lunga-1");
+  assert.equal(r.stato, 400);
+  assert.equal(r.corpo.error, LINK_NON_VALIDO);
+  // Firmato con un altro segreto: non vale
+  const falso = await m.crypto.signJWT({ email, userId: u.id }, "un-altro-segreto-lungo-abbastanza-1234567890", 3600);
+  assert.equal((await conferma(falso, "password-lunga-1")).stato, 400);
+  assert.equal((await c.internalAdapter.findUserById(u.id)).emailVerified, false);
+
+  const { GET } = await import("../../app/api/auth/[...all]/route.ts");
+  const vero = await m.crypto.signJWT({ email, userId: u.id }, c.secret, 3600);
+  const diretto = await GET(new Request(`${SITO}/api/auth/verify-email?token=${vero}`));
+  assert.equal(diretto.status, 404);
+  assert.equal((await c.internalAdapter.findUserById(u.id)).emailVerified, false);
+});
+
+test("conferma: 10 password sbagliate bloccano l'account per 15 minuti, anche con quella giusta", async () => {
+  const email = "blocco-conferma@prova.invalid";
+  const reg = await registra(email, "Blocco Ricambi");
+  const token = gettoneDa(reg.email[0]);
+  for (let i = 0; i < 10; i++) assert.equal((await conferma(token, `sbagliata-${i}-xx`)).stato, 401);
+  const bloccato = await conferma(token, "password-lunga-1");
+  assert.equal(bloccato.stato, 429);
+  assert.equal((await c.internalAdapter.findUserByEmail(email)).user.emailVerified, false);
 });
 
 test("conferma: rimandare l'email dalla pagina di accesso manda un nuovo link solo al titolare in attesa", async () => {
@@ -394,14 +444,14 @@ test("conferma: rimandare l'email dalla pagina di accesso manda un nuovo link so
         new Request(`${SITO}/api/auth/send-verification-email`, {
           method: "POST",
           headers: { origin: SITO, "content-type": "application/json", "cf-connecting-ip": nuovoIp() },
-          body: JSON.stringify({ email: a, callbackURL: RITORNO }),
+          body: JSON.stringify({ email: a }),
         }),
       ),
     );
   const si = await rimanda(email);
   assert.equal(si.r.status, 200);
   assert.equal(si.email.length, 1);
-  linkDa(si.email[0]);
+  assert.equal((await conferma(gettoneDa(si.email[0]), "password-lunga-1")).stato, 200);
   // Un dipendente con l'email non verificata: nessuna email (e la stessa risposta)
   await m.crea.creaMembro(c, demoId, { nome: "Dipendente Rimanda", ruoli: ["magazziniere"], email: "dip-rimanda@prova.invalid", password: "password-lunga-2" });
   const no = await rimanda("dip-rimanda@prova.invalid");
@@ -419,14 +469,15 @@ test("conferma: un dipendente con email non verificata e il super admin entrano 
   assert.equal((await entra("super-conferma@prova.invalid", "password-lunga-4")).status, 200);
 });
 
-test("registrazione con l'email di un titolare che non ha confermato: la vecchia registrazione si toglie, vale la nuova", async () => {
+test("registrazione rifatta da un altro con l'email di un titolare che non ha confermato: il titolare non conferma l'account dell'altro", async () => {
   const email = "ripresa@prova.invalid";
-  const prima = await registra(email, "Prima Ricambi", "password-prima-1");
-  assert.equal(prima.r.stato, 201);
+  const titolare = await registra(email, "Prima Ricambi", "password-titolare-1");
+  assert.equal(titolare.r.stato, 201);
   const vecchioUtente = (await c.internalAdapter.findUserByEmail(email)).user.id;
   const vecchiaAzienda = await aziendaDi(vecchioUtente);
-  const seconda = await registra(email, "Seconda Ricambi", "password-seconda-1");
-  assert.equal(seconda.r.stato, 201, JSON.stringify(seconda.r.corpo));
+  // Un altro rifà la registrazione con la stessa email e la sua password: la vecchia si toglie
+  const altro = await registra(email, "Seconda Ricambi", "password-altro-1");
+  assert.equal(altro.r.stato, 201, JSON.stringify(altro.r.corpo));
   const nuovo = (await c.internalAdapter.findUserByEmail(email)).user;
   assert.notEqual(nuovo.id, vecchioUtente);
   assert.equal(await c.adapter.findOne({ model: "organization", where: [{ field: "id", value: vecchiaAzienda }] }), null);
@@ -434,15 +485,45 @@ test("registrazione con l'email di un titolare che non ha confermato: la vecchia
   assert.equal((await c.adapter.findMany({ model: "member", where: [{ field: "organizationId", value: vecchiaAzienda }] })).length, 0);
   const { deposito } = await import("../deposito/index.ts");
   assert.equal(await deposito().leggiDocumento(vecchiaAzienda, "registrazione"), null);
-  const nuovaAzienda = await aziendaDi(nuovo.id);
-  const org = await c.adapter.findOne({ model: "organization", where: [{ field: "id", value: nuovaAzienda }] });
+  const org = await c.adapter.findOne({ model: "organization", where: [{ field: "id", value: await aziendaDi(nuovo.id) }] });
   assert.equal(org.name, "Seconda Ricambi");
-  // Il link della prima email non vale più; quello della seconda sì
-  const vecchioLink = await apri(linkDa(prima.email[0]));
-  assert.equal(vecchioLink.headers.get("location"), `${RITORNO}&error=INVALID_TOKEN`);
-  assert.equal((await entra(email, "password-prima-1")).status, 401);
-  assert.equal((await apri(linkDa(seconda.email[0]))).headers.get("location"), RITORNO);
-  assert.equal((await entra(email, "password-seconda-1")).status, 200);
+  // Il link della seconda email arriva al titolare vero: con la sua password non conferma l'account dell'altro
+  const tokenAltro = gettoneDa(altro.email[0]);
+  assert.equal((await conferma(tokenAltro, "password-titolare-1")).stato, 401);
+  assert.equal((await c.internalAdapter.findUserById(nuovo.id)).emailVerified, false);
+  // Il link della prima email non vale più (l'utente non c'è più)
+  assert.equal((await conferma(gettoneDa(titolare.email[0]), "password-titolare-1")).stato, 400);
+  // Il titolare può rifare la registrazione e confermarla con la sua password
+  const ancora = await registra(email, "Prima Ricambi", "password-titolare-1");
+  assert.equal(ancora.r.stato, 201);
+  assert.equal((await conferma(gettoneDa(ancora.email[0]), "password-titolare-1")).stato, 200);
+  assert.equal((await entra(email, "password-titolare-1")).status, 200);
+});
+
+test("registrazione che sostituisce: se togliere l'utente vecchio fallisce, l'email resta sostituibile (non 409 per sempre)", async () => {
+  const email = "guasto-sostituzione@prova.invalid";
+  assert.equal((await registra(email, "Guasto Uno")).r.stato, 201);
+  const vecchio = (await c.internalAdapter.findUserByEmail(email)).user.id;
+  const elimina = c.adapter.delete;
+  c.adapter.delete = async (a: { model: string }) => {
+    if (a.model === "user") throw new Error("guasto di prova");
+    return elimina.call(c.adapter, a);
+  };
+  const errLog = console.error;
+  console.error = () => {};
+  let guasto;
+  try {
+    guasto = await registra(email, "Guasto Due");
+  } finally {
+    c.adapter.delete = elimina;
+    console.error = errLog;
+  }
+  assert.equal(guasto.r.stato, 500);
+  // La vecchia registrazione è ancora intera: membro e azienda ci sono, quindi si può ancora sostituire
+  assert.equal((await c.adapter.findMany({ model: "member", where: [{ field: "userId", value: vecchio }] })).length, 1);
+  const dopo = await registra(email, "Guasto Tre");
+  assert.equal(dopo.r.stato, 201, JSON.stringify(dopo.r.corpo));
+  assert.notEqual((await c.internalAdapter.findUserByEmail(email)).user.id, vecchio);
 });
 
 test("registrazione con l'email di un dipendente o del super admin: 409 come oggi, niente si tocca", async () => {
