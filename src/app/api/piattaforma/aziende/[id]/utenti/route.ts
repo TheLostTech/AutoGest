@@ -17,7 +17,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const azienda = await aziendaEsiste(id);
   if (!azienda) return errore(404, "Azienda non trovata.");
   const c = await contesto();
-  const richieste = await elencoRichieste(id);
+  let richieste;
+  try {
+    richieste = await elencoRichieste(id);
+  } catch (e) {
+    console.error("Registro delle richieste non letto", id, e);
+    return errore(503, "Non riesco a leggere le richieste scritte dell'azienda: riprova tra poco.");
+  }
   const righe = (await righeMembri(c, id)).map((u) => ({ ...u, richieste: richieste.filter((r) => r.userId === u.id).reverse() }));
   return ok({ azienda: { id: azienda.id, nome: azienda.name }, utenti: righe });
 }

@@ -3,7 +3,7 @@
 import { connection } from "next/server";
 import { accessoDaRichiesta, soloRuoli } from "@/lib/accesso/server";
 import { altroSito, richiestaDellApp } from "@/lib/collegamenti-server";
-import { moduloAttivoSulServer } from "@/lib/moduli-server";
+import { rispostaModuloSpento } from "@/lib/moduli-server";
 import { credenziali, ErroreVisura, richiediVisura, TIPI_VEICOLO, type TipoVeicolo } from "@/lib/visura-server";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -29,7 +29,8 @@ export async function POST(req: Request) {
   const vietato = soloRuoli(acc, "accettazione", "responsabile");
   if (vietato) return vietato;
   // La visura è del modulo Accettazione: spento per l'azienda della sessione, la richiesta non parte nemmeno per vie traverse
-  if (!(await moduloAttivoSulServer(acc.azienda, "accettazione"))) return json({ error: "Il modulo Accettazione non è attivo" }, 403);
+  const spento = await rispostaModuloSpento(acc.azienda, "accettazione", "Accettazione");
+  if (spento) return spento;
   const body = (await req.json().catch(() => null)) as { targa?: unknown; tipo?: unknown } | null;
   const targa = String(body?.targa ?? "").replace(/\s+/g, "").toUpperCase();
   const tipo = String(body?.tipo ?? "AUTOVEICOLO") as TipoVeicolo;

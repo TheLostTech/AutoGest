@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { deposito } from "@/lib/deposito";
+import { DocumentoIlleggibile } from "@/lib/deposito/tipi";
 import { RICHIESTA_ESTENSIONE, type TipoRichiesta } from "@/lib/accesso/richieste";
 
 // Richieste scritte: aziende/<id>/richieste/<casuale>.<ext> + un indice (registro.json) che dice a quale
@@ -32,11 +33,14 @@ export async function leggiFileRichiesta(aziendaId: string, fileId: string): Pro
 }
 
 // L'indice è il documento "richieste" del deposito: le scritture vanno in fila lì.
+// Assente o corrotto (DocumentoIlleggibile): elenco vuoto. Ogni altro errore (database, rete) arriva a chi chiama.
 async function leggiIndice(aziendaId: string): Promise<VoceRichiesta[]> {
   try {
     const v = await deposito().leggiDocumento<unknown>(aziendaId, "richieste");
     return Array.isArray(v) ? (v as VoceRichiesta[]) : [];
-  } catch {
+  } catch (e) {
+    if (!(e instanceof DocumentoIlleggibile)) throw e;
+    console.error("Registro delle richieste non leggibile", aziendaId, e);
     return [];
   }
 }

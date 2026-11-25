@@ -2,6 +2,7 @@
 // POST crea la sessione e risponde { url }; GET ?session_id= ricontrolla il ritorno, per la pagina /abbonamento/fatto.
 import { connection } from "next/server";
 import { sceltaValida } from "@/lib/abbonamento";
+import { ABBONAMENTO_NON_LEGGIBILE } from "@/lib/abbonamento-server";
 import { percorsoDaSicuro } from "@/lib/accesso/percorsi";
 import type { Accesso } from "@/lib/accesso/regole";
 import { ruoliDaStringa } from "@/lib/accesso/ruoli";
@@ -46,7 +47,13 @@ export async function POST(req: Request) {
 }
 
 async function crea(req: Request, a: Accesso, scelta: NonNullable<ReturnType<typeof sceltaValida>>, da: string): Promise<Response> {
-  const ab = await sincronizza(a.azienda.id);
+  let ab;
+  try {
+    ab = await sincronizza(a.azienda.id);
+  } catch (e) {
+    console.error("Abbonamento non letto prima del Checkout", a.azienda.id, e);
+    return errore(503, ABBONAMENTO_NON_LEGGIBILE);
+  }
   if (STATI_IN_CORSO.has(ab.stato)) return errore(409, "Abbonamento già attivo: aggiungi i moduli da Abbonamento");
 
   try {

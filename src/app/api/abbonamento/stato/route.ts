@@ -5,7 +5,7 @@
 // Senza ?orologio=1, o senza orologio, `orologioPronto` è null: la lettura normale non fa chiamate a Stripe in più.
 import { connection } from "next/server";
 import { ABBONAMENTO_NUOVO, contoAllaRovescia } from "@/lib/abbonamento";
-import { leggiAbbonamento } from "@/lib/abbonamento-server";
+import { ABBONAMENTO_NON_LEGGIBILE, leggiAbbonamento } from "@/lib/abbonamento-server";
 import { accessoDaRichiesta } from "@/lib/accesso/server";
 import { daSincronizzare } from "@/lib/stripe/chiavi";
 import { conOrologio, modalitaStripe, sincronizza, statoOrologio } from "@/lib/stripe/server";
@@ -21,20 +21,26 @@ export async function GET(req: Request) {
   // Le aziende senza `registrata` (demo, create dal super admin) non hanno abbonamento: restano con gli interruttori
   if (!registrata) return Response.json({ abbonamento: null, registrata, modalita, conto: null, orologioPronto: null }, { headers: NOSTORE });
 
-  const ora = Date.now();
-  const titolare = a.ruoli.includes("responsabile") || !!a.assistenza;
-  let ab = (await leggiAbbonamento(a.azienda.id)) ?? ABBONAMENTO_NUOVO(modalita !== "live", ora);
-  const parametri = new URL(req.url).searchParams;
-  const richiesta = parametri.get("sincronizza") === "1";
-  // sincronizza non lancia mai: con Stripe irraggiungibile restituisce quello che c'è. Limitata: qualunque ruolo può
-  // chiederla, quindi al massimo un tentativo ogni 15 secondi per azienda (le richieste insieme si raggruppano).
-  if (daSincronizzare({ richiesta, titolare, aggiornato: ab.aggiornato, ora })) ab = await sincronizza(a.azienda.id, { limita: true });
-  let orologioPronto: boolean | null = null;
-  // Solo il titolare, che ha in mano i pulsanti: dagli altri ruoli questa lettura non chiama Stripe
-  if (parametri.get("orologio") === "1" && titolare && conOrologio(ab)) {
-    const o = await statoOrologio(a.azienda.id, ab);
-    orologioPronto = o.pronto;
-    ab = o.abbonamento;
+  // Abbonamento non leggibile adesso (database o rete): 503, mai "nessun abbonamento"
+  try {
+    const ora = Date.now();
+    const titolare = a.ruoli.includes("responsabile") || !!a.assistenza;
+    let ab = (await leggiAbbonamento(a.azienda.id)) ?? ABBONAMENTO_NUOVO(modalita !== "live", ora);
+    const parametri = new URL(req.url).searchParams;
+    const richiesta = parametri.get("sincronizza") === "1";
+    // sincronizza non lancia per Stripe: irraggiungibile, restituisce quello che c'è. Limitata: qualunque ruolo può
+    // chiederla, quindi al massimo un tentativo ogni 15 secondi per azienda (le richieste insieme si raggruppano).
+    if (daSincronizzare({ richiesta, titolare, aggiornato: ab.aggiornato, ora })) ab = await sincronizza(a.azienda.id, { limita: true });
+    let orologioPronto: boolean | null = null;
+    // Solo il titolare, che ha in mano i pulsanti: dagli altri ruoli questa lettura non chiama Stripe
+    if (parametri.get("orologio") === "1" && titolare && conOrologio(ab)) {
+      const o = await statoOrologio(a.azienda.id, ab);
+      orologioPronto = o.pronto;
+      ab = o.abbonamento;
+    }
+    return Response.json({ abbonamento: ab, registrata, modalita, conto: contoAllaRovescia(ab, Date.now()), orologioPronto }, { headers: NOSTORE });
+  } catch (e) {
+    console.error("Stato dell'abbonamento non letto", a.azienda.id, e);
+    return Response.json({ error: ABBONAMENTO_NON_LEGGIBILE }, { status: 503, headers: NOSTORE });
   }
-  return Response.json({ abbonamento: ab, registrata, modalita, conto: contoAllaRovescia(ab, Date.now()), orologioPronto }, { headers: NOSTORE });
 }

@@ -2,6 +2,7 @@
 // Token di accesso e di rinnovo cifrati con cifra(); niente di questo file va mai al browser.
 // Solo server.
 import { deposito } from "@/lib/deposito";
+import { DocumentoIlleggibile } from "@/lib/deposito/tipi";
 import type { SpedizioneEbay } from "./contratto";
 
 export type RuoloPolitica = "pagamento" | "reso" | SpedizioneEbay;
@@ -34,10 +35,13 @@ export interface ArchivioEbay {
 
 const vuoto = (): ArchivioEbay => ({ consegnati: {}, foto: {}, categorie: {}, politiche: {}, pubblicati: {}, ritirati: {} });
 
+/** Assente o corrotto (DocumentoIlleggibile): archivio vuoto. Ogni altro errore (database, rete) arriva a chi chiama. */
 export async function leggiArchivio(aziendaId: string): Promise<ArchivioEbay> {
   try {
     return { ...vuoto(), ...((await deposito().leggiDocumento<Partial<ArchivioEbay>>(aziendaId, "ebay")) ?? {}) };
-  } catch {
+  } catch (e) {
+    if (!(e instanceof DocumentoIlleggibile)) throw e;
+    console.error("[ebay] archivio non leggibile", aziendaId, e);
     return vuoto();
   }
 }

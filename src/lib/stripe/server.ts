@@ -2,7 +2,7 @@
 // dell'abbonamento. Solo server. Spec registrazione-pagamento, sezioni 4, 5, 7, 9.
 import Stripe from "stripe";
 import { ABBONAMENTO_NUOVO, abbonamentoDaStripe, avanzamentoPermesso, lookupKey, nuovaOraOrologio, rifiutoCambio, righeCambio, scegli, senzaCliente, type Abbonamento, type Passo, type RichiestaModuli } from "@/lib/abbonamento";
-import { aggiornaAbbonamento, leggiAbbonamento } from "@/lib/abbonamento-server";
+import { ABBONAMENTO_NON_LEGGIBILE, aggiornaAbbonamento, leggiAbbonamento } from "@/lib/abbonamento-server";
 import { aggiungiEventi } from "@/lib/archivio-azienda";
 import type { Periodo } from "@/lib/listino";
 import type { Modulo } from "@/lib/moduli";
@@ -419,12 +419,19 @@ export async function esitoCheckout(aziendaId: string, sessionId: string): Promi
   }
   if (sessione.client_reference_id !== aziendaId) return { errore: "Pagamento non trovato.", stato: 404 };
   const pagata = sessione.payment_status === "paid" || sessione.payment_status === "no_payment_required";
-  const abbonamento = pagata ? await sincronizza(aziendaId) : await salvato(aziendaId);
+  let abbonamento: Abbonamento;
+  try {
+    abbonamento = pagata ? await sincronizza(aziendaId) : await salvato(aziendaId);
+  } catch (e) {
+    console.error("Abbonamento non letto dopo il Checkout", aziendaId, e);
+    return { errore: ABBONAMENTO_NON_LEGGIBILE, stato: 503 };
+  }
   return { pagata: pagata && STATI_IN_CORSO.has(abbonamento.stato), abbonamento };
 }
 
 /**
- * Come sincronizzaOLancia, ma non lancia mai: con Stripe irraggiungibile scrive nel log e restituisce quello che c'è.
+ * Come sincronizzaOLancia, ma con Stripe irraggiungibile scrive nel log e restituisce quello che c'è. Lancia solo se
+ * nemmeno l'abbonamento salvato si legge (database o rete).
  * `limita` (le richieste dal browser, che può chiederle qualunque ruolo): se l'ultimo tentativo per l'azienda è di
  * meno di 15 secondi fa non si chiama Stripe e si restituisce quello salvato, oppure quella già in coda se c'è.
  */

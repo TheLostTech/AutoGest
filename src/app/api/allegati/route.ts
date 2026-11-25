@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { connection } from "next/server";
 import { accessoDaRichiesta, soloRuoli } from "@/lib/accesso/server";
 import { richiestaDellApp } from "@/lib/collegamenti-server";
-import { moduloAttivoSulServer } from "@/lib/moduli-server";
+import { rispostaModuloSpento } from "@/lib/moduli-server";
 import { deposito } from "@/lib/deposito";
 import { controllaDimensione, MAX_FILE_BYTES, MESSAGGIO_TROPPO_GRANDE } from "@/lib/limiti-file";
 
@@ -18,7 +18,8 @@ export async function POST(req: Request) {
   const vietato = soloRuoli(acc, "accettazione", "responsabile");
   if (vietato) return vietato;
   // Le ricevute sono della pratica, cioè del modulo Accettazione: spento, non si caricano nemmeno per vie traverse
-  if (!(await moduloAttivoSulServer(acc.azienda, "accettazione"))) return Response.json({ error: "Il modulo Accettazione non è attivo" }, { status: 403 });
+  const spento = await rispostaModuloSpento(acc.azienda, "accettazione", "Accettazione");
+  if (spento) return spento;
   const { data } = (await req.json().catch(() => ({}))) as { data?: unknown };
   if (typeof data !== "string" || !data.startsWith(PREFIX)) return Response.json({ error: "Serve un file PDF" }, { status: 400 });
   // Prima di decodificare: una stringa enorme non deve diventare un buffer enorme
