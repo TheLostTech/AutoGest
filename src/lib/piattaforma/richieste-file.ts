@@ -1,7 +1,4 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { cartellaAzienda } from "@/lib/server-data";
 import { deposito } from "@/lib/deposito";
 import { RICHIESTA_ESTENSIONE, type TipoRichiesta } from "@/lib/accesso/richieste";
 
@@ -19,20 +16,16 @@ export interface VoceRichiesta {
   estremi?: string;
 }
 
-const dirRichieste = (aziendaId: string) => path.join(cartellaAzienda(aziendaId), "richieste");
-
 export async function salvaFileRichiesta(aziendaId: string, tipo: TipoRichiesta, dati: Uint8Array): Promise<string> {
-  const dir = dirRichieste(aziendaId);
-  await mkdir(dir, { recursive: true });
   const fileId = `${randomBytes(16).toString("hex")}.${RICHIESTA_ESTENSIONE[tipo]}`;
-  await writeFile(path.join(dir, fileId), dati, { flag: "wx" });
+  await deposito().salvaFile(aziendaId, "richieste", fileId, dati, { soloSeNuovo: true });
   return fileId;
 }
 
 export async function leggiFileRichiesta(aziendaId: string, fileId: string): Promise<Buffer | null> {
   if (!FILE_RICHIESTA.test(fileId)) return null;
   try {
-    return await readFile(path.join(dirRichieste(aziendaId), fileId));
+    return await deposito().leggiFile(aziendaId, "richieste", fileId);
   } catch {
     return null;
   }

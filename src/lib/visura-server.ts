@@ -2,10 +2,8 @@
 // La visura è asincrona: si crea la richiesta, Openapi la evade entro 24 ore lavorative e restituisce un PDF
 // (intestatario, ipoteche, fermi, dati tecnici). Non ci sono dati strutturati: l'esito lo registra l'ufficio leggendo il PDF.
 // Documentazione: https://console.openapi.com/apis/docuengine/documentation · costi e note in docs/INTEGRAZIONI.md.
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { leggiValori } from "@/lib/collegamenti-server";
-import { cartellaAzienda } from "@/lib/server-data";
+import { deposito } from "@/lib/deposito";
 
 export type ModoVisura = "Simulato" | "Sandbox" | "Produzione";
 export type TipoVeicolo = "AUTOVEICOLO" | "MOTOVEICOLO" | "RIMORCHIO";
@@ -14,8 +12,6 @@ export const TIPI_VEICOLO: TipoVeicolo[] = ["AUTOVEICOLO", "MOTOVEICOLO", "RIMOR
 const BASE = { Sandbox: "https://test.docuengine.openapi.com", Produzione: "https://docuengine.openapi.com" };
 // Id del documento nell'elenco /documents di Openapi; si cerca per nome e, se non si trova, si usa questo
 const DOCUMENTO_PRA = "67d066772cbb7e30d3d93e33";
-// Ogni azienda ha le sue visure: aziende/<id>/visure/ (mai una cartella comune a tutte)
-const cartellaVisure = (aziendaId: string) => path.join(cartellaAzienda(aziendaId), "visure");
 const MAX_PDF = 10 * 1024 * 1024;
 
 export class ErroreVisura extends Error {
@@ -106,12 +102,13 @@ export async function richiediVisura(c: Cred, targa: string, tipo: TipoVeicolo) 
 }
 
 export const idValido = (id: string) => /^[A-Za-z0-9_-]{6,64}$/.test(id);
-const filePdf = (aziendaId: string, id: string) => path.join(cartellaVisure(aziendaId), `${id}.pdf`);
+// Ogni azienda ha le sue visure: il deposito le tiene per azienda (mai una cartella comune a tutte)
+const nomePdf = (id: string) => `${id}.pdf`;
 export const urlPdf = (id: string) => `/api/visura/${id}/pdf`;
 
 export async function leggiPdf(aziendaId: string, id: string) {
   if (!idValido(id)) return undefined;
-  return readFile(filePdf(aziendaId, id)).catch(() => undefined);
+  return (await deposito().leggiFile(aziendaId, "visure", nomePdf(id)).catch(() => null)) ?? undefined;
 }
 
 /** Stato della richiesta; quando è evasa scarica il PDF nella cartella dati e ne dà l'indirizzo. */
@@ -138,7 +135,6 @@ export async function statoVisura(c: Cred, aziendaId: string, id: string): Promi
     if (dec.subarray(0, 4).toString() !== "%PDF") throw new ErroreVisura("Il file ricevuto non è un PDF.");
     bytes = dec;
   }
-  await mkdir(cartellaVisure(aziendaId), { recursive: true });
-  await writeFile(filePdf(aziendaId, id), bytes, { mode: 0o600 });
+  await deposito().salvaFile(aziendaId, "visure", nomePdf(id), bytes);
   return { stato, pdf: urlPdf(id) };
 }

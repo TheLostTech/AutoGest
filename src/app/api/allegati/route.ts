@@ -1,16 +1,14 @@
 // Allegati PDF della pratica (es. ricevuta di avvenuta radiazione): si salvano nella cartella dell'azienda della sessione,
 // nel veicolo resta solo l'indirizzo. Contengono dati personali: li carica solo chi fa le pratiche.
 import { randomBytes } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { connection } from "next/server";
 import { accessoDaRichiesta, soloRuoli } from "@/lib/accesso/server";
 import { richiestaDellApp } from "@/lib/collegamenti-server";
 import { moduloAttivoSulServer } from "@/lib/moduli-server";
-import { cartellaAllegatiAzienda } from "@/lib/server-data";
+import { deposito } from "@/lib/deposito";
+import { controllaDimensione } from "@/lib/limiti-file";
 
 const PREFIX = "data:application/pdf;base64,";
-const MAX_BYTES = 8 * 1024 * 1024;
 
 export async function POST(req: Request) {
   await connection();
@@ -24,11 +22,10 @@ export async function POST(req: Request) {
   const { data } = (await req.json().catch(() => ({}))) as { data?: unknown };
   if (typeof data !== "string" || !data.startsWith(PREFIX)) return Response.json({ error: "Serve un file PDF" }, { status: 400 });
   const bytes = Buffer.from(data.slice(PREFIX.length), "base64");
-  if (bytes.length === 0 || bytes.length > MAX_BYTES) return Response.json({ error: "PDF vuoto o più grande di 8 MB" }, { status: 413 });
+  const dim = controllaDimensione(bytes.length);
+  if (!dim.ok) return Response.json({ error: dim.messaggio }, { status: 413 });
   if (bytes.subarray(0, 4).toString() !== "%PDF") return Response.json({ error: "Il file non è un PDF" }, { status: 400 });
   const name = `${Date.now().toString(36)}${randomBytes(9).toString("hex")}.pdf`;
-  const dir = cartellaAllegatiAzienda(acc.azienda.id);
-  await mkdir(dir, { recursive: true });
-  await writeFile(path.join(dir, name), bytes, { mode: 0o600 });
+  await deposito().salvaFile(acc.azienda.id, "allegati", name, bytes);
   return Response.json({ url: `/api/allegati/${name}` }, { headers: { "Cache-Control": "no-store" } });
 }

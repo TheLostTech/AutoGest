@@ -1,6 +1,5 @@
 // Registrazione del titolare su invito: crea l'azienda, l'archivio vuoto, il titolare e l'abbonamento "nuovo".
 // Pubblica (senza sessione): l'accesso lo fa poi la pagina, come /accesso. Spec registrazione-pagamento, sezione 1.
-import { rm } from "node:fs/promises";
 import { ABBONAMENTO_NUOVO } from "@/lib/abbonamento";
 import { aggiornaAbbonamento } from "@/lib/abbonamento-server";
 import { rispostaNonPronta } from "@/lib/accesso/pronta";
@@ -11,7 +10,7 @@ import { usaInvito, verificaInvito } from "@/lib/piattaforma/inviti";
 import { contesto, daAltroSito, errore, leggiJson, ok, type Contesto } from "@/lib/piattaforma/server";
 import { DEFAULT_LISTINI } from "@/lib/pricing";
 import { modalitaStripe } from "@/lib/stripe/server";
-import { cartellaAzienda } from "@/lib/server-data";
+import { deposito } from "@/lib/deposito";
 import { statoVuoto } from "@/lib/stato-iniziale";
 import { WAREHOUSES } from "@/lib/warehouse";
 
@@ -30,7 +29,7 @@ async function annulla(c: Contesto, aziendaId: string, userId: string | null) {
         ] as [string, () => Promise<unknown>][])
       : []),
     ["azienda", () => c.adapter.delete({ model: "organization", where: [{ field: "id", value: aziendaId }] })],
-    ["cartella", () => rm(cartellaAzienda(aziendaId), { recursive: true, force: true })],
+    ["cartella", () => deposito().togliAzienda(aziendaId)],
   ];
   for (const [nome, passo] of passi) {
     try {

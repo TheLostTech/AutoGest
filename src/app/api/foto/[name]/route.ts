@@ -1,17 +1,16 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { connection } from "next/server";
 import { accessoDaRichiesta } from "@/lib/accesso/server";
 import { leggiStato } from "@/lib/archivio-azienda";
 import { fotoPubblica } from "@/lib/catalogo-pubblico";
 import { aziendaNegozio } from "@/lib/negozio-server";
-import { cartellaFotoAzienda } from "@/lib/server-data";
+import { deposito } from "@/lib/deposito";
 
 const NON_TROVATA = () => new Response("Foto non trovata", { status: 404 });
 
 async function leggi(aziendaId: string, name: string): Promise<Uint8Array | null> {
   try {
-    return new Uint8Array(await readFile(path.join(cartellaFotoAzienda(aziendaId), name)));
+    const b = await deposito().leggiFile(aziendaId, "foto", name);
+    return b ? new Uint8Array(b) : null;
   } catch {
     return null;
   }

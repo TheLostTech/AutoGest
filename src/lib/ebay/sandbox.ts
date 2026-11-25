@@ -10,9 +10,9 @@
 // "da verificare in sandbox" non si possono provare senza un conto di prova.
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { deposito } from "@/lib/deposito";
 import path from "node:path";
 import { cifra, decifra } from "@/lib/cifratura";
-import { cartellaFotoAzienda } from "@/lib/server-data";
 import type { EsitoAllinea, Ponte, RichiestaAllinea, SpedizioneEbay, StatoPonte, VenditaEbay } from "./contratto";
 import {
   ALBERO_CATEGORIE, aspettiPerEbay, CATEGORIA_DA_SCRIVERE, categoriaFresca, categoriaRifiutata, controllaAspetti, daCreare, ErroreEbay, fileFoto,
@@ -468,11 +468,16 @@ async function caricaFoto(c: CredSandbox, foto: string[], a: ArchivioEbay, avvis
       avvisi.push("Una foto non è del gestionale e non è stata mandata a eBay.");
       continue;
     }
-    const cartella = f.cartella === "foto" ? cartellaFotoAzienda(c.aziendaId) : path.join(/*turbopackIgnore: true*/ process.cwd(), "public");
-    let dati: Buffer;
+    let dati: Buffer | null;
     try {
-      dati = await readFile(path.join(cartella, f.nome));
+      dati =
+        f.cartella === "foto"
+          ? await deposito().leggiFile(c.aziendaId, "foto", f.nome)
+          : await readFile(path.join(/*turbopackIgnore: true*/ process.cwd(), "public", f.nome));
     } catch {
+      dati = null;
+    }
+    if (!dati) {
       avvisi.push("Una foto non si trova più sul server e non è stata mandata a eBay.");
       continue;
     }

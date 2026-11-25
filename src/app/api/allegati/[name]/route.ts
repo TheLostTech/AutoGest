@@ -1,11 +1,9 @@
 // Allegato PDF della pratica. Contiene dati personali: lo vede solo chi ha una sessione valida nell'azienda
 // che lo ha caricato (l'azienda viene dalla sessione, mai dall'indirizzo: un'altra azienda non trova il file).
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { connection } from "next/server";
 import { accessoDaRichiesta } from "@/lib/accesso/server";
 import { altroSito } from "@/lib/collegamenti-server";
-import { cartellaAllegatiAzienda } from "@/lib/server-data";
+import { deposito } from "@/lib/deposito";
 
 export async function GET(req: Request, { params }: { params: Promise<{ name: string }> }) {
   await connection();
@@ -15,7 +13,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ name: st
   const { name } = await params;
   // Solo nomi generati dal server: niente percorsi verso altre cartelle
   if (!/^[a-z0-9]+\.pdf$/.test(name)) return new Response("Allegato non trovato", { status: 404 });
-  const bytes = await readFile(path.join(cartellaAllegatiAzienda(acc.azienda.id), name)).catch(() => undefined);
+  const bytes = await deposito().leggiFile(acc.azienda.id, "allegati", name).catch(() => undefined);
   if (!bytes) return new Response("Allegato non trovato", { status: 404 });
   return new Response(new Uint8Array(bytes), {
     headers: {

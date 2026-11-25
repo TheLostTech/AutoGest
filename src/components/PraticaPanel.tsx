@@ -1,5 +1,6 @@
 "use client";
 
+import { controllaDimensione } from "@/lib/limiti-file";
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { CircleAlert, Check, FileText, Loader2, Printer, RefreshCw, Upload } from "lucide-react";
@@ -625,7 +626,6 @@ function EsitoRadiazione({ v }: { v: Vehicle }) {
 }
 
 const PDF_PREFIX = "data:application/pdf;base64,";
-const MAX_PDF = 8 * 1024 * 1024;
 
 function CaricaPdf({ label, onCaricato }: { label: string; onCaricato: (url: string) => void }) {
   const [busy, setBusy] = useState(false);
@@ -633,7 +633,8 @@ function CaricaPdf({ label, onCaricato }: { label: string; onCaricato: (url: str
 
   const carica = async (f: File) => {
     setErrore("");
-    if (f.size > MAX_PDF) return setErrore("Il PDF supera 8 MB.");
+    const dim = controllaDimensione(f.size);
+    if (!dim.ok) return setErrore(dim.messaggio);
     setBusy(true);
     try {
       const url = await new Promise<string>((ok, ko) => {
