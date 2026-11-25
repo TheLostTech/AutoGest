@@ -40,6 +40,7 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.webkit.ScriptHandler;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
@@ -72,6 +73,7 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
 
     private boolean scriptAllAvvio;
+    private ScriptHandler scriptStampa;
     private PermissionRequest permessoInAttesa;
     private ValueCallback<Uri[]> fileInAttesa;
     private WebChromeClient.FileChooserParams parametriInAttesa;
@@ -149,20 +151,16 @@ public class MainActivity extends Activity {
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
 
         web.addJavascriptInterface(new Ponte(), "PiazzaleApp");
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            WebViewCompat.addDocumentStartJavaScript(web, SCRIPT_STAMPA, Collections.singleton("*"));
-            scriptAllAvvio = true;
-        }
+        scriptAllAvvio = WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT);
+        registraScriptStampa();
 
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
+                // Dentro l'app solo il nostro server: ogni altro sito (WhatsApp compreso) si apre fuori,
+                // così nessuna pagina estranea riceve la fotocamera o il ponte di stampa
                 Uri u = r.getUrl();
-                String schema = u.getScheme() == null ? "" : u.getScheme();
-                String host = u.getHost() == null ? "" : u.getHost();
-                if (schema.equals("http") || schema.equals("https")) {
-                    if (!host.equals("wa.me") && !host.equals("api.whatsapp.com")) return false;
-                }
+                if (stessoServer(u)) return false;
                 apriFuori(u.toString());
                 return true;
             }
@@ -175,7 +173,7 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView v, String url) {
                 caricamento.setVisibility(View.GONE);
-                if (!scriptAllAvvio) v.evaluateJavascript(SCRIPT_STAMPA, null);
+                if (!scriptAllAvvio && stessoServer(Uri.parse(url))) v.evaluateJavascript(SCRIPT_STAMPA, null);
             }
 
             @Override
@@ -226,14 +224,30 @@ public class MainActivity extends Activity {
         if (testo == null) return null;
         String t = testo.trim();
         if (t.isEmpty()) return null;
-        if (!t.startsWith("http://") && !t.startsWith("https://")) t = "https://" + t;
+        if (t.startsWith("http://")) return null; // solo https: Android blocca comunque il traffico in chiaro
+        if (!t.startsWith("https://")) t = "https://" + t;
         Uri u = Uri.parse(t);
         if (u.getHost() == null || u.getHost().isEmpty()) return null;
         return u.getScheme() + "://" + u.getEncodedAuthority();
     }
 
+    // Stessa origine del server impostato (schema, host e porta)
+    private boolean stessoServer(Uri u) {
+        if (u == null || u.getScheme() == null || u.getEncodedAuthority() == null) return false;
+        String origine = u.getScheme().toLowerCase(java.util.Locale.ROOT) + "://" + u.getEncodedAuthority().toLowerCase(java.util.Locale.ROOT);
+        return origine.equals(indirizzo().toLowerCase(java.util.Locale.ROOT));
+    }
+
+    // Lo script che collega window.print alla stampa di Android vale solo per il server impostato
+    private void registraScriptStampa() {
+        if (!scriptAllAvvio) return;
+        if (scriptStampa != null) scriptStampa.remove();
+        scriptStampa = WebViewCompat.addDocumentStartJavaScript(web, SCRIPT_STAMPA, Collections.singleton(indirizzo()));
+    }
+
     private void apri(String base) {
         prefs.edit().putString("indirizzo", base).apply();
+        registraScriptStampa();
         impostazioni.setVisibility(View.GONE);
         web.loadUrl(base + "/");
     }
@@ -277,6 +291,10 @@ public class MainActivity extends Activity {
     }
 
     private void permessoFotocameraWeb(PermissionRequest richiesta) {
+        if (!stessoServer(richiesta.getOrigin())) {
+            richiesta.deny();
+            return;
+        }
         boolean video = false;
         for (String r : richiesta.getResources()) if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(r)) video = true;
         if (!video) {
@@ -402,11 +420,20 @@ public class MainActivity extends Activity {
         }
     }
 
+    // Fuori dall'app vanno solo questi schemi (WhatsApp passa da https://wa.me).
+    // Niente "intent:": una pagina potrebbe usarlo per aprire componenti di questa o di altre app con permessi sui file.
+    private static final java.util.Set<String> SCHEMI_FUORI = new java.util.HashSet<>(java.util.Arrays.asList("http", "https", "tel", "mailto", "sms", "smsto", "geo"));
+
     private void apriFuori(String url) {
         try {
-            Intent i = url.startsWith("intent:") ? Intent.parseUri(url, Intent.URI_INTENT_SCHEME) : new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            Uri u = Uri.parse(url);
+            String schema = u.getScheme() == null ? "" : u.getScheme().toLowerCase(java.util.Locale.ROOT);
+            if (!SCHEMI_FUORI.contains(schema)) {
+                Toast.makeText(this, "Collegamento non supportato", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            Intent i = new Intent(Intent.ACTION_VIEW, u);
             i.addCategory(Intent.CATEGORY_BROWSABLE);
-            i.setComponent(null);
             startActivity(i);
         } catch (Exception e) {
             Toast.makeText(this, "Nessuna app per aprirlo", Toast.LENGTH_SHORT).show();
@@ -419,6 +446,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void stampa(String titolo) {
             runOnUiThread(() -> {
+                if (web.getUrl() == null || !stessoServer(Uri.parse(web.getUrl()))) return;
                 String nome = titolo == null || titolo.isEmpty() ? "Piazzale" : titolo;
                 PrintManager pm = getSystemService(PrintManager.class);
                 pm.print(nome, web.createPrintDocumentAdapter(nome), new PrintAttributes.Builder().build());
