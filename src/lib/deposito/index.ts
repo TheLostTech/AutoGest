@@ -1,4 +1,6 @@
+import { pool } from "../db/pool";
 import { depositoDisco } from "./disco";
+import { creaDepositoSupabase } from "./supabase";
 import type { Deposito } from "./tipi";
 
 const CHIAVI = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "DATABASE_URL"] as const;
@@ -16,6 +18,12 @@ const g = globalThis as typeof globalThis & { __deposito?: Deposito };
 
 export function deposito(): Deposito {
   if (g.__deposito) return g.__deposito;
-  if (sceltaDeposito(process.env) === "supabase") throw new Error("Deposito Supabase non ancora disponibile");
+  if (sceltaDeposito(process.env) === "supabase") {
+    return (g.__deposito = creaDepositoSupabase({
+      pool: pool(),
+      url: process.env.SUPABASE_URL!,
+      chiave: process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    }));
+  }
   return (g.__deposito = depositoDisco());
 }

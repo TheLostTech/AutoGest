@@ -12,6 +12,7 @@
     "prova:accesso": "node --import ./scripts/alias-ts.mjs --test src/lib/accesso/server.prova.ts src/lib/abbonamento-server.prova.ts src/lib/piattaforma/inviti.prova.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.119.2",
     "barcode-detector": "3.2.3",
     "better-auth": "^1.7.25",
     "better-sqlite3": "^13.2.0",
