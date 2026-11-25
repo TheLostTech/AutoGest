@@ -193,3 +193,19 @@ Titolare e fornitore del servizio: **LOSTAR S.R.L.S.** (dati come sopra; per i d
 - **Cookie:** il gestionale usa solo cookie tecnici (sessione, dispositivo): niente banner, una sezione nell'informativa. BotID è descritto come nell'informativa del sito Lostar.
 - **Nel modulo di registrazione:** casella obbligatoria "Accetto le condizioni del servizio e l'accordo sul trattamento dei dati" (con link), frase "Ho letto l'informativa privacy" (link, nessuna casella), casella **facoltativa e non spuntata** "Acconsento a essere contattato da Lostar Technology per proposte commerciali su Piazzale". Si salvano data, ora, indirizzo IP e **versione** dei testi accettati.
 - I testi li scrivo io come bozza a norma; **vanno fatti rileggere a un consulente** prima di aprire la registrazione al pubblico (si segnala nel piano, non blocca la costruzione).
+
+### Foto: online solo quelle dei ricambi in vendita (deciso da Alessandro il 25/11/2026)
+
+Alessandro: le foto restano sul dispositivo che le scatta, con un backup su un supporto fisico in autodemolizione; online vanno solo quelle dei ricambi in vendita, che servono all'annuncio eBay e al negozio, e si tengono finché il pezzo non è venduto.
+
+Come funziona (scelte mie, da controllare):
+
+- **Sul dispositivo.** La foto si scatta e si rimpicciolisce come oggi (1000 px, JPEG 0,72, circa 200 KB) e si salva nella memoria del browser (IndexedDB, con richiesta di memoria persistente). Nell'archivio il ricambio tiene un riferimento `locale:<id>@<dispositivo>`, non l'immagine.
+- **Sugli altri dispositivi** una foto locale di un altro telefono si vede come segnaposto "Foto sul telefono di Marco".
+- **Quando un ricambio va in vendita** (entra nel catalogo pubblico del negozio oppure ha un annuncio eBay), il dispositivo che ha le sue foto le carica online alla prima occasione, e il riferimento diventa `/api/foto/<nome>`. Se quel telefono è spento, la pubblicazione su eBay aspetta e lo dice: "Foto in arrivo dal telefono di Marco".
+- **Venduto:** la copia online si toglie quando il pezzo è venduto e sono passati i 30 giorni del reso (o è stato reso e rimesso in vendita: allora resta). L'originale resta sul telefono.
+- **Backup:** in Impostazioni → "Backup foto" si scaricano in un file ZIP tutte le foto di quel dispositivo, da copiare su un disco o una chiavetta in autodemolizione. Un avviso ogni 7 giorni ricorda di farlo (scelta mia).
+- **Altre foto** (veicolo all'ingresso, documenti, copia del formulario): restano solo sul dispositivo e nel backup.
+- **Rischio da dire chiaro:** se un telefono si rompe o si cancellano i dati del browser prima del backup, le sue foto non in vendita si perdono.
+
+Si costruisce in un piano a parte (`2026-11-25-foto-sul-dispositivo.md`), dopo il piano dei dati su Supabase: il piano dei dati porta comunque foto, allegati e visure sul deposito, perché le copie online e i PDF servono lo stesso.
