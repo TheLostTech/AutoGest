@@ -1,73 +1,46 @@
-// Archivio condiviso di un'azienda: un file state.json nella sua cartella. Solo server.
-// Un blocco per azienda: le scritture della stessa azienda vanno in fila (così l'ordine del negozio e il
-// salvataggio di un dispositivo non si sovrascrivono), quelle di aziende diverse non si aspettano.
-import { mkdir, rename, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { leggiStatoDaFile } from "@/lib/archivio-file";
-import { creaUnaVolta } from "@/lib/file-una-volta";
-import { cartellaAzienda } from "@/lib/server-data";
+// Archivio condiviso di un'azienda: un documento "archivio" nel deposito (su disco: state.json). Solo server.
+// Le scritture della stessa azienda vanno in fila nel deposito (così l'ordine del negozio e il salvataggio di
+// un dispositivo non si sovrascrivono), quelle di aziende diverse non si aspettano.
+import { ArchivioIlleggibile } from "@/lib/archivio-file";
+import { deposito } from "@/lib/deposito";
+import { DocumentoIlleggibile } from "@/lib/deposito/tipi";
 import { STORE_SCHEMA } from "@/lib/schema";
 import type { Rec, Stored } from "@/lib/archivio-unione";
 
-const code = (a: string) => path.join(cartellaAzienda(a), "state.json");
-// Sulla globalThis: le route di Next possono avere ognuna la propria copia di questo modulo, ma il blocco deve essere uno solo
-// (l'ordine del negozio e il salvataggio di un dispositivo passano da route diverse).
-const g = globalThis as typeof globalThis & { __blocchiArchivio?: Map<string, Promise<unknown>> };
-const blocchi = (g.__blocchiArchivio ??= new Map<string, Promise<unknown>>());
+// Archivio assente: state null, versione 0
+const VUOTO: Stored = { schema: "", version: 0, state: null };
 
-// Sempre dal file: anche altri processi sullo stesso Mac leggono e scrivono qui
-// File assente: state null. File presente ma illeggibile o corrotto: errore (ArchivioIlleggibile), mai da sovrascrivere.
-export function leggiStato(aziendaId: string): Promise<Stored> {
-  return leggiStatoDaFile(code(aziendaId));
-}
+const comeArchivio = (aziendaId: string, e: unknown): unknown => (e instanceof DocumentoIlleggibile && !(e instanceof ArchivioIlleggibile) ? new ArchivioIlleggibile(e.cause, aziendaId) : e);
+const controlla = (aziendaId: string, v: Stored | null): Stored | null => {
+  if (v !== null && (!v || typeof v !== "object")) throw new ArchivioIlleggibile(new Error("non è un oggetto"), aziendaId);
+  return v;
+};
 
-// Si scrive in un file temporaneo e poi lo si rinomina: un arresto a metà non lascia un file tronco
-async function scrivi(aziendaId: string, s: Stored, soloSeNuovo = false) {
-  const dir = cartellaAzienda(aziendaId);
-  await mkdir(dir, { recursive: true });
-  const file = path.join(dir, "state.json");
-  if (soloSeNuovo) {
-    // Già completo quando compare: chi legge in quel momento non lo trova a metà (e non lo crede corrotto)
-    if (!(await creaUnaVolta(file, JSON.stringify(s), 0o644))) throw Object.assign(new Error("Archivio già presente"), { code: "EEXIST" });
-    return;
+// Sempre dal deposito: anche altri processi sullo stesso Mac leggono e scrivono qui
+// Archivio assente: state null. Presente ma illeggibile o corrotto: errore (ArchivioIlleggibile), mai da sovrascrivere.
+export async function leggiStato(aziendaId: string): Promise<Stored> {
+  try {
+    return controlla(aziendaId, await deposito().leggiDocumento<Stored>(aziendaId, "archivio")) ?? VUOTO;
+  } catch (e) {
+    throw comeArchivio(aziendaId, e);
   }
-  const tmp = `${file}.${process.pid}.tmp`;
-  await writeFile(tmp, JSON.stringify(s));
-  await rename(tmp, file);
 }
 
-export function aggiornaStato<T>(aziendaId: string, fn: (s: Stored) => { stored: Stored; risultato: T; nonScrivere?: boolean }): Promise<T> {
-  cartellaAzienda(aziendaId); // id non valido: errore subito
-  const prima = blocchi.get(aziendaId) ?? Promise.resolve();
-  const run = prima.then(async () => {
-    const { stored, risultato, nonScrivere } = fn(await leggiStato(aziendaId));
-    if (!nonScrivere) await scrivi(aziendaId, stored);
-    return risultato;
-  });
-  const coda = run.catch(() => undefined);
-  blocchi.set(aziendaId, coda);
-  void coda.then(() => {
-    if (blocchi.get(aziendaId) === coda) blocchi.delete(aziendaId);
-  });
-  return run;
+export async function aggiornaStato<T>(aziendaId: string, fn: (s: Stored) => { stored: Stored; risultato: T; nonScrivere?: boolean }): Promise<T> {
+  try {
+    return await deposito().aggiornaDocumento<Stored, T>(aziendaId, "archivio", (prima) => {
+      const { stored, risultato, nonScrivere } = fn(controlla(aziendaId, prima) ?? VUOTO);
+      return { dati: stored, risultato, nonScrivere };
+    });
+  } catch (e) {
+    throw comeArchivio(aziendaId, e);
+  }
 }
 
-/** Crea l'archivio di un'azienda nuova; se il file c'è già non tocca nulla. */
+/** Crea l'archivio di un'azienda nuova; se c'è già non tocca nulla. */
 export async function creaStatoAzienda(aziendaId: string, stato: Record<string, unknown>): Promise<void> {
-  const prima = blocchi.get(aziendaId) ?? Promise.resolve();
-  const run = prima.then(async () => {
-    try {
-      await scrivi(aziendaId, { schema: STORE_SCHEMA, version: 1, state: stato }, true);
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-    }
-  });
-  const coda = run.catch(() => undefined);
-  blocchi.set(aziendaId, coda);
-  void coda.then(() => {
-    if (blocchi.get(aziendaId) === coda) blocchi.delete(aziendaId);
-  });
-  await run;
+  const stored: Stored = { schema: STORE_SCHEMA, version: 1, state: stato };
+  await deposito().creaDocumento(aziendaId, "archivio", stored);
 }
 
 export interface NuovoEvento {

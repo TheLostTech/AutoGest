@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { cartellaAzienda } from "@/lib/server-data";
+import { deposito } from "@/lib/deposito";
 import { RICHIESTA_ESTENSIONE, type TipoRichiesta } from "@/lib/accesso/richieste";
 
 // Richieste scritte: aziende/<id>/richieste/<casuale>.<ext> + un indice (registro.json) che dice a quale
@@ -37,12 +38,10 @@ export async function leggiFileRichiesta(aziendaId: string, fileId: string): Pro
   }
 }
 
-// Le scritture dell'indice vanno in fila (un solo processo).
-let coda: Promise<unknown> = Promise.resolve();
-
+// L'indice è il documento "richieste" del deposito: le scritture vanno in fila lì.
 async function leggiIndice(aziendaId: string): Promise<VoceRichiesta[]> {
   try {
-    const v = JSON.parse(await readFile(path.join(dirRichieste(aziendaId), "registro.json"), "utf8"));
+    const v = await deposito().leggiDocumento<unknown>(aziendaId, "richieste");
     return Array.isArray(v) ? (v as VoceRichiesta[]) : [];
   } catch {
     return [];
@@ -52,15 +51,8 @@ async function leggiIndice(aziendaId: string): Promise<VoceRichiesta[]> {
 export const elencoRichieste = leggiIndice;
 
 export function aggiungiRichiesta(aziendaId: string, voce: VoceRichiesta): Promise<void> {
-  const run = coda.then(async () => {
-    const dir = dirRichieste(aziendaId);
-    await mkdir(dir, { recursive: true });
-    const tutte = await leggiIndice(aziendaId);
-    tutte.push(voce);
-    const tmp = path.join(dir, `registro.${randomBytes(4).toString("hex")}.tmp`);
-    await writeFile(tmp, JSON.stringify(tutte, null, 2));
-    await rename(tmp, path.join(dir, "registro.json"));
-  });
-  coda = run.catch(() => undefined);
-  return run;
+  return deposito().aggiornaDocumento<VoceRichiesta[], void>(aziendaId, "richieste", (prima) => ({
+    dati: [...(Array.isArray(prima) ? prima : []), voce],
+    risultato: undefined,
+  }));
 }

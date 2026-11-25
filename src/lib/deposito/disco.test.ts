@@ -40,3 +40,19 @@ test("disco: collegamenti ed ebay hanno permessi 0o600", async () => {
     assert.equal((await stat(path.join(cartellaAzienda("az-permessi"), f))).mode & 0o777, 0o600);
   }
 });
+
+test("archivio illeggibile → ArchivioIlleggibile, e il file resta com'era", async () => {
+  const { leggiStato, aggiornaStato } = await import("../archivio-azienda.ts");
+  const { ArchivioIlleggibile } = await import("../archivio-file.ts");
+  const { DocumentoIlleggibile } = await import("./tipi.ts");
+  const { cartellaAzienda } = await import("../server-data.ts");
+  const dir = cartellaAzienda("az-archivio-rovinato");
+  await mkdir(dir, { recursive: true });
+  const file = path.join(dir, "state.json");
+  await writeFile(file, "{non json");
+  const e = await leggiStato("az-archivio-rovinato").catch((x) => x);
+  assert.ok(e instanceof ArchivioIlleggibile);
+  assert.ok(e instanceof DocumentoIlleggibile);
+  await assert.rejects(aggiornaStato("az-archivio-rovinato", (s) => ({ stored: s, risultato: 0 })), ArchivioIlleggibile);
+  assert.equal(await readFile(file, "utf8"), "{non json");
+});

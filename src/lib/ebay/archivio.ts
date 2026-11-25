@@ -1,13 +1,8 @@
 // Archivio del ponte eBay sul server: file ebay.json nella cartella di ogni azienda (aziende/<id>/ebay.json), leggibile solo dal processo (0600).
 // Token di accesso e di rinnovo cifrati con cifra(); niente di questo file va mai al browser.
 // Solo server.
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { cartellaAzienda } from "@/lib/server-data";
-import { inFilaPer } from "@/lib/fila";
+import { deposito } from "@/lib/deposito";
 import type { SpedizioneEbay } from "./contratto";
-
-const fileDi = (aziendaId: string) => path.join(cartellaAzienda(aziendaId), "ebay.json");
 
 export type RuoloPolitica = "pagamento" | "reso" | SpedizioneEbay;
 
@@ -41,26 +36,17 @@ const vuoto = (): ArchivioEbay => ({ consegnati: {}, foto: {}, categorie: {}, po
 
 export async function leggiArchivio(aziendaId: string): Promise<ArchivioEbay> {
   try {
-    return { ...vuoto(), ...(JSON.parse(await readFile(fileDi(aziendaId), "utf8")) as Partial<ArchivioEbay>) };
+    return { ...vuoto(), ...((await deposito().leggiDocumento<Partial<ArchivioEbay>>(aziendaId, "ebay")) ?? {}) };
   } catch {
     return vuoto();
   }
 }
 
-async function scrivi(aziendaId: string, a: ArchivioEbay) {
-  const file = fileDi(aziendaId);
-  await mkdir(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  await writeFile(tmp, JSON.stringify(a), { mode: 0o600 });
-  await rename(tmp, file);
-}
-
-/** Legge, modifica e riscrive l'archivio, una modifica alla volta (una coda per azienda, sulla globalThis: vedi fila.ts). */
+/** Legge, modifica e riscrive l'archivio, una modifica alla volta (la fila per azienda è del deposito). */
 export function aggiornaArchivio<T>(aziendaId: string, fn: (a: ArchivioEbay) => T | Promise<T>): Promise<T> {
-  return inFilaPer("ebay", aziendaId, async () => {
-    const a = await leggiArchivio(aziendaId);
-    const out = await fn(a);
-    await scrivi(aziendaId, a);
-    return out;
+  return deposito().aggiornaDocumento<ArchivioEbay, T>(aziendaId, "ebay", async (prima) => {
+    const a: ArchivioEbay = { ...vuoto(), ...(prima ?? {}) };
+    const risultato = await fn(a);
+    return { dati: a, risultato };
   });
 }

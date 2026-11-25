@@ -1,10 +1,12 @@
 import { readFile } from "node:fs/promises";
 import type { Stored } from "./archivio-unione.ts";
+import { DocumentoIlleggibile } from "./deposito/tipi.ts";
 
 /** Errore di un archivio che esiste ma non si legge o non è JSON valido: mai da sovrascrivere. */
-export class ArchivioIlleggibile extends Error {
-  constructor(causa: unknown) {
-    super("L'archivio dell'azienda non si legge (file danneggiato o non accessibile).", { cause: causa });
+export class ArchivioIlleggibile extends DocumentoIlleggibile {
+  constructor(causa: unknown, aziendaId = "") {
+    super("archivio", aziendaId, causa);
+    this.message = "L'archivio dell'azienda non si legge (file danneggiato o non accessibile).";
   }
 }
 

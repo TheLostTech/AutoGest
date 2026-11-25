@@ -3,10 +3,12 @@
 // non JSON valido = errore, mai un archivio vuoto (il salvataggio dopo cancellerebbe le credenziali di tutti i servizi).
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { DocumentoIlleggibile } from "./deposito/tipi.ts";
 
-export class CollegamentiIlleggibili extends Error {
-  constructor(causa: unknown) {
-    super("Il file dei collegamenti non si legge (danneggiato o non accessibile).", { cause: causa });
+export class CollegamentiIlleggibili extends DocumentoIlleggibile {
+  constructor(causa: unknown, aziendaId = "") {
+    super("collegamenti", aziendaId, causa);
+    this.message = "Il file dei collegamenti non si legge (danneggiato o non accessibile).";
   }
 }
 

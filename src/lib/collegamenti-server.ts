@@ -1,12 +1,11 @@
 // Archivio dei collegamenti sul server: lettura, scrittura e segreti decifrati. Solo server.
 // Lo usano la route /api/collegamenti e il ponte eBay (le route Next non possono esportare altro che gli handler).
-import path from "node:path";
-import { cartellaAzienda } from "@/lib/server-data";
 import { decifra } from "@/lib/cifratura";
-import { leggiCollegamentiDaFile, scriviCollegamentiSuFile } from "@/lib/collegamenti-file";
+import { CollegamentiIlleggibili } from "@/lib/collegamenti-file";
+import { deposito } from "@/lib/deposito";
+import { DocumentoIlleggibile } from "@/lib/deposito/tipi";
 import { inFilaPer } from "@/lib/fila";
 
-const file = (aziendaId: string) => path.join(cartellaAzienda(aziendaId), "collegamenti.json");
 export const MAX_TEXT = 4000;
 
 export interface Salvato {
@@ -18,12 +17,19 @@ export interface Salvato {
 export type Archivio = Record<string, Salvato>;
 
 // File assente: nessun collegamento. File illeggibile o corrotto: errore (CollegamentiIlleggibili), mai {} da riscrivere.
-export function load(aziendaId: string): Promise<Archivio> {
-  return leggiCollegamentiDaFile<Archivio>(file(aziendaId));
+export async function load(aziendaId: string): Promise<Archivio> {
+  try {
+    const v = await deposito().leggiDocumento<Archivio>(aziendaId, "collegamenti");
+    if (v === null) return {};
+    if (!v || typeof v !== "object" || Array.isArray(v)) throw new CollegamentiIlleggibili(new Error("non è un oggetto"), aziendaId);
+    return v;
+  } catch (e) {
+    throw e instanceof DocumentoIlleggibile && !(e instanceof CollegamentiIlleggibili) ? new CollegamentiIlleggibili(e.cause, aziendaId) : e;
+  }
 }
 
-export function save(aziendaId: string, a: Archivio): Promise<void> {
-  return scriviCollegamentiSuFile(file(aziendaId), a);
+export async function save(aziendaId: string, a: Archivio): Promise<void> {
+  await deposito().aggiornaDocumento<Archivio, void>(aziendaId, "collegamenti", () => ({ dati: a, risultato: undefined }));
 }
 
 /** Le modifiche ai collegamenti di un'azienda vanno in fila (coda sulla globalThis, una sola per processo). */
