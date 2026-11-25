@@ -1,4 +1,4 @@
-import { PART_TYPES, typeById } from "./catalog.ts";
+import { defaultRule, NON_DA_RECUPERARE, PART_TYPES, typeById } from "./catalog.ts";
 import { isShippable } from "./spedizione.ts";
 import type { Order, Part, PartStatus, StockRule, Vehicle } from "./types";
 
@@ -35,14 +35,14 @@ export function fits(p: Part, originPlatform: string | undefined, platform: stri
 
 export function recoveryList(vehicle: Vehicle, parts: Part[], vehicles: Vehicle[], rules: StockRule[]): RecoveryRow[] {
   const platformOf = new Map(vehicles.map((v) => [v.id, v.platform]));
-  return PART_TYPES.map((t) => {
+  return PART_TYPES.filter((t) => !NON_DA_RECUPERARE.has(t.category)).map((t) => {
     const same = parts.filter((p) => p.typeId === t.id && fits(p, platformOf.get(p.vehicleId), vehicle.platform) && p.status !== "scartato" && p.status !== "venduto");
     const count = (s: PartStatus) => same.filter((p) => p.status === s).length;
-    const rule = rules.find((r) => r.typeId === t.id) ?? { min: 1, max: 3 };
+    const rule = rules.find((r) => r.typeId === t.id) ?? defaultRule(t);
     const disponibili = count("disponibile");
     const bozze = count("bozza");
     const usable = disponibili + bozze;
-    const level: StockLevel = usable === 0 ? "manca" : usable < rule.min ? "sotto soglia" : usable >= rule.max ? "eccesso" : "sufficiente";
+    const level: StockLevel = usable === 0 && rule.min > 0 ? "manca" : usable < rule.min ? "sotto soglia" : usable >= rule.max ? "eccesso" : "sufficiente";
     const daQuestoVeicolo = parts.filter((p) => p.vehicleId === vehicle.id && p.typeId === t.id).length;
     return {
       typeId: t.id,

@@ -1,4 +1,4 @@
-import { PART_TYPES, typeById } from "./catalog";
+import { defaultRule, PART_TYPES, typeById } from "./catalog";
 import { catalogFor, CATALOG_SOURCE } from "./partsdb";
 import { corsiaId, locToString, scaffaleId, warehouseFor } from "./warehouse";
 import { eerByCode, itemKg, movesForBonifica, movesForIntake, typicalBonifica } from "./ambiente";
@@ -111,11 +111,7 @@ const WEIGHTS: Record<string, number> = {
   "peugeot-208": 1050,
 };
 
-export const SEED_RULES: StockRule[] = PART_TYPES.map((t) => ({
-  typeId: t.id,
-  min: t.value >= 4 ? 2 : t.value === 3 ? 2 : 1,
-  max: t.value >= 4 ? 4 : t.value === 3 ? 4 : 3,
-}));
+export const SEED_RULES: StockRule[] = PART_TYPES.map((t) => ({ typeId: t.id, ...defaultRule(t) }));
 
 // Quali ricambi sono già stati recuperati da quali veicoli (storico demo)
 const PLAN: Record<string, string[]> = {
@@ -314,9 +310,17 @@ export function buildSeed() {
       visura: { at: v.intakeAt, fermo: false, intestatario: conferente.nome },
       presaInCarico: { at: v.intakeAt, by: "Giulia (accettazione)" },
       radiazione: done
-        ? { stato: "completata", richiestaAt: hours(v.intakeAt, 24), completataAt: hours(v.intakeAt, 24 * 6), estremi: `RAD-${v.dossier.number.slice(-6)}` }
+        ? {
+            stato: "completata",
+            codice: "C05332",
+            canale: "rvfu",
+            fascicolo: ["libretto", "proprieta", "crd", "istanza"],
+            richiestaAt: hours(v.intakeAt, 24),
+            completataAt: hours(v.intakeAt, 24 * 6),
+            estremi: `DEMO-${v.dossier.number.slice(-6)}`, // numero di ricevuta finto: nella realtà lo emette il PRA
+          }
         : v.id === "V-000117"
-          ? { stato: "richiesta", richiestaAt: hours(v.intakeAt, 20) }
+          ? { stato: "richiesta", codice: "C05332", canale: "rvfu", fascicolo: ["libretto", "proprieta", "crd", "istanza"], richiestaAt: hours(v.intakeAt, 20) }
           : { stato: "da richiedere" },
     };
   });

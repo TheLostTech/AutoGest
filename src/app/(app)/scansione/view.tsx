@@ -300,7 +300,7 @@ export default function Scansione() {
         {camera !== "on" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center text-white">
             {camera === "off" && (
-              <Button size="lg" onClick={start} className="bg-white text-band hover:bg-band-tint">
+              <Button size="lg" variant="secondary" onClick={start} className="border-white">
                 <ScanLine className="size-6" aria-hidden /> Attiva fotocamera
               </Button>
             )}

@@ -20,3 +20,7 @@ export function cartellaAzienda(id: string): string {
 export function cartellaFotoAzienda(id: string): string {
   return path.join(cartellaAzienda(id), "foto");
 }
+// Allegati PDF della pratica (es. ricevuta di avvenuta radiazione)
+export function cartellaAllegatiAzienda(id: string): string {
+  return path.join(cartellaAzienda(id), "allegati");
+}

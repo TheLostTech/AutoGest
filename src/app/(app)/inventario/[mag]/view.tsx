@@ -6,6 +6,8 @@ import { useState } from "react";
 import { ArrowLeft, ClipboardCheck, Plus } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { originLabel } from "@/lib/warehouse";
+import { typeById } from "@/lib/catalog";
+import { corrisponde } from "@/lib/cerca";
 import { ButtonLink, Empty, StatusChip } from "@/components/ui";
 import type { Part } from "@/lib/types";
 
@@ -18,11 +20,9 @@ export default function InventarioMagazzino() {
   const [q, setQ] = useState("");
   if (!w) return <Empty title={`Magazzino ${id} non trovato`} />;
 
-  const norm = (x?: string) => (x ?? "").toUpperCase().replace(/[\s\-.]/g, "");
-  const query = norm(q);
   const inside = parts
     .filter((p) => p.location?.mag === w.id && p.status !== "venduto" && p.status !== "scartato")
-    .filter((p) => !query || [p.id, p.description, p.legacyCode, p.oem, p.pastDossier?.number, p.pastDossier?.model].some((x) => norm(x).includes(query)));
+    .filter((p) => corrisponde(q, [p.id, p.description, typeById(p.typeId).name, p.misura, p.legacyCode, p.oem, p.pastDossier?.number, p.pastDossier?.model]));
 
   // Gruppi per ripiano, in ordine di corsia, scaffale, ripiano
   const groups = new Map<string, Part[]>();
@@ -49,7 +49,7 @@ export default function InventarioMagazzino() {
         </ButtonLink>
       </div>
 
-      <input className="field mb-4" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca per ID, descrizione, codice vecchio, pratica, modello…" aria-label="Cerca nel magazzino" />
+      <input className="field mb-4" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca pezzo, codice, pratica o modello…" aria-label="Cerca nel magazzino" />
 
       {groups.size === 0 ? (
         <div className="label-sheet px-5 py-10 text-center">

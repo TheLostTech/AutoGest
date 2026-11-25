@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- P grigia del marchio Piazzale con il blocco giallo Lostar, dentro la zona sicura (66 dp al centro) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#C3C8D0"
+        android:fillType="evenOdd"
+        android:pathData="M35,30 H56 A14,14 0 0 1 56,58 H46 V78 H35 Z M46,40 V48 H56 A4,4 0 0 0 56,40 Z" />
+    <path
+        android:fillColor="#F4B500"
+        android:pathData="M60,64 H73 V78 H60 Z" />
+</vector>

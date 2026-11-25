@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { creaUnaVoltaSync } from "@/lib/file-una-volta";
 import { DATA_DIR } from "@/lib/server-data";
 
 // Segreto di Better Auth (firma dei cookie di sessione, cifratura dei codici del secondo fattore).
@@ -24,12 +25,7 @@ export function segretoAccesso(): string {
   }
   mkdirSync(DATA_DIR, { recursive: true });
   const nuovo = randomBytes(32).toString("base64url");
-  try {
-    // wx: se un altro processo l'ha appena scritto, si usa il suo
-    writeFileSync(FILE_SEGRETO, nuovo, { mode: 0o600, flag: "wx" });
-    return nuovo;
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-    return readFileSync(FILE_SEGRETO, "utf8").trim();
-  }
+  // Se un altro processo l'ha appena creato, si usa il suo (mai letto vuoto o a metà: vedi file-una-volta.ts)
+  if (creaUnaVoltaSync(FILE_SEGRETO, nuovo)) return nuovo;
+  return readFileSync(FILE_SEGRETO, "utf8").trim();
 }

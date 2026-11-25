@@ -40,6 +40,45 @@ export const RADIAZIONE = {
   conservazioneGiorni: 120, // targhe e documenti si distruggono non prima di 120 giorni dal CRD
 };
 
+export type CodiceRadiazione = "C05332" | "C05333";
+export const CODICI_RADIAZIONE: { value: CodiceRadiazione; label: string; esente?: boolean }[] = [
+  { value: "C05332", label: "Demolizione" },
+  { value: "C05333", label: "Provvedimento PA", esente: true },
+];
+
+// Fascicolo digitale della radiazione (circolare MIT n. 15 del 17/02/2025, par. 5.3; riassunto in docs/INTEGRAZIONI.md).
+// "da" = documento già registrato in un passo precedente: si spunta da solo.
+export const FASCICOLO: { key: string; label: string; da?: string; solo?: CodiceRadiazione }[] = [
+  { key: "libretto", label: "Carta di circolazione o Documento Unico", da: "passo 1" },
+  { key: "proprieta", label: "Certificato di proprietà (cartaceo o digitale), se il veicolo non ha il Documento Unico", da: "passo 1" },
+  { key: "crd", label: "Certificato di rottamazione digitale (CRD)", da: "passo 3" },
+  { key: "istanza", label: "Istanza unificata compilata e firmata" },
+  { key: "provvedimento", label: "Provvedimento della Pubblica Amministrazione", solo: "C05333" },
+];
+
+export const fascicoloFor = (codice: CodiceRadiazione) => FASCICOLO.filter((d) => !d.solo || d.solo === codice);
+
+/** Voci del fascicolo già pronte da sole: documenti ricevuti al passo 1 e CRD del passo 3. */
+export function fascicoloAuto(v: Vehicle) {
+  const auto = new Set<string>();
+  if (v.documenti?.includes("libretto")) auto.add("libretto");
+  if (v.documenti?.includes("proprieta")) auto.add("proprieta");
+  if (v.presaInCarico && v.dossier.number) auto.add("crd");
+  return auto;
+}
+
+// Dopo la radiazione il centro distrugge targhe e documenti e annota le date nel RVFU
+export const DISTRUZIONE: { key: string; label: string }[] = [
+  { key: "targa-ant", label: "Targa anteriore" },
+  { key: "targa-post", label: "Targa posteriore" },
+  { key: "libretto", label: "Carta di circolazione o Documento Unico" },
+  { key: "proprieta", label: "Certificato di proprietà cartaceo" },
+];
+
+/** Primo giorno in cui targhe e documenti si possono distruggere: 120 giorni dal CRD. */
+export const distruzioneDal = (v: Vehicle) =>
+  v.presaInCarico ? new Date(new Date(v.presaInCarico.at).getTime() + RADIAZIONE.conservazioneGiorni * 864e5).toISOString() : undefined;
+
 export type StepState = "fatto" | "attuale" | "dopo";
 
 // Il RVFU identifica il veicolo da targa e telaio: senza telaio verificato non si prende in carico
@@ -49,6 +88,7 @@ export function praticaSteps(v: Vehicle) {
   const docs = docsFor(v);
   const docsOk = !!v.conferente?.cf && docs.every((d) => v.documenti?.includes(d.key));
   const preso = !!v.presaInCarico;
+  const radiato = v.radiazione?.stato === "completata";
   const st = (done: boolean, ready: boolean): StepState => (done ? "fatto" : ready ? "attuale" : "dopo");
   return {
     docs: st(docsOk || preso, true),
@@ -56,7 +96,8 @@ export function praticaSteps(v: Vehicle) {
     // si registra e si avvisa il proprietario, ma non blocca la presa in carico.
     visura: st(!!v.visura, docsOk || preso),
     presa: st(preso, docsOk && !!v.visura && identOk(v) && (!v.visura.fermo || !!v.documenti?.includes(ATTESTAZIONE.key))),
-    radiazione: st(v.radiazione?.stato === "completata", preso),
+    radiazione: st(radiato, preso),
+    distruzione: st(!!v.distruzione, radiato),
     docsMissing: docs.filter((d) => !v.documenti?.includes(d.key)),
   };
 }

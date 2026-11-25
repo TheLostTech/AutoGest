@@ -552,7 +552,17 @@ def shoot(name, objs, script, obj_desc, az=35.0, el=20.0, lens=60.0, fill=0.80,
     path = os.path.join(OUT, fname)
     sc.render.filepath = path
     t1 = time.time()
-    bpy.ops.render.render(write_still=True)
+    # Più Blender insieme sulla stessa GPU Metal fanno crashare Cycles: con BLENDER_GPU_LOCK la costruzione
+    # della scena va in parallelo e solo il render aspetta il suo turno.
+    lock = os.environ.get("BLENDER_GPU_LOCK")
+    if lock:
+        import fcntl
+        with open(lock, "a") as fh:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+            t1 = time.time()
+            bpy.ops.render.render(write_still=True)
+    else:
+        bpy.ops.render.render(write_still=True)
     t2 = time.time()
     with open(path + ".json", "w") as f:
         json.dump({"origin": "rendered with Blender 5.3 from assets-src/blender/%s" % script,

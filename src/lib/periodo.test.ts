@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   canTransmit,
+  currentKg,
   deadlineOf,
   firNumberLooksValid,
   firNumberTaken,
@@ -233,4 +234,14 @@ test("differenza di pesata: si segnala da verificare e conta in giacenza", () =>
 test("una differenza di pesata confermata dalla consulente non è più un avviso", () => {
   const d = mv({ numero: 2, registeredAt: "2026-10-20T10:00:00+02:00", kind: "scarico", causale: "DIFF", kg: 22, verificato: { at: "2026-10-21T10:00:00+02:00", by: "Laura" } });
   assert.deepEqual(moveIssues(d), []);
+});
+
+test("currentKg: i kg di una registrazione tengono conto dell'ultima rettifica", () => {
+  const c = mv({ numero: 10, registeredAt: "2026-10-10T10:00:00+02:00", kg: 1040 });
+  assert.equal(currentKg([c], c.id), 1040);
+  const r1 = mv({ numero: 11, registeredAt: "2026-10-11T10:00:00+02:00", causale: "RETT", rettificaDi: c.id, kg: 1010 });
+  const r2 = mv({ numero: 12, registeredAt: "2026-10-12T10:00:00+02:00", causale: "RETT", rettificaDi: c.id, kg: 995 });
+  assert.equal(currentKg([c, r1, r2], c.id), 995);
+  assert.equal(currentKg([r2, r1, c], c.id), 995); // non dipende dall'ordine della lista
+  assert.equal(currentKg([c], "inesistente"), undefined);
 });

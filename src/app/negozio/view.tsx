@@ -4,14 +4,16 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { PART_TYPES, PLATFORMS, CONDITIONS, typeById } from "@/lib/catalog";
+import { PART_TYPES, PLATFORMS, CONDITIONS, TYPE_GROUPS, miniRender, typeById } from "@/lib/catalog";
 import { euro, fits } from "@/lib/logic";
 import { onlinePrice } from "@/lib/pricing";
 import { nextToShip, partsOf, quantityOf } from "@/lib/annunci";
 import type { Annuncio, Part } from "@/lib/types";
 import { PartImage } from "@/components/ui";
 
-const CATS = PART_TYPES.filter((t) => t.render);
+// Le tipologie sono centinaia: prima si sceglie la categoria, poi il tipo tra quelli in vendita.
+// La copertina di una categoria è il primo tipo del catalogo con un'immagine.
+const CATS = TYPE_GROUPS.map(([cat]) => ({ cat, cover: PART_TYPES.find((t) => t.category === cat && t.render) }));
 
 export default function Negozio() {
   const { parts, vehicles, annunci } = useStore();
@@ -25,6 +27,7 @@ export default function Negozio() {
   }, []);
   const [make, setMake] = useState("");
   const [platform, setPlatform] = useState("");
+  const [cat, setCat] = useState("");
   const [type, setType] = useState("");
   const [q, setQ] = useState("");
   const vById = useMemo(() => new Map(vehicles.map((v) => [v.id, v])), [vehicles]);
@@ -44,6 +47,7 @@ export default function Negozio() {
     const v = vById.get(p.vehicleId);
     if (platform && !fits(p, v?.platform, platform)) return false;
     if (make && !platform && v?.make !== make && !p.compat?.platforms.some((pl) => PLATFORMS.find((x) => x.id === pl)?.make === make)) return false;
+    if (cat && typeById(a.typeId).category !== cat) return false;
     if (type && a.typeId !== type) return false;
     if (query && !`${a.titolo} ${a.descrizione} ${a.oem ?? ""} ${a.oem?.replace(/[\s.-]/g, "") ?? ""} ${p.manufacturer ?? ""} ${a.id}`.toLowerCase().includes(query)) return false;
     return true;
@@ -117,21 +121,35 @@ export default function Negozio() {
       </section>
 
       <nav className="mt-6 flex gap-2 overflow-x-auto pb-2" aria-label="Categorie">
-        <button onClick={() => setType("")} className={`flex min-h-24 shrink-0 flex-col items-center justify-center rounded-md border px-5 font-semibold ${!type ? "border-band bg-band-tint text-band" : "border-hair bg-label"}`}>
+        <button onClick={() => { setCat(""); setType(""); }} className={`flex min-h-24 shrink-0 flex-col items-center justify-center rounded-md border px-5 font-semibold ${!cat ? "border-band bg-band-tint text-band" : "border-hair bg-label"}`}>
           Tutto
         </button>
-        {CATS.map((t) => (
-          <button key={t.id} onClick={() => setType(t.id === type ? "" : t.id)} className={`flex w-32 shrink-0 flex-col items-center gap-1 rounded-md border p-2 text-sm font-semibold ${type === t.id ? "border-band bg-band-tint text-band" : "border-hair bg-label"}`}>
+        {CATS.map(({ cat: c, cover }) => (
+          <button key={c} onClick={() => { setCat(c === cat ? "" : c); setType(""); }} className={`flex w-32 shrink-0 flex-col items-center gap-1 rounded-md border p-2 text-sm font-semibold ${cat === c ? "border-band bg-band-tint text-band" : "border-hair bg-label"}`}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={t.render} alt="" className="size-16 object-contain" />
-            {t.name}
+            {cover?.render ? <img src={miniRender(cover.render)} alt="" loading="lazy" className="size-16 object-contain" /> : <span className="size-16" />}
+            {c}
           </button>
         ))}
       </nav>
+      {cat && (
+        <nav className="mt-2 flex flex-wrap gap-2" aria-label={`Tipi di ${cat}`}>
+          {[...new Set(shown.filter(({ a }) => typeById(a.typeId).category === cat).map(({ a }) => a.typeId))]
+            .map((id) => typeById(id))
+            .sort((x, y) => x.name.localeCompare(y.name, "it"))
+            .map((t) => (
+              <button key={t.id} onClick={() => setType(t.id === type ? "" : t.id)} className={`flex min-h-12 items-center gap-2 rounded-md border px-3 text-sm font-semibold ${type === t.id ? "border-band bg-band-tint text-band" : "border-hair bg-label"}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {t.render && <img src={miniRender(t.render)} alt="" loading="lazy" className="size-9 object-contain" />}
+                {t.name}
+              </button>
+            ))}
+        </nav>
+      )}
 
       <div className="mt-4 flex items-baseline justify-between">
         <h2 className="text-[22px] font-bold">{list.length} {list.length === 1 ? "ricambio disponibile" : "ricambi disponibili"}</h2>
-        {(make || type || q) && <button onClick={() => { setMake(""); setPlatform(""); setType(""); setQ(""); }} className="text-sm font-semibold text-band">Azzera filtri</button>}
+        {(make || cat || type || q) && <button onClick={() => { setMake(""); setPlatform(""); setCat(""); setType(""); setQ(""); }} className="text-sm font-semibold text-band">Azzera filtri</button>}
       </div>
 
       <ul className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">{list.map(card)}</ul>

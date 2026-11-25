@@ -2,9 +2,26 @@
 
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { CircleAlert, Check, FileText, Loader2, Printer, RefreshCw } from "lucide-react";
+import { CircleAlert, Check, FileText, Loader2, Printer, RefreshCw, Upload } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { ATTESTAZIONE, cfOk, identOk, CONFERENTI, docsFor, nextCertNumber, praticaSteps, RADIAZIONE, simulateVisura, type StepState } from "@/lib/pratica";
+import {
+  ATTESTAZIONE,
+  cfOk,
+  CODICI_RADIAZIONE,
+  CONFERENTI,
+  DISTRUZIONE,
+  distruzioneDal,
+  docsFor,
+  fascicoloAuto,
+  fascicoloFor,
+  identOk,
+  nextCertNumber,
+  praticaSteps,
+  RADIAZIONE,
+  simulateVisura,
+  type CodiceRadiazione,
+  type StepState,
+} from "@/lib/pratica";
 import { dateIt } from "@/lib/logic";
 
 // Importi ufficiali con i centesimi (es. emolumenti 13,50 €)
@@ -23,10 +40,10 @@ export function PraticaPanel({ v }: { v: Vehicle }) {
   const [nome, setNome] = useState(v.conferente?.nome ?? "");
   const [cf, setCf] = useState(v.conferente?.cf ?? "");
   const [docId, setDocId] = useState(v.conferente?.documento ?? "");
-  const [canale, setCanale] = useState<"rvfu" | "agenzia">("rvfu");
   const consegna = v.presaInCarico?.at ?? v.intakeAt;
   const deadline = new Date(new Date(consegna).getTime() + RADIAZIONE.terminiGiorni * 864e5).toISOString();
-  const costoRad = RADIAZIONE.costi.reduce((a, c) => a + c.euro, 0);
+  const rad = v.radiazione;
+  const dal = distruzioneDal(v);
   const changed =
     tipo !== v.conferente?.tipo || nome.trim() !== (v.conferente?.nome ?? "") || cf.trim().toUpperCase() !== (v.conferente?.cf ?? "") || docId.trim() !== (v.conferente?.documento ?? "");
 
@@ -177,80 +194,71 @@ export function PraticaPanel({ v }: { v: Vehicle }) {
           )}
         </Step>
 
-        {/* 4 · Radiazione */}
+        {/* 4 · Radiazione: fascicolo digitale inviato al PRA, poi la ricevuta di avvenuta radiazione */}
         <Step
           readOnly={!canEdit}
           n={4}
-          last
           state={steps.radiazione}
           title="Radiazione dal PRA"
           summary={
-            v.radiazione?.stato === "completata"
-              ? `Completata ${dateIt(v.radiazione.completataAt!)} · ${v.radiazione.estremi}`
-              : v.radiazione?.stato === "richiesta"
-                ? `Richiesta il ${dateIt(v.radiazione.richiestaAt!)} ${v.radiazione.canale === "agenzia" ? "tramite agenzia" : "nel RVFU"} · in attesa di esito`
-                : `Entro il ${dateIt(deadline)}: 30 giorni dalla consegna`
+            rad?.stato === "completata"
+              ? `Radiato il ${dateIt(rad.completataAt!)} · ricevuta del PRA n. ${rad.estremi}${rad.ricevuta ? "" : " · PDF non allegato"}`
+              : rad?.stato === "richiesta"
+                ? `Inviata il ${dateIt(rad.richiestaAt!)} · ${rad.codice ?? RADIAZIONE.codicePratica} ${rad.canale === "agenzia" ? "tramite agenzia" : "nel RVFU"} · in attesa della ricevuta del PRA`
+                : rad?.stato === "da integrare"
+                  ? `Il PRA ha chiesto un'integrazione il ${dateIt(rad.integrazione!.at)}: completa il fascicolo e invialo di nuovo entro il ${dateIt(deadline)}`
+                  : `Entro il ${dateIt(deadline)}: 30 giorni dalla consegna`
+          }
+          note={
+            ((rad?.stato === "completata" && rad.ricevuta) || (rad?.stato === "da integrare" && rad.integrazione)) && (
+              <span className="block space-y-2">
+                {rad.stato === "completata" && rad.ricevuta && (
+                  <a className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-band underline-offset-2 hover:underline" href={rad.ricevuta} target="_blank" rel="noreferrer">
+                    <FileText className="size-4" aria-hidden /> Apri la ricevuta di avvenuta radiazione
+                  </a>
+                )}
+                {rad.stato === "da integrare" && rad.integrazione && (
+                  <span className="flex items-start gap-2 rounded-md bg-warn-bg px-3 py-2 text-sm text-warn">
+                    <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                    <span>Il PRA chiede: {rad.integrazione.nota}</span>
+                  </span>
+                )}
+              </span>
+            )
           }
         >
-          {steps.radiazione === "attuale" && v.radiazione?.stato !== "richiesta" && (
-            <div className="space-y-3">
-              <div className="inline-flex rounded-md border border-hair bg-carton p-1" role="radiogroup" aria-label="Canale della radiazione">
-                {(["rvfu", "agenzia"] as const).map((c) => (
-                  <button
-                    key={c}
-                    role="radio"
-                    aria-checked={canale === c}
-                    onClick={() => setCanale(c)}
-                    className={`min-h-10 rounded px-3 text-[15px] font-semibold ${canale === c ? "bg-label text-ink shadow-sm" : "text-ink-2"}`}
-                  >
-                    {c === "rvfu" ? "Diretta nel RVFU" : "Tramite agenzia"}
-                  </button>
-                ))}
-              </div>
-              <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-0.5 text-sm">
-                {RADIAZIONE.costi.map((c) => (
-                  <Fragment key={c.voce}>
-                    <dt className="text-ink-2">{c.voce}</dt>
-                    <dd className="code text-right">{eur(c.euro)}</dd>
-                  </Fragment>
-                ))}
-                <dt className="font-semibold">Totale{canale === "agenzia" ? " + compenso agenzia" : ""}</dt>
-                <dd className="code text-right font-bold">{eur(costoRad)}</dd>
-              </dl>
-              <p className="text-[13px] text-ink-3">
-                Pratica DU {RADIAZIONE.codicePratica}. {RADIAZIONE.fascicolo}. {RADIAZIONE.nota}.
-              </p>
-              <Button
-                size="sm"
-                onClick={() =>
-                  updateVehicle(v.id, { radiazione: { stato: "richiesta", richiestaAt: new Date().toISOString(), canale } }, "Radiazione richiesta", canale === "rvfu" ? "nel RVFU (simulato)" : "tramite agenzia (simulato)")
-                }
-              >
-                Richiedi la radiazione
-              </Button>
-            </div>
+          {steps.radiazione === "attuale" && rad?.stato !== "richiesta" && <InvioRadiazione v={v} />}
+          {steps.radiazione === "attuale" && rad?.stato === "richiesta" && <EsitoRadiazione v={v} />}
+          {rad?.stato === "completata" && !rad.ricevuta && (
+            <CaricaPdf
+              label="Allega il PDF della ricevuta"
+              onCaricato={(url) => updateVehicle(v.id, { radiazione: { ...rad, ricevuta: url } }, "Ricevuta di radiazione allegata", `ricevuta n. ${rad.estremi}`)}
+            />
           )}
-          {steps.radiazione === "attuale" && v.radiazione?.stato === "richiesta" && (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                const estremi = `RAD-${(v.dossier.number || v.id).slice(-6)}`;
-                updateVehicle(
-                  v.id,
-                  { radiazione: { ...v.radiazione!, stato: "completata", completataAt: new Date().toISOString(), estremi }, dossier: { ...v.dossier, status: "completata" } },
-                  "Radiazione completata",
-                  estremi,
-                );
-              }}
-            >
-              Registra l&apos;esito della radiazione
-            </Button>
-          )}
+        </Step>
+
+        {/* 5 · Distruzione di targhe e documenti, da annotare nel RVFU */}
+        <Step
+          readOnly={!canEdit}
+          n={5}
+          last
+          state={steps.distruzione}
+          title="Distruzione di targhe e documenti"
+          summary={
+            v.distruzione
+              ? `Distrutti il ${dateIt(v.distruzione.at)} · ${v.distruzione.by} · ${v.distruzione.cosa.map((k) => DISTRUZIONE.find((d) => d.key === k)?.label ?? k).join(", ")}`
+              : dal && new Date(dal) <= new Date()
+                ? `Si possono distruggere dal ${dateIt(dal)}, 120 giorni dal CRD: registra cosa e quando`
+                : dal
+                  ? `Dal ${dateIt(dal)}, 120 giorni dal CRD. Fino ad allora restano custoditi nel centro`
+                  : "Dopo la radiazione, non prima di 120 giorni dal CRD"
+          }
+        >
+          {steps.distruzione === "attuale" && <Distruzione v={v} />}
         </Step>
       </ol>
       <p className="border-t border-hair-soft px-4 py-2.5 text-[13px] text-ink-3">
-        {!canEdit && "La pratica la gestisce l'ufficio. "}Flusso RVFU, obbligatorio dal 7/6/2024. RVFU e radiazione sono simulati nel prototipo; la visura PRA è vera se Openapi è collegato in Impostazioni → Collegamenti. Fonti e costi in docs/INTEGRAZIONI.md.
+        {!canEdit && "La pratica la gestisce l'ufficio. "}Flusso RVFU, obbligatorio dal 7/6/2024. RVFU e invio della radiazione sono simulati nel prototipo: la ricevuta del PRA si registra a mano e si allega in PDF. La visura PRA è vera se Openapi è collegato in Impostazioni → Collegamenti. Fonti e costi in docs/INTEGRAZIONI.md.
       </p>
     </Panel>
   );
@@ -415,6 +423,303 @@ function VisuraPra({ v }: { v: Vehicle }) {
         }
       >
         Registra l&apos;esito
+      </Button>
+    </div>
+  );
+}
+
+// Giorno locale AAAA-MM-GG (per i campi data): toISOString darebbe il giorno in UTC
+const giorno = (d: Date | string) => {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+};
+// A mezzogiorno, così il fuso orario non sposta la data
+const daGiorno = (g: string) => new Date(`${g}T12:00:00`).toISOString();
+
+function Scelta<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+  return (
+    <div className="inline-flex flex-wrap rounded-md border border-hair bg-carton p-1" role="radiogroup" aria-label={label}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={`min-h-10 rounded px-3 text-[15px] font-semibold ${value === o.value ? "bg-label text-ink shadow-sm" : "text-ink-2"}`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Passo 4, prima parte: codice della pratica, canale, fascicolo digitale e costi. Si usa anche per reinviare dopo un'integrazione.
+function InvioRadiazione({ v }: { v: Vehicle }) {
+  const { updateVehicle } = useStore();
+  const r = v.radiazione;
+  const [codice, setCodice] = useState<CodiceRadiazione>(r?.codice ?? "C05332");
+  const [canale, setCanale] = useState<"rvfu" | "agenzia">(r?.canale ?? "rvfu");
+  // Dopo una richiesta di integrazione le voci spuntate a mano si confermano di nuovo
+  const [spuntati, setSpuntati] = useState(() => new Set(r?.stato === "da integrare" ? [] : (r?.fascicolo ?? [])));
+  const auto = fascicoloAuto(v);
+  const voci = fascicoloFor(codice);
+  const pronto = (k: string) => auto.has(k) || spuntati.has(k);
+  const completo = voci.every((d) => pronto(d.key));
+  const esente = !!CODICI_RADIAZIONE.find((c) => c.value === codice)?.esente;
+  const totale = esente ? 0 : RADIAZIONE.costi.reduce((a, c) => a + c.euro, 0);
+  const reinvio = r?.stato === "da integrare";
+
+  return (
+    <div className="space-y-3">
+      <Scelta label="Codice della pratica" value={codice} onChange={setCodice} options={CODICI_RADIAZIONE.map((c) => ({ value: c.value, label: `${c.label} · ${c.value}` }))} />
+      <Scelta
+        label="Canale della radiazione"
+        value={canale}
+        onChange={setCanale}
+        options={[
+          { value: "rvfu", label: "Diretta nel RVFU" },
+          { value: "agenzia", label: "Tramite agenzia" },
+        ]}
+      />
+      <fieldset className="space-y-1">
+        <legend className="text-sm font-semibold">Fascicolo digitale (un PDF unico)</legend>
+        {voci.map((d) => (
+          <label key={d.key} className="flex min-h-10 items-center gap-2.5 text-sm">
+            <input
+              type="checkbox"
+              className="size-5 shrink-0 accent-band"
+              disabled={auto.has(d.key)}
+              checked={pronto(d.key)}
+              onChange={(e) =>
+                setSpuntati((s) => {
+                  const n = new Set(s);
+                  if (e.target.checked) n.add(d.key);
+                  else n.delete(d.key);
+                  return n;
+                })
+              }
+            />
+            <span>
+              {d.label}
+              {auto.has(d.key) && <span className="text-ink-3"> · dal {d.da}</span>}
+            </span>
+          </label>
+        ))}
+      </fieldset>
+      <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-0.5 text-sm">
+        {esente ? (
+          <>
+            <dt className="text-ink-2">Bollo ed emolumenti</dt>
+            <dd className="text-right">esente</dd>
+          </>
+        ) : (
+          RADIAZIONE.costi.map((c) => (
+            <Fragment key={c.voce}>
+              <dt className="text-ink-2">{c.voce}</dt>
+              <dd className="code text-right">{eur(c.euro)}</dd>
+            </Fragment>
+          ))
+        )}
+        <dt className="font-semibold">Totale{canale === "agenzia" ? " + compenso agenzia" : ""}</dt>
+        <dd className="code text-right font-bold">{eur(totale)}</dd>
+      </dl>
+      <p className="text-[13px] text-ink-3">
+        {esente ? RADIAZIONE.fascicolo.replace("pagare e ", "") : RADIAZIONE.fascicolo}.{esente ? "" : ` ${RADIAZIONE.nota}.`} {canale === "agenzia" ? "L'agenzia ti manda la ricevuta del PRA quando la radiazione è fatta." : "La ricevuta del PRA arriva nel RVFU."}
+      </p>
+      <Button
+        size="sm"
+        disabled={!completo}
+        onClick={() =>
+          updateVehicle(
+            v.id,
+            { radiazione: { ...r, stato: "richiesta", codice, canale, fascicolo: voci.map((d) => d.key), richiestaAt: new Date().toISOString() } },
+            reinvio ? "Radiazione: fascicolo integrato e inviato" : "Radiazione richiesta",
+            `${codice} ${canale === "rvfu" ? "nel RVFU" : "tramite agenzia"} (simulato)`,
+          )
+        }
+      >
+        {reinvio ? "Invia di nuovo il fascicolo" : "Invia la pratica di radiazione"}
+      </Button>
+      {!completo && <p className="text-[13px] text-ink-3">Spunta le voci del fascicolo per inviare la pratica.</p>}
+    </div>
+  );
+}
+
+// Passo 4, seconda parte: il PRA risponde con la ricevuta di avvenuta radiazione (o chiede un'integrazione).
+function EsitoRadiazione({ v }: { v: Vehicle }) {
+  const { updateVehicle } = useStore();
+  const r = v.radiazione!;
+  const oggi = giorno(new Date());
+  const min = r.richiestaAt ? giorno(r.richiestaAt) : undefined;
+  const [numero, setNumero] = useState("");
+  const [data, setData] = useState(oggi);
+  const [pdf, setPdf] = useState<string>();
+  const [integra, setIntegra] = useState(false);
+  const [nota, setNota] = useState("");
+  const dataOk = !!data && data <= oggi && (!min || data >= min);
+
+  if (integra)
+    return (
+      <div className="space-y-2.5">
+        <label className="block text-sm font-semibold" htmlFor={`integra-${v.id}`}>
+          Cosa chiede il PRA
+        </label>
+        <textarea id={`integra-${v.id}`} className="field min-h-20 w-full py-2" value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Es. manca la firma sull'istanza unificata" />
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={!nota.trim()}
+            onClick={() =>
+              updateVehicle(v.id, { radiazione: { ...r, stato: "da integrare", integrazione: { at: new Date().toISOString(), nota: nota.trim() } } }, "Radiazione: il PRA chiede un'integrazione", nota.trim())
+            }
+          >
+            Registra la richiesta
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setIntegra(false)}>
+            Annulla
+          </Button>
+        </div>
+      </div>
+    );
+
+  return (
+    <div className="space-y-2.5">
+      <p className="text-sm text-ink-2">
+        Quando il PRA registra la radiazione emette la <b className="text-ink">ricevuta di avvenuta radiazione</b>: è l&apos;unica prova che il veicolo è cancellato. {r.canale === "agenzia" ? "Te la manda l'agenzia" : "Arriva nel RVFU"}: riporta qui numero e data e allega il PDF.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <input className="field h-11" value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Numero della ricevuta" aria-label="Numero della ricevuta di avvenuta radiazione" />
+        <input type="date" className="field h-11" value={data} min={min} max={oggi} onChange={(e) => setData(e.target.value)} aria-label="Data della radiazione" />
+      </div>
+      {pdf ? (
+        <a className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-band underline-offset-2 hover:underline" href={pdf} target="_blank" rel="noreferrer">
+          <FileText className="size-4" aria-hidden /> PDF della ricevuta allegato
+        </a>
+      ) : (
+        <CaricaPdf label="Allega il PDF della ricevuta" onCaricato={setPdf} />
+      )}
+      {!dataOk && data && <p className="text-sm text-danger">La data deve essere tra l&apos;invio della pratica e oggi.</p>}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          disabled={!numero.trim() || !dataOk}
+          onClick={() =>
+            updateVehicle(
+              v.id,
+              { radiazione: { ...r, stato: "completata", completataAt: daGiorno(data), estremi: numero.trim(), ricevuta: pdf }, dossier: { ...v.dossier, status: "completata" } },
+              "Radiazione completata",
+              `ricevuta del PRA n. ${numero.trim()}${pdf ? "" : " (PDF non allegato)"}`,
+            )
+          }
+        >
+          Registra la ricevuta
+        </Button>
+        <Button size="sm" variant="secondary" onClick={() => setIntegra(true)}>
+          Il PRA chiede un&apos;integrazione
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+const PDF_PREFIX = "data:application/pdf;base64,";
+const MAX_PDF = 8 * 1024 * 1024;
+
+function CaricaPdf({ label, onCaricato }: { label: string; onCaricato: (url: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [errore, setErrore] = useState("");
+
+  const carica = async (f: File) => {
+    setErrore("");
+    if (f.size > MAX_PDF) return setErrore("Il PDF supera 8 MB.");
+    setBusy(true);
+    try {
+      const url = await new Promise<string>((ok, ko) => {
+        const fr = new FileReader();
+        fr.onload = () => ok(String(fr.result));
+        fr.onerror = () => ko(new Error("File non leggibile"));
+        fr.readAsDataURL(f);
+      });
+      const d = (await leggi(
+        await fetchAzienda("/api/allegati", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: PDF_PREFIX + url.split(",")[1] }) }),
+      )) as { url: string };
+      onCaricato(d.url);
+    } catch (e) {
+      setErrore((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      <label className={`inline-flex min-h-10 items-center gap-1.5 text-[15px] font-semibold text-band ${busy ? "opacity-60" : "cursor-pointer"}`}>
+        {busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Upload className="size-4" aria-hidden />}
+        {label}
+        <input
+          type="file"
+          accept="application/pdf,.pdf"
+          className="sr-only"
+          disabled={busy}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (f) void carica(f);
+          }}
+        />
+      </label>
+      {errore && <p className="text-sm text-danger">{errore}</p>}
+    </div>
+  );
+}
+
+// Passo 5: dopo la radiazione e non prima di 120 giorni dal CRD si distruggono targhe e documenti; la data va nel RVFU.
+function Distruzione({ v }: { v: Vehicle }) {
+  const { updateVehicle, operatore } = useStore();
+  const oggi = giorno(new Date());
+  const dal = giorno(distruzioneDal(v)!);
+  const [cosa, setCosa] = useState(() => new Set(DISTRUZIONE.map((d) => d.key)));
+  const [data, setData] = useState(oggi);
+  if (oggi < dal) return null;
+  const dataOk = !!data && data >= dal && data <= oggi;
+
+  return (
+    <div className="space-y-2.5">
+      <fieldset className="space-y-1">
+        <legend className="text-sm font-semibold">Cosa è stato distrutto</legend>
+        {DISTRUZIONE.map((d) => (
+          <label key={d.key} className="flex min-h-10 items-center gap-2.5 text-sm">
+            <input
+              type="checkbox"
+              className="size-5 shrink-0 accent-band"
+              checked={cosa.has(d.key)}
+              onChange={(e) =>
+                setCosa((s) => {
+                  const n = new Set(s);
+                  if (e.target.checked) n.add(d.key);
+                  else n.delete(d.key);
+                  return n;
+                })
+              }
+            />
+            {d.label}
+          </label>
+        ))}
+      </fieldset>
+      <input type="date" className="field h-11" value={data} min={dal} max={oggi} onChange={(e) => setData(e.target.value)} aria-label="Data della distruzione" />
+      {!dataOk && data && <p className="text-sm text-danger">La data deve essere tra il {dateIt(daGiorno(dal))} e oggi.</p>}
+      <p className="text-[13px] text-ink-3">Targhe smarrite o rubate: togli la spunta, vale la denuncia ricevuta al passo 1. La data va annotata nel RVFU (simulato).</p>
+      <Button
+        size="sm"
+        disabled={cosa.size === 0 || !dataOk}
+        onClick={() => {
+          const voci = DISTRUZIONE.filter((d) => cosa.has(d.key));
+          updateVehicle(v.id, { distruzione: { at: daGiorno(data), by: operatore ? `${operatore.nome}${operatore.assistenza ? " (assistenza)" : ""}` : "Operatore", cosa: voci.map((d) => d.key) } }, "Targhe e documenti distrutti", voci.map((d) => d.label).join(", "));
+        }}
+      >
+        Registra la distruzione
       </Button>
     </div>
   );

@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useRef, useState } from "react";
 import { Camera, Check, ChevronLeft, ChevronRight, Loader2, Printer, Sparkles, X } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { CONDITIONS, PART_TYPES, sidesFor, typeById } from "@/lib/catalog";
+import { CONDITIONS, sidesFor, typeById } from "@/lib/catalog";
 import { savePhoto, suggestComponent } from "@/lib/services";
 import { recoveryList } from "@/lib/logic";
 import { catalogFor, platformLabel } from "@/lib/partsdb";
@@ -15,6 +15,7 @@ import { Button, ButtonLink, Empty, Field, Plate } from "@/components/ui";
 import { PartLabel } from "@/components/PartLabel";
 import { ShippingChoice } from "@/components/ShippingChoice";
 import { asksShipping } from "@/lib/spedizione";
+import { TypePicker } from "@/components/TypePicker";
 
 export default function Page() {
   return (
@@ -39,6 +40,7 @@ function NuovoPezzo() {
   const [aiState, setAiState] = useState<"idle" | "loading" | "proposed" | "accepted" | "rejected">("idle");
   const [condition, setCondition] = useState<Condition | undefined>();
   const [side, setSide] = useState<string>("");
+  const [misura, setMisura] = useState("");
   const [spedibile, setSpedibile] = useState(false);
   const [oem, setOem] = useState("");
   const [defects, setDefects] = useState("");
@@ -69,8 +71,8 @@ function NuovoPezzo() {
   const rule = t && store.rules.find((r) => r.typeId === t.id);
   const inStock = t ? store.parts.filter((p) => p.typeId === t.id && p.status === "disponibile").length : 0;
   const suggested = cat && condition ? suggestUsedPrice(cat.newPrice, condition, inStock, rule?.max ?? 99) : undefined;
-  const description = t ? `${t.name} ${v.make} ${v.model}${side ? ` ${side.toLowerCase()}` : ""}` : "";
-  const valid = !!t && !!condition && (!t.sided || !!side);
+  const description = t ? `${t.name}${misura ? ` ${misura}` : ""} ${v.make} ${v.model}${side ? ` ${side.toLowerCase()}` : ""}` : "";
+  const valid = !!t && !!condition && (!t.sided || !!side) && (!t.misure || !!misura);
 
   function save() {
     setTried(true);
@@ -78,6 +80,7 @@ function NuovoPezzo() {
     const pid = store.addPart({
       vehicleId: v!.id,
       typeId: t.id,
+      misura: t.misure ? misura : undefined,
       description,
       condition,
       status: "bozza",
@@ -207,13 +210,17 @@ function NuovoPezzo() {
 
       <div className="mt-5 space-y-5">
         <Field label="Che pezzo è?" error={tried && !t ? "Scegli la tipologia" : undefined}>
-          <select className="field text-[17px] font-semibold" value={typeId ?? ""} onChange={(e) => { setTypeId(e.target.value || undefined); setOemOk(false); if (aiState === "proposed") setAiState("rejected"); }}>
-            <option value="">Seleziona…</option>
-            {PART_TYPES.map((x) => (
-              <option key={x.id} value={x.id}>{x.name} · {x.category}</option>
-            ))}
-          </select>
+          <TypePicker className="text-[17px] font-semibold" value={typeId ?? ""} vuoto="Seleziona…" onChange={(v) => { setTypeId(v || undefined); setMisura(""); setOemOk(false); if (aiState === "proposed") setAiState("rejected"); }} />
         </Field>
+
+        {t?.misure && (
+          <Field label="Misura" error={tried && !misura ? "Scegli la misura" : undefined}>
+            <select className="field text-[17px] font-semibold" value={misura} onChange={(e) => setMisura(e.target.value)}>
+              <option value="">Seleziona…</option>
+              {t.misure.map((m) => <option key={m}>{m}</option>)}
+            </select>
+          </Field>
+        )}
 
         {t?.sided && (
           <fieldset>

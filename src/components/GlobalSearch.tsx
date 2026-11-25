@@ -2,10 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Boxes, CarFront, FileText, Leaf, PackageCheck, Search, X, type LucideIcon } from "lucide-react";
+import { Boxes, CarFront, FileText, Leaf, PackageCheck, Search, Shapes, X, type LucideIcon } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { eerByCode, fmtKg } from "@/lib/ambiente";
 import { euro } from "@/lib/logic";
+import { typeById } from "@/lib/catalog";
+import { cercaTipologie, corrisponde } from "@/lib/cerca";
 import { DOC_LABEL } from "@/lib/docs";
 import { moduloDi, moduloDoc } from "@/lib/moduli";
 import { useModuli } from "@/lib/use-moduli";
@@ -14,6 +16,7 @@ interface Hit {
   group: string;
   icon: LucideIcon;
   id: string;
+  code?: string; // codice in grassetto prima del titolo; se manca si usa l'id ("" = nessuno)
   title: string;
   sub: string;
   href: string;
@@ -90,8 +93,15 @@ function SearchBox({ onClose }: { onClose: () => void }) {
       .filter((v) => has(v.id, v.plate, v.vin, `${v.make}${v.model}`, v.dossier.number, v.conferente?.nome))
       .slice(0, 5)
       .forEach((v) => hits.push({ group: "Veicoli", icon: CarFront, id: v.id, title: `${v.make} ${v.model}`, sub: `${v.plate} · ${v.vin || "telaio non acquisito"} · ${v.work}`, href: `/veicoli/${v.id}` }));
+    // Tipologie: "bobina accensione" porta al magazzino filtrato, anche se di quel pezzo non ce n'è nessuno
+    cercaTipologie(q)
+      .slice(0, 4)
+      .forEach((t) => {
+        const n = parts.filter((p) => p.typeId === t.id && p.status !== "venduto" && p.status !== "scartato").length;
+        hits.push({ group: "Tipologie", icon: Shapes, id: t.id, code: "", title: t.name, sub: `${t.category} · ${n === 0 ? "nessun pezzo in magazzino" : n === 1 ? "1 pezzo in magazzino" : `${n} pezzi in magazzino`}`, href: `/ricambi?tipo=${encodeURIComponent(t.id)}` });
+      });
     parts
-      .filter((p) => has(p.id, p.legacyCode, p.oem, p.description, p.manufacturer))
+      .filter((p) => has(p.id, p.legacyCode, p.oem) || corrisponde(q, [p.description, typeById(p.typeId).name, p.misura, p.manufacturer]))
       .slice(0, 6)
       .forEach((p) =>
         hits.push({
@@ -180,7 +190,7 @@ function SearchBox({ onClose }: { onClose: () => void }) {
         ) : hits.length === 0 ? (
           <div className="px-4 py-8 text-center">
             <p className="font-semibold">Nessun risultato per «{q}»</p>
-            <p className="mt-1 text-sm text-ink-2">Prova con una parte del codice o della targa.</p>
+            <p className="mt-1 text-sm text-ink-2">Prova con una parte del codice, della targa o del nome del pezzo.</p>
           </div>
         ) : (
           <ul className="py-1.5">
@@ -201,7 +211,7 @@ function SearchBox({ onClose }: { onClose: () => void }) {
                     </span>
                     <span className="min-w-0">
                       <span className="flex items-baseline gap-2">
-                        <span className="code shrink-0 text-[17px] font-bold">{h.id}</span>
+                        {(h.code ?? h.id) && <span className="code shrink-0 text-[17px] font-bold">{h.code ?? h.id}</span>}
                         <span className="truncate font-semibold">{h.title}</span>
                       </span>
                       <span className="block truncate text-sm text-ink-2">{h.sub}</span>
@@ -230,6 +240,7 @@ const Kbd = ({ children }: { children: React.ReactNode }) => (
 const EXAMPLES = [
   { label: "Targa", example: "EK 482" },
   { label: "Ricambio", example: "R-002306" },
+  { label: "Tipo di pezzo", example: "bobina accensione" },
   { label: "Codice vecchio", example: "K000" },
   { label: "Codice OE", example: "1K0 510" },
   { label: "Veicolo o pratica", example: "V-000117" },

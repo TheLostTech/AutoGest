@@ -1,7 +1,7 @@
 "use client";
 
 import { useStore } from "@/lib/store";
-import { PART_TYPES } from "@/lib/catalog";
+import { defaultRule, PART_TYPES } from "@/lib/catalog";
 import { PageTitle, Panel } from "@/components/ui";
 
 export default function Regole() {
@@ -21,7 +21,8 @@ export default function Regole() {
         </div>
         <ul className="divide-y divide-hair-soft">
           {PART_TYPES.map((t) => {
-            const r = rules.find((x) => x.typeId === t.id)!;
+            // I dati salvati prima di un ampliamento del catalogo non hanno la regola dei tipi nuovi
+            const r = rules.find((x) => x.typeId === t.id) ?? { typeId: t.id, ...defaultRule(t) };
             const stock = parts.filter((p) => p.typeId === t.id && (p.status === "disponibile" || p.status === "bozza")).length;
             return (
               <li key={t.id} className="grid grid-cols-[minmax(0,1fr)_64px_64px_56px] items-center gap-2 px-4 sm:grid-cols-[1fr_90px_90px_90px] sm:gap-3 py-2.5">

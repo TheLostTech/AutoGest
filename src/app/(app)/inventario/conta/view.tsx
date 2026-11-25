@@ -12,6 +12,7 @@ import { Button, Empty, Field, Notice, PartImage } from "@/components/ui";
 import type { Condition, Location, Part } from "@/lib/types";
 import { ShippingChoice } from "@/components/ShippingChoice";
 import { asksShipping } from "@/lib/spedizione";
+import { TypePicker } from "@/components/TypePicker";
 
 export default function Page() {
   return (
@@ -292,10 +293,7 @@ function AddFound({
         </div>
       )}
       <Field label={guess ? "Oppure scegli la tipologia" : "Tipologia"} error={tried && !t ? "Scegli il tipo di pezzo" : undefined}>
-        <select className="field" value={typeId} onChange={(e) => setTypeId(e.target.value)}>
-          <option value="">Scegli…</option>
-          {PART_TYPES.map((x) => <option key={x.id} value={x.id}>{x.name} · {x.category}</option>)}
-        </select>
+        <TypePicker value={typeId} onChange={setTypeId} />
       </Field>
 
       <div className="grid gap-4 sm:grid-cols-2">

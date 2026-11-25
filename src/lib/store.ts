@@ -40,7 +40,7 @@ import type {
 } from "./types";
 import { euro, publishChecks } from "./logic";
 import { assestaPezzi, collocaPezzoInAnnuncio, ordineNegozio, pagaOrdine, ricalcolaAnnuncio } from "./negozio-ordine";
-import { canTransmit, firNumberTaken, isDraft, missingFields, monthLabel, nextRegisterNumber, periodsOf } from "./periodo";
+import { canTransmit, currentKg, firNumberTaken, isDraft, missingFields, monthLabel, nextRegisterNumber, periodsOf } from "./periodo";
 import { MODULI, moduliIniziali, ORDINE_MODULI, type Modulo, type StatoModulo } from "./moduli";
 import { bonificaRegistrabile, datiRegistroErrori, normCf, statoDatiRegistro, type DatiRegistro } from "./dati-registro";
 
@@ -948,7 +948,7 @@ export const useStore = create<State & Actions>()(
         },
 
         setRule: (typeId, min, max) => {
-          set((s) => ({ rules: s.rules.map((r) => (r.typeId === typeId ? { ...r, min, max } : r)) }));
+          set((s) => ({ rules: s.rules.some((r) => r.typeId === typeId) ? s.rules.map((r) => (r.typeId === typeId ? { ...r, min, max } : r)) : [...s.rules, { typeId, min, max }] }));
           push(event({ entity: "regola", entityId: typeId, action: "Soglia scorta modificata", detail: `min ${min} · max ${max}` }));
         },
 
@@ -959,19 +959,26 @@ export const useStore = create<State & Actions>()(
           const at = now();
           let carico = get().wasteMoves.find((m) => m.origin === vehicleId && m.causale === "*T");
           const intake = carico ? [] : movesForIntake({ ...v0, weightKg: v0.weightKg ?? (weightKg || undefined) }, v0.intakeAt);
-          // Pesata fatta solo ora (alla bonifica): completa il carico d'ingresso ancora in bozza
-          if (carico && isDraft(carico) && !v0.weightKg && weightKg > 0) {
-            get().completeDraft(carico.id, { kg: weightKg, pesoPesa: true });
+          let rettifiche = 0;
+          // Pesata fatta o corretta alla bonifica: il carico in bozza si completa, quello già numerato si rettifica
+          if (carico && weightKg > 0) {
+            if (isDraft(carico) && (weightKg !== carico.kg || !carico.pesoPesa)) get().completeDraft(carico.id, { kg: weightKg, pesoPesa: true });
+            else if (!isDraft(carico)) {
+              const prima = currentKg(get().wasteMoves, carico.id);
+              if (prima !== weightKg && get().rectifyMove(carico.id, weightKg, `Peso alla pesa corretto alla bonifica (era ${prima} kg)`).ok) rettifiche = 1;
+            }
             carico = get().wasteMoves.find((m) => m.id === carico!.id);
           }
           const v = get().vehicles.find((x) => x.id === vehicleId)!;
-          const withWeight = { ...v, weightKg: v.weightKg ?? (weightKg || undefined) };
-          // Lo scarico interno usa il peso registrato all'ingresso, così carico e scarico del veicolo coincidono
-          const { moves, residualKg } = movesForBonifica(carico ? { ...withWeight, weightKg: carico.kg } : withWeight, items, at, carico?.id);
+          const withWeight = { ...v, weightKg: weightKg || v.weightKg || undefined };
+          // Lo scarico interno usa il peso registrato del carico (con l'ultima rettifica), così carico e scarico coincidono
+          const kgCarico = carico ? currentKg(get().wasteMoves, carico.id) : undefined;
+          const { moves, residualKg } = movesForBonifica(carico ? { ...withWeight, weightKg: kgCarico } : withWeight, items, at, carico?.id);
           set((s) => ({ vehicles: s.vehicles.map((x) => (x.id === vehicleId ? { ...withWeight, bonifica: { at, by: nomeOperatore(s.operatore), items, residualKg } } : x)) }));
           addMoves([...intake, ...moves]);
-          push(event({ entity: "veicolo", entityId: vehicleId, action: "Bonifica registrata", detail: `${intake.length + moves.length} movimenti nel registro rifiuti · pesi dei componenti stimati per modello` }));
-          return intake.length + moves.length;
+          const scritti = intake.length + moves.length + rettifiche;
+          push(event({ entity: "veicolo", entityId: vehicleId, action: "Bonifica registrata", detail: `${scritti} movimenti nel registro rifiuti${rettifiche ? " · peso alla pesa rettificato" : ""} · pesi dei componenti stimati per modello` }));
+          return scritti;
         },
 
         completeDraft: (id, patch) => {

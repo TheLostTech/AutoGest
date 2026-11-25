@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { abilitaSalvataggioLocale, STORE_SCHEMA, useStore } from "@/lib/store";
 import { avviaVuotoPrimaDelSync, startSync, syncAvviata } from "@/lib/sync";
@@ -32,7 +32,23 @@ async function caricaCatalogo(): Promise<void> {
   }
 }
 
+const Caricamento = () => (
+  <div className="grid min-h-dvh place-items-center bg-ground">
+    <div className="code text-2xl font-semibold tracking-wide text-band">CARICAMENTO…</div>
+  </div>
+);
+
+// usePathname nelle pagine con indirizzo variabile (/veicoli/[id]…) si legge solo nel browser:
+// senza Suspense la compilazione si ferma. Le pagine fisse (presentazione, news) restano scritte dal server.
 export function Hydrator({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<Caricamento />}>
+      <Allinea>{children}</Allinea>
+    </Suspense>
+  );
+}
+
+function Allinea({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   // Sessione da PIN: blocco dopo 5 minuti senza tocchi su OGNI pagina della gestione (anche quelle di stampa)
   const [pin, setPin] = useState(false);
@@ -133,20 +149,8 @@ export function Hydrator({ children }: { children: React.ReactNode }) {
     };
   }, [pubblica, negozio]);
 
-  if (negozio && !catalogoPronto) {
-    return (
-      <div className="grid min-h-dvh place-items-center bg-ground">
-        <div className="code text-2xl font-semibold tracking-wide text-band">CARICAMENTO…</div>
-      </div>
-    );
-  }
-  if (!pubblica && !ready) {
-    return (
-      <div className="grid min-h-dvh place-items-center bg-ground">
-        <div className="code text-2xl font-semibold tracking-wide text-band">CARICAMENTO…</div>
-      </div>
-    );
-  }
+  if (negozio && !catalogoPronto) return <Caricamento />;
+  if (!pubblica && !ready) return <Caricamento />;
   return (
     <>
       {!pubblica && <BloccoInattivita attivo={pin} />}

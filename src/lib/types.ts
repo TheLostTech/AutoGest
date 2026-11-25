@@ -44,7 +44,19 @@ export interface Vehicle {
   // Visura chiesta a Openapi e non ancora registrata: il PDF arriva entro 24 ore lavorative
   visuraRichiesta?: { id: string; at: string; stato: string; modo: string; pdf?: string };
   presaInCarico?: { at: string; by: string };
-  radiazione?: { stato: "da richiedere" | "richiesta" | "completata"; richiestaAt?: string; completataAt?: string; estremi?: string; canale?: "rvfu" | "agenzia" };
+  radiazione?: {
+    stato: "da richiedere" | "richiesta" | "da integrare" | "completata";
+    codice?: "C05332" | "C05333";
+    canale?: "rvfu" | "agenzia";
+    fascicolo?: string[]; // voci del fascicolo digitale inviate (vedi FASCICOLO in pratica.ts)
+    richiestaAt?: string;
+    integrazione?: { at: string; nota: string }; // il PRA chiede di integrare (preavviso di ricusazione)
+    completataAt?: string; // data della radiazione, dalla ricevuta del PRA
+    estremi?: string; // numero della ricevuta di avvenuta radiazione
+    ricevuta?: string; // indirizzo del PDF della ricevuta sul server
+  };
+  // Distruzione di targhe e documenti, da annotare nel RVFU (non prima di 120 giorni dal CRD)
+  distruzione?: { at: string; by: string; cosa: string[] };
 }
 
 export type ConferenteTipo = "privato" | "concessionaria" | "assicurazione" | "ente";
@@ -248,6 +260,7 @@ export interface Part {
   pastDossier?: { number: string; plate?: string; vin?: string; model?: string };
   missingSince?: string; // non trovato al suo posto durante l'ultima conta
   typeId: string;
+  misura?: string; // per i tipi con misure (es. "M8 × 1,25 × 30 mm", "205/55 R16")
   description: string;
   condition: Condition;
   status: PartStatus;
@@ -342,6 +355,7 @@ export interface PartType {
   basePrice: number;
   render?: string;
   value: number; // peso commerciale 1-5 per ordinare i suggerimenti
+  misure?: string[]; // bulloneria, fusibili, gomme…: un solo tipo, la misura si sceglie quando si cataloga
 }
 
 // ——— Documenti di vendita ———

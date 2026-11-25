@@ -5,10 +5,13 @@ import { LostarCredit } from "@/components/Lostar";
 
 // Testata e piede delle pagine pubbliche (presentazione e normative): la fascia blu della scatola.
 
-export const DEMO = "/";
+// Demo pubblica: entra senza credenziali dove DEMO_PUBBLICA=1, altrimenti porta all'accesso normale.
+export const DEMO = "/demo";
+// Dove si parte per comprare: la registrazione dell'azienda. Finché la pagina di registrazione non c'è, porta alla demo.
+export const REGISTRAZIONE = DEMO;
 
-// Indirizzo pubblico del sito, per canonical, sitemap e condivisioni. Da impostare in produzione.
-export const SITO = (process.env.SITO_PUBBLICO ?? "http://localhost:3000").replace(/\/$/, "");
+// Indirizzo pubblico del sito, per canonical, sitemap e condivisioni. SITO_PUBBLICO lo cambia (per esempio in prova).
+export const SITO = (process.env.SITO_PUBBLICO ?? "https://miopiazzale.it").replace(/\/$/, "");
 
 export function Testata({ attiva }: { attiva?: "news" }) {
   const voce = "hidden rounded-md px-3 py-2 text-[15px] font-semibold text-white/90 hover:bg-white/12 md:block";
@@ -23,6 +26,9 @@ export function Testata({ attiva }: { attiva?: "news" }) {
             <Logo className="text-[30px] md:text-[34px]" />
           </Link>
           <nav className="flex items-center gap-1 md:gap-2" aria-label="Sito">
+            <Link href="/scopri#in-regola" className={voce}>
+              In regola
+            </Link>
             <Link href="/scopri#percorso" className={voce}>
               Come funziona
             </Link>

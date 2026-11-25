@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ArrowLeft, CircleCheck, Wrench } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { BONIFICA, fmtKg, itemKg, typicalBonifica } from "@/lib/ambiente";
+import { pesoDiverso } from "@/lib/stime";
 import { dateIt } from "@/lib/logic";
 import { ButtonLink, Button, Empty, Notice, Plate } from "@/components/ui";
 import type { BonificaItem } from "@/lib/types";
@@ -25,6 +26,7 @@ export default function BonificaVeicolo() {
   const removedKg = items.reduce((a, i) => a + itemKg(i), 0);
   const w = Number(weight) || 0;
   const residual = Math.max(0, Math.round(w - removedKg));
+  const corretto = !!v.weightKg && w > 0 && w !== v.weightKg;
   const set = (key: string, patch: Partial<BonificaItem>) => setItems((xs) => xs.map((x) => (x.key === key ? { ...x, ...patch } : x)));
 
   return (
@@ -63,16 +65,24 @@ export default function BonificaVeicolo() {
         <span>
           <span className="block font-semibold">Peso alla pesa</span>
           <span className="block text-sm text-ink-3">
-            {v.weightKg ? "pesato all'ingresso, già nel registro rifiuti" : "non ancora pesata: inserisci il peso della pesa"}
+            {v.weightKg ? "pesato all'ingresso, già nel registro rifiuti: correggilo se è sbagliato" : "non ancora pesata: inserisci il peso della pesa"}
             {v.massaLibretto ? ` · libretto ${fmtKg(v.massaLibretto)}` : ""}
           </span>
+          {!done && corretto && (
+            <span className="mt-1 block text-sm font-semibold text-warn">
+              Era {fmtKg(v.weightKg!)}: registrando la bonifica il registro rifiuti avrà la correzione a {fmtKg(w)}.
+            </span>
+          )}
+          {!done && w > 0 && v.massaLibretto && pesoDiverso(w, v.massaLibretto) && (
+            <span className="mt-1 block text-sm font-semibold text-warn">Molto diverso dal libretto: controlla il numero.</span>
+          )}
         </span>
         <span className="flex items-center gap-2">
           <input
             className="field code h-12 w-28 text-right text-[22px] font-bold"
             inputMode="numeric"
             value={weight}
-            disabled={done || !!v.weightKg}
+            disabled={done}
             onChange={(e) => setWeight(e.target.value.replace(/[^0-9]/g, ""))}
             aria-label="Peso in chilogrammi"
           />
