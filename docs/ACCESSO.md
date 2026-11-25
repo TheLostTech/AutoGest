@@ -4,7 +4,9 @@
 
 | Variabile | A cosa serve |
 |---|---|
-| `BETTER_AUTH_SECRET` | Segreto che firma le sessioni e cifra i codici del secondo fattore. Lungo, casuale, mai nel codice. Se manca, al primo avvio il server ne genera uno e lo scrive in `DATI_DIR/.segreto-accesso` (leggibile dal solo proprietario): vale anche con `next dev`, il valore di prova di Better Auth non si usa mai. |
+| `BETTER_AUTH_SECRET` | Segreto che firma le sessioni e cifra i codici del secondo fattore. Lungo, casuale, mai nel codice. **Obbligatoria con Supabase** (online non c'è un disco dove scrivere quello di riserva). Se manca su disco, al primo avvio il server ne genera uno e lo scrive in `DATI_DIR/.segreto-accesso` (leggibile dal solo proprietario): vale anche con `next dev`, il valore di prova di Better Auth non si usa mai. |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` | Dati su Supabase invece che su disco: servono tutte e tre (una parte sola è un errore all'avvio). Dettagli in `docs/SUPABASE.md`. |
+| `CHIAVE_COLLEGAMENTI` | 64 caratteri esadecimali (`openssl rand -hex 32`) che cifrano i segreti dei collegamenti. Obbligatoria con Supabase; sostituisce il file `.chiave-collegamenti`. |
 | `DATI_DIR` | Cartella dei dati. Di serie `.demo-data` nel progetto; sul server dell'azienda una cartella a scelta (es. `D:\AutoGest\dati`). Per il backup basta copiarla. |
 | `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD`, `SUPERADMIN_NOME` | Primo super admin (vedi sotto). La password è di almeno 8 caratteri. |
 | `NEGOZIO_AZIENDA` | Id dell'azienda che vende dal negozio pubblico. Se manca, è l'azienda demo. |
@@ -54,6 +56,8 @@ Ogni scheda della gestione resta dell'azienda con cui è partita e lo dice al se
 Uscire dall'account (menu, Piattaforma, registrazione di un dispositivo, sessione scaduta) durante un ingresso di assistenza chiude l'ingresso e lascia "Uscita assistenza" nel registro dell'azienda, come il pulsante della fascia.
 
 ## Dove stanno i dati
+
+Con le variabili di Supabase impostate tutto sta su Supabase (tabelle e spazio privato `piazzale`): vedi `docs/SUPABASE.md`. Quanto segue vale per i dati su disco.
 
 - Di tutta la piattaforma, in `DATI_DIR`: `piattaforma.sqlite` (utenti, aziende, ruoli, sessioni), `.chiave-collegamenti` (chiave che cifra i segreti dei collegamenti: non spostarla) e, senza `BETTER_AUTH_SECRET`, `.segreto-accesso` (se si perde, tutte le sessioni si chiudono e il super admin deve riattivare il codice dal telefono).
 - Di ogni azienda, in `DATI_DIR/aziende/<id azienda>/`: `state.json` (archivio), `foto/`, `visure/` (PDF delle visure PRA), `collegamenti.json`, `ebay.json`, `richieste/` (richieste scritte). `state.json` e `collegamenti.json` si scrivono con file temporaneo e rinomina; se uno dei due esiste ma non si legge, il server lo segnala e non lo sovrascrive.

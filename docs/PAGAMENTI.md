@@ -6,7 +6,7 @@ Come si registra una nuova autodemolizione, come paga l'abbonamento (Stripe) e c
 
 - **Registrazione con codice invito.** Il super admin crea i codici in Piattaforma, Inviti; chi li riceve apre `/registrati` e crea la propria azienda (`src/app/registrati`, `src/app/api/registrazione`). Il registrante diventa `responsabile` (il titolare) dell'azienda.
 - **Dipendenti.** Il titolare crea gli accessi della sua gente da Impostazioni, Persone (nome, ruoli, email e password oppure solo PIN). Vedi `docs/ACCESSO.md`.
-- **Stato dell'abbonamento.** Ogni azienda ha il suo in `DATI_DIR/aziende/<id>/abbonamento.json` (`src/lib/abbonamento*.ts`). Stati: nuovo, attivo, in ritardo, disdetto, scaduto. Il server decide, mai il browser.
+- **Stato dell'abbonamento.** Ogni azienda ha il suo: su disco in `DATI_DIR/aziende/<id>/abbonamento.json`, con Supabase nella tabella `documento` (tipo `abbonamento`, vedi `docs/SUPABASE.md`) (`src/lib/abbonamento*.ts`). Stati: nuovo, attivo, in ritardo, disdetto, scaduto. Il server decide, mai il browser.
 - **Prova fino al primo veicolo.** Un'azienda nuova lavora finché non carica il primo veicolo; poi compare il riquadro di pagamento (`src/components/RiquadroPagamento.tsx`) e, senza abbonamento, il gestionale si blocca. Un abbonamento scaduto blocca sempre. I dati restano visibili.
 - **Negozio online chiuso durante il blocco.** Il negozio di un'azienda registrata e bloccata risponde "chiuso". Le altre aziende non cambiano.
 - **Checkout.** `src/app/api/abbonamento/checkout` apre il pagamento su Stripe. Si sceglie mese o anno per tutti i moduli insieme (Stripe non mescola i due periodi nello stesso abbonamento).
