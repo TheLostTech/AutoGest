@@ -3,9 +3,8 @@ import type { AuthContext } from "better-auth";
 import { auth } from "@/lib/auth/server";
 import { rispostaNonPronta } from "@/lib/accesso/pronta";
 import { idAziendaValido } from "@/lib/accesso/id-azienda";
-import { leggiStato } from "@/lib/archivio-azienda";
 import { leggiAbbonamento } from "@/lib/abbonamento-server";
-import { contaVeicoli, negozioAperto } from "@/lib/abbonamento";
+import { negozioAperto } from "@/lib/abbonamento";
 import { richiestaDellApp } from "@/lib/collegamenti-server";
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -80,8 +79,7 @@ export async function negozioAttivo(aziendaId: string): Promise<boolean> {
     const o = await ctx.adapter.findOne<{ id: string; metadata?: unknown }>({ model: "organization", where: [{ field: "id", value: aziendaId }] });
     registrata = o ? eRegistrata(o.metadata) : false;
     if (!registrata) return true;
-    const [a, s] = await Promise.all([leggiAbbonamento(aziendaId), leggiStato(aziendaId)]);
-    return negozioAperto(true, a, contaVeicoli(s.state as Record<string, unknown> | null | undefined));
+    return negozioAperto(true, await leggiAbbonamento(aziendaId), Date.now());
   } catch (e) {
     console.error("Stato del negozio non leggibile", e);
     return !registrata;

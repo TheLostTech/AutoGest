@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  ABBONAMENTO_NUOVO, lookupKey, nomeStripe, moduliDaAbbonamento, bloccato,
-  abbonamentoDaStripe, contoAllaRovescia, righeCambio, scritturaAzienda, statoPerBrowser, contaVeicoli, sceltaValida,
+  ABBONAMENTO_NUOVO, lookupKey, nomeStripe, moduliDaAbbonamento, bloccato, GIORNI_PROVA, avviaProva, oraProva, inProva, normalizzaAbbonamento,
+  abbonamentoDaStripe, contoAllaRovescia, righeCambio, scritturaAzienda, statoPerBrowser, sceltaValida,
   fasciaDaMostrare, negozioAperto, riprendeDopoPagamento, senzaCliente, richiestaModuli, rifiutoCambio, nuovaOraOrologio, avanzamentoPermesso, passoValido,
   type Abbonamento, type SubStripe,
 } from "./abbonamento.ts";
@@ -12,6 +12,10 @@ const ORA = T(2026, 11, 22);
 const RINNOVO = T(2026, 12, 22);
 
 const ab = (o: Partial<Abbonamento> = {}): Abbonamento => ({ ...ABBONAMENTO_NUOVO(false, ORA), ...o });
+const GIORNO = 86_400_000;
+const FINE = ORA + 15 * GIORNO;
+// In prova: registrata e confermata adesso, 15 giorni da ORA
+const prova = (o: Partial<Abbonamento> = {}): Abbonamento => ab({ fineProva: FINE, ...o });
 
 const sub = (o: { id?: string; status?: string; cancel?: boolean; cancelAt?: number | null; created?: number; modulo?: string; interval?: "month" | "year"; fine?: number } = {}): SubStripe => ({
   id: o.id ?? "sub_1", status: o.status ?? "active", cancel_at_period_end: o.cancel ?? false, cancel_at: o.cancelAt ?? null, created: o.created ?? 1000,
@@ -26,19 +30,94 @@ test("nomi e lookup key Stripe", () => {
 });
 
 test("moduliDaAbbonamento", () => {
-  assert.deepEqual(moduliDaAbbonamento(ab({ stato: "nuovo" })), ["magazzino"]);
-  assert.deepEqual(moduliDaAbbonamento(ab({ stato: "attivo", moduli: ["magazzino", "ambiente"] })), ["magazzino", "ambiente"]);
-  assert.deepEqual(moduliDaAbbonamento(ab({ stato: "scaduto", moduli: ["magazzino", "ambiente"] })), ["magazzino"]);
-  assert.deepEqual(moduliDaAbbonamento(ab({ stato: "attivo", moduli: ["ambiente"] })), ["magazzino", "ambiente"]);
+  assert.deepEqual(moduliDaAbbonamento(ab({ stato: "nuovo" }), ORA), ["magazzino"]);
+  assert.deepEqual(moduliDaAbbonamento(ab({ stato: "attivo", moduli: ["magazzino", "ambiente"] }), ORA), ["magazzino", "ambiente"]);
+  assert.deepEqual(moduliDaAbbonamento(ab({ stato: "scaduto", moduli: ["magazzino", "ambiente"] }), ORA), ["magazzino"]);
+  assert.deepEqual(moduliDaAbbonamento(ab({ stato: "attivo", moduli: ["ambiente"] }), ORA), ["magazzino", "ambiente"]);
 });
 
-test("bloccato", () => {
-  assert.equal(bloccato(ab({ stato: "nuovo" }), 0), false);
-  assert.equal(bloccato(ab({ stato: "nuovo" }), 1), true);
-  assert.equal(bloccato(ab({ stato: "scaduto" }), 0), true);
-  assert.equal(bloccato(ab({ stato: "in-ritardo" }), 50), false);
-  assert.equal(bloccato(ab({ stato: "disdetto" }), 50), false);
-  assert.equal(bloccato(ab({ stato: "attivo" }), 50), false);
+test("moduliDaAbbonamento: in prova tutti e quattro, finita la prova solo il magazzino", () => {
+  assert.deepEqual(moduliDaAbbonamento(prova(), ORA), ["magazzino", "accettazione", "ambiente", "vendite"]);
+  assert.deepEqual(moduliDaAbbonamento(prova(), FINE - 1), ["magazzino", "accettazione", "ambiente", "vendite"]);
+  assert.deepEqual(moduliDaAbbonamento(prova(), FINE), ["magazzino"]);
+  assert.deepEqual(moduliDaAbbonamento(prova({ spostamentoProva: 15 * GIORNO }), ORA), ["magazzino"]);
+});
+
+test("bloccato: scaduto sempre, gli abbonamenti in corso mai", () => {
+  assert.equal(bloccato(ab({ stato: "scaduto" }), ORA), true);
+  assert.equal(bloccato(ab({ stato: "scaduto", fineProva: FINE }), ORA), true);
+  assert.equal(bloccato(ab({ stato: "in-ritardo" }), ORA), false);
+  assert.equal(bloccato(ab({ stato: "disdetto" }), ORA), false);
+  assert.equal(bloccato(ab({ stato: "attivo" }), ORA), false);
+  // Pagato durante la prova e poi la prova sarebbe finita: conta l'abbonamento
+  assert.equal(bloccato(ab({ stato: "attivo", fineProva: FINE }), FINE + GIORNO), false);
+});
+
+test("bloccato: nuovo senza prova partita è bloccato", () => {
+  assert.equal(bloccato(ab({ stato: "nuovo" }), ORA), true);
+  assert.equal(bloccato(ab({ stato: "nuovo", fineProva: null }), 0), true);
+});
+
+test("bloccato: in prova fino a fineProva esclusa, anche con lo spostamento della prova", () => {
+  assert.equal(bloccato(prova(), ORA), false);
+  assert.equal(bloccato(prova(), FINE - 1), false);
+  assert.equal(bloccato(prova(), FINE), true);
+  assert.equal(bloccato(prova(), FINE + 30 * GIORNO), true);
+  // +1 settimana dagli strumenti di prova: 7 giorni prima della fine vera è già finita
+  const spostata = prova({ spostamentoProva: 7 * GIORNO });
+  assert.equal(bloccato(spostata, FINE - 7 * GIORNO - 1), false);
+  assert.equal(bloccato(spostata, FINE - 7 * GIORNO), true);
+  assert.equal(bloccato(spostata, FINE - 1), true);
+});
+
+test("avviaProva: 15 giorni da adesso, una volta sola e solo per un'azienda nuova", () => {
+  assert.equal(GIORNI_PROVA, 15);
+  const a = avviaProva(ab(), ORA);
+  assert.equal(a.fineProva, ORA + 15 * 86_400_000);
+  assert.equal(a.stato, "nuovo");
+  const ancora = avviaProva(a, ORA + 3 * GIORNO);
+  assert.equal(ancora, a);
+  assert.equal(ancora.fineProva, ORA + 15 * 86_400_000);
+  const attivo = ab({ stato: "attivo" });
+  assert.equal(avviaProva(attivo, ORA), attivo);
+  const scaduto = ab({ stato: "scaduto" });
+  assert.equal(avviaProva(scaduto, ORA), scaduto);
+});
+
+test("oraProva e inProva", () => {
+  assert.equal(oraProva(prova(), ORA), ORA);
+  assert.equal(oraProva(prova({ spostamentoProva: 2 * GIORNO }), ORA), ORA + 2 * GIORNO);
+  assert.equal(inProva(prova(), ORA), true);
+  assert.equal(inProva(prova(), FINE - 1), true);
+  assert.equal(inProva(prova(), FINE), false);
+  assert.equal(inProva(ab(), ORA), false);
+  assert.equal(inProva(prova({ stato: "attivo" }), ORA), false);
+  assert.equal(inProva(prova({ spostamentoProva: 15 * GIORNO }), ORA), false);
+});
+
+test("ABBONAMENTO_NUOVO: prova non partita, nessuno spostamento", () => {
+  const a = ABBONAMENTO_NUOVO(true, ORA);
+  assert.equal(a.fineProva, null);
+  assert.equal(a.spostamentoProva, 0);
+});
+
+test("normalizzaAbbonamento: un documento salvato prima della prova si legge con fineProva null e spostamento 0", () => {
+  const vecchio = { ...ab({ stato: "attivo", moduli: ["magazzino", "ambiente"] }) } as Partial<Abbonamento>;
+  delete vecchio.fineProva;
+  delete vecchio.spostamentoProva;
+  const letto = normalizzaAbbonamento(vecchio as Abbonamento);
+  assert.equal(letto.fineProva, null);
+  assert.equal(letto.spostamentoProva, 0);
+  assert.equal(letto.stato, "attivo");
+  assert.deepEqual(letto.moduli, ["magazzino", "ambiente"]);
+  // Valori non validi: come assenti
+  const strano = normalizzaAbbonamento({ ...ab(), fineProva: "domani", spostamentoProva: Number.NaN } as unknown as Abbonamento);
+  assert.equal(strano.fineProva, null);
+  assert.equal(strano.spostamentoProva, 0);
+  // Quelli buoni restano
+  const buono = normalizzaAbbonamento(prova({ spostamentoProva: GIORNO }));
+  assert.equal(buono.fineProva, FINE);
+  assert.equal(buono.spostamentoProva, GIORNO);
 });
 
 test("abbonamentoDaStripe: stati", () => {
@@ -111,6 +190,21 @@ test("contoAllaRovescia usa oraOrologio quando c'è", () => {
   assert.equal(c!.giorni, 2);
 });
 
+test("contoAllaRovescia in prova: giorni alla fine, più evidente negli ultimi 3", () => {
+  assert.deepEqual(contoAllaRovescia(prova(), ORA), { tono: "ok", testo: "Prova gratuita: tra 15 giorni il gestionale si blocca", giorni: 15 });
+  assert.deepEqual(contoAllaRovescia(prova(), FINE - 4 * GIORNO), { tono: "ok", testo: "Prova gratuita: tra 4 giorni il gestionale si blocca", giorni: 4 });
+  assert.deepEqual(contoAllaRovescia(prova(), FINE - 3 * GIORNO), { tono: "avviso", testo: "Prova gratuita: tra 3 giorni il gestionale si blocca", giorni: 3 });
+  assert.deepEqual(contoAllaRovescia(prova(), FINE - GIORNO), { tono: "avviso", testo: "Prova gratuita: tra 1 giorno il gestionale si blocca", giorni: 1 });
+  // Meno di un giorno: si arrotonda in su
+  assert.equal(contoAllaRovescia(prova(), FINE - 1)?.giorni, 1);
+  // Lo spostamento della prova conta, l'orologio di Stripe no
+  assert.equal(contoAllaRovescia(prova({ spostamentoProva: 11 * GIORNO }), ORA)?.testo, "Prova gratuita: tra 4 giorni il gestionale si blocca");
+  assert.equal(contoAllaRovescia(prova({ spostamentoProva: 12 * GIORNO }), ORA)?.tono, "avviso");
+  assert.equal(contoAllaRovescia(prova({ oraOrologio: FINE - GIORNO }), ORA)?.giorni, 15);
+  // Finita la prova: niente conto (il riquadro di pagamento dice il resto)
+  assert.equal(contoAllaRovescia(prova(), FINE), null);
+});
+
 test("righeCambio", () => {
   const att = ab({ stato: "attivo", moduli: ["magazzino"] });
   assert.deepEqual(righeCambio(ab({ stato: "nuovo" }), att), ["Abbonamento attivato"]);
@@ -129,52 +223,49 @@ test("righeCambio", () => {
 
 test("scritturaAzienda toglie i moduli mandati dal browser", () => {
   const corpo = { schema: "s", whole: { moduli: [{ id: "vendite", attivo: true }], rules: [1] }, counters: { a: 1 } };
-  const r = scritturaAzienda(true, ab(), { prima: 0, dopo: 0 }, corpo);
+  const r = scritturaAzienda(true, prova(), ORA, corpo);
   assert.equal(r.esito, "ok");
   if (r.esito === "ok") assert.deepEqual(r.corpo, { schema: "s", whole: { rules: [1] }, counters: { a: 1 } });
-  const n = scritturaAzienda(false, null, { prima: 5, dopo: 5 }, corpo);
+  const n = scritturaAzienda(false, null, ORA, corpo);
   assert.deepEqual(n, { esito: "ok", corpo });
 });
 
-test("scritturaAzienda: blocco per stato e veicoli", () => {
+test("scritturaAzienda: blocco per stato", () => {
   const c = { schema: "s", changes: { vehicles: [{ id: "V1" }] } };
-  assert.equal(scritturaAzienda(true, ab(), { prima: 0, dopo: 1 }, c).esito, "ok");
-  assert.equal(scritturaAzienda(true, null, { prima: 0, dopo: 1 }, c).esito, "ok");
-  assert.equal(scritturaAzienda(true, ab(), { prima: 0, dopo: 2 }, c).esito, "bloccato");
-  assert.equal(scritturaAzienda(true, ab(), { prima: 0, dopo: 1 }, c).esito, "ok");
-  assert.equal(scritturaAzienda(true, ab({ stato: "attivo" }), { prima: 9, dopo: 9 }, c).esito, "ok");
-  assert.equal(scritturaAzienda(false, ab({ stato: "scaduto" }), { prima: 9, dopo: 9 }, c).esito, "ok");
+  assert.equal(scritturaAzienda(true, ab({ stato: "attivo" }), ORA, c).esito, "ok");
+  assert.equal(scritturaAzienda(true, ab({ stato: "in-ritardo" }), ORA, c).esito, "ok");
+  assert.equal(scritturaAzienda(true, ab({ stato: "disdetto" }), ORA, c).esito, "ok");
+  assert.equal(scritturaAzienda(true, ab({ stato: "scaduto" }), ORA, c).esito, "bloccato");
+  assert.equal(scritturaAzienda(false, ab({ stato: "scaduto" }), ORA, c).esito, "ok");
+  // Registrata senza prova partita (o senza file): bloccata
+  assert.equal(scritturaAzienda(true, ab(), ORA, c).esito, "bloccato");
+  assert.equal(scritturaAzienda(true, null, ORA, c).esito, "bloccato");
 });
 
-test("scritturaAzienda blocca un primo invio con più veicoli", () => {
-  const c = { schema: "s", changes: { vehicles: [{ id: "V1" }, { id: "V2" }, { id: "V3" }] } };
-  assert.equal(scritturaAzienda(true, ab(), { prima: 0, dopo: 3 }, c).esito, "bloccato");
-  assert.equal(scritturaAzienda(true, ab({ stato: "in-ritardo" }), { prima: 1, dopo: 3 }, c).esito, "ok");
-  assert.equal(scritturaAzienda(true, ab({ stato: "disdetto" }), { prima: 1, dopo: 3 }, c).esito, "ok");
-  assert.equal(scritturaAzienda(true, ab({ stato: "scaduto" }), { prima: 0, dopo: 0 }, c).esito, "bloccato");
-});
-
-test("scritturaAzienda blocca le scritture dopo il primo veicolo", () => {
-  const c = { schema: "s", changes: { parts: [{ id: "P1" }] } };
-  assert.equal(scritturaAzienda(true, ab(), { prima: 1, dopo: 1 }, c).esito, "bloccato");
-  assert.equal(scritturaAzienda(true, ab(), { prima: Infinity, dopo: 1 }, c).esito, "bloccato");
-  assert.equal(scritturaAzienda(true, ab({ stato: "attivo" }), { prima: 1, dopo: 1 }, c).esito, "ok");
-});
-
-test("contaVeicoli: lista, assente, valore non valido (blocca)", () => {
-  assert.equal(contaVeicoli(null), 0);
-  assert.equal(contaVeicoli({}), 0);
-  assert.equal(contaVeicoli({ vehicles: [1, 2] }), 2);
-  assert.equal(scritturaAzienda(true, ab(), { prima: 0, dopo: contaVeicoli({ vehicles: "x" }) }, { schema: "s" }).esito, "bloccato");
+test("scritturaAzienda in prova: quanti veicoli si vuole, fino alla fine della prova", () => {
+  const molti = { schema: "s", changes: { vehicles: [{ id: "V1" }, { id: "V2" }, { id: "V3" }] } };
+  assert.equal(scritturaAzienda(true, prova(), ORA, molti).esito, "ok");
+  assert.equal(scritturaAzienda(true, prova(), FINE - 1, molti).esito, "ok");
+  const pezzo = { schema: "s", changes: { parts: [{ id: "P1" }] } };
+  assert.equal(scritturaAzienda(true, prova(), FINE, pezzo).esito, "bloccato");
+  assert.equal(scritturaAzienda(true, prova({ spostamentoProva: 15 * GIORNO }), ORA, pezzo).esito, "bloccato");
+  // Pagato: si scrive anche dopo la fine della prova
+  assert.equal(scritturaAzienda(true, prova({ stato: "attivo" }), FINE + GIORNO, pezzo).esito, "ok");
 });
 
 test("statoPerBrowser mette i moduli dell'abbonamento", () => {
-  const r = statoPerBrowser(true, ab({ stato: "attivo", moduli: ["magazzino", "vendite"] }), { x: 1, moduli: [] }) as { x: number; moduli: { id: string; attivo: boolean }[] };
+  const r = statoPerBrowser(true, ab({ stato: "attivo", moduli: ["magazzino", "vendite"] }), ORA, { x: 1, moduli: [] }) as { x: number; moduli: { id: string; attivo: boolean }[] };
   assert.equal(r.x, 1);
   assert.deepEqual(r.moduli.map((m) => [m.id, m.attivo]), [["magazzino", true], ["accettazione", false], ["ambiente", false], ["vendite", true]]);
   const st = { moduli: [1] };
-  assert.equal(statoPerBrowser(false, null, st), st);
-  assert.equal(statoPerBrowser(true, null, null), null);
+  assert.equal(statoPerBrowser(false, null, ORA, st), st);
+  assert.equal(statoPerBrowser(true, null, ORA, null), null);
+});
+
+test("statoPerBrowser in prova: tutti i moduli accesi, finita la prova solo il magazzino", () => {
+  const moduli = (ora: number) => (statoPerBrowser(true, prova(), ora, { moduli: [] }) as { moduli: { id: string; attivo: boolean }[] }).moduli.filter((m) => m.attivo).map((m) => m.id);
+  assert.deepEqual(moduli(ORA), ["magazzino", "accettazione", "ambiente", "vendite"]);
+  assert.deepEqual(moduli(FINE), ["magazzino"]);
 });
 
 test("sceltaValida: periodo e moduli dal corpo di Checkout", () => {
@@ -191,8 +282,6 @@ test("sceltaValida: doppioni e magazzino una volta sola, nell'ordine dei moduli"
   assert.equal(sceltaValida("anno"), null);
 });
 
-const GIORNO = 86_400_000;
-
 test("fasciaDaMostrare: in ritardo sempre, disdetto negli ultimi 7 giorni, mai per gli altri stati", () => {
   assert.equal(fasciaDaMostrare(ab({ stato: "in-ritardo", rinnovo: ORA + 20 * GIORNO }), ORA), true);
   assert.equal(fasciaDaMostrare(ab({ stato: "disdetto", rinnovo: ORA + 8 * GIORNO }), ORA), false);
@@ -202,6 +291,14 @@ test("fasciaDaMostrare: in ritardo sempre, disdetto negli ultimi 7 giorni, mai p
   assert.equal(fasciaDaMostrare(ab({ stato: "nuovo" }), ORA), false);
   assert.equal(fasciaDaMostrare(ab({ stato: "scaduto" }), ORA), false);
   assert.equal(fasciaDaMostrare(ab({ stato: "disdetto", rinnovo: null }), ORA), false);
+});
+
+test("fasciaDaMostrare: per tutta la prova, non dopo", () => {
+  assert.equal(fasciaDaMostrare(prova(), ORA), true);
+  assert.equal(fasciaDaMostrare(prova(), FINE - 10 * GIORNO), true);
+  assert.equal(fasciaDaMostrare(prova(), FINE - 1), true);
+  assert.equal(fasciaDaMostrare(prova(), FINE), false);
+  assert.equal(fasciaDaMostrare(prova({ spostamentoProva: 15 * GIORNO }), ORA), false);
 });
 
 test("fasciaDaMostrare: con l'orologio di prova conta oraOrologio, non l'ora del Mac", () => {
@@ -287,13 +384,14 @@ test("passoValido: solo i quattro passi", () => {
 
 test("negozioAperto: non registrata sempre aperto; registrata chiude solo quando è bloccata", () => {
   const ab = (stato: Abbonamento["stato"]): Abbonamento => ({ ...ABBONAMENTO_NUOVO(false, ORA), stato });
-  assert.equal(negozioAperto(false, ab("scaduto"), 50), true);
-  assert.equal(negozioAperto(false, null, 50), true);
-  assert.equal(negozioAperto(true, ab("scaduto"), 0), false);
-  assert.equal(negozioAperto(true, ab("in-ritardo"), 50), true);
-  assert.equal(negozioAperto(true, ab("attivo"), 50), true);
-  assert.equal(negozioAperto(true, null, 0), true); // file assente: in prova
-  assert.equal(negozioAperto(true, null, 3), false); // in prova con veicoli: bloccata
+  assert.equal(negozioAperto(false, ab("scaduto"), ORA), true);
+  assert.equal(negozioAperto(false, null, ORA), true);
+  assert.equal(negozioAperto(true, ab("scaduto"), ORA), false);
+  assert.equal(negozioAperto(true, ab("in-ritardo"), ORA), true);
+  assert.equal(negozioAperto(true, ab("attivo"), ORA), true);
+  assert.equal(negozioAperto(true, prova(), ORA), true); // in prova
+  assert.equal(negozioAperto(true, prova(), FINE), false); // prova finita: bloccata
+  assert.equal(negozioAperto(true, null, ORA), false); // file assente: prova non partita, bloccata
 });
 
 test("senzaCliente: cliente sparito da Stripe, si riparte senza abbonamenti (scaduto se pagato, altrimenti nuovo)", () => {
@@ -314,13 +412,41 @@ test("senzaCliente: cliente sparito da Stripe, si riparte senza abbonamenti (sca
   assert.equal(mai.customerId, null);
 });
 
-test("riprendeDopoPagamento: le modifiche in attesa ripartono solo con un abbonamento in corso (o senza abbonamento)", () => {
-  assert.equal(riprendeDopoPagamento(null), true); // azienda non registrata
-  assert.equal(riprendeDopoPagamento(undefined), true);
-  assert.equal(riprendeDopoPagamento(ab({ stato: "attivo" })), true);
-  assert.equal(riprendeDopoPagamento(ab({ stato: "in-ritardo" })), true);
-  assert.equal(riprendeDopoPagamento(ab({ stato: "disdetto" })), true);
-  // In prova il server rifiuta di nuovo dal secondo veicolo: niente giro di 402
-  assert.equal(riprendeDopoPagamento(ab({ stato: "nuovo" })), false);
-  assert.equal(riprendeDopoPagamento(ab({ stato: "scaduto" })), false);
+test("senzaCliente e abbonamentoDaStripe tengono la prova", () => {
+  const p = prova({ customerId: "cus_3", spostamentoProva: GIORNO });
+  const via = senzaCliente(p);
+  assert.equal(via.fineProva, FINE);
+  assert.equal(via.spostamentoProva, GIORNO);
+  // Cliente creato al Checkout ma niente pagato: la prova continua
+  const r = abbonamentoDaStripe([], p, ORA, null);
+  assert.equal(r.stato, "nuovo");
+  assert.equal(r.fineProva, FINE);
+  assert.equal(r.spostamentoProva, GIORNO);
+  assert.equal(inProva(r, ORA), true);
+  // Pagamento non ancora concluso (incomplete): niente cambia, la prova continua
+  assert.equal(inProva(abbonamentoDaStripe([sub({ status: "incomplete" })], p, ORA, null), ORA), true);
+});
+
+test("abbonamentoDaStripe: pagando durante la prova la prova finisce subito", () => {
+  const r = abbonamentoDaStripe([sub({ modulo: "ambiente" })], prova(), ORA, null);
+  assert.equal(r.stato, "attivo");
+  assert.equal(inProva(r, ORA), false);
+  assert.deepEqual(moduliDaAbbonamento(r, ORA), ["magazzino", "ambiente"]);
+  assert.equal(bloccato(r, FINE + GIORNO), false);
+  assert.equal(fasciaDaMostrare(r, ORA), false);
+  assert.equal(contoAllaRovescia(r, ORA)?.testo, "Si rinnova il 22/12/2026 · tra 30 giorni");
+});
+
+test("riprendeDopoPagamento: le modifiche in attesa ripartono quando l'azienda non è più bloccata", () => {
+  assert.equal(riprendeDopoPagamento(null, ORA), true); // azienda non registrata
+  assert.equal(riprendeDopoPagamento(undefined, ORA), true);
+  assert.equal(riprendeDopoPagamento(ab({ stato: "attivo" }), ORA), true);
+  assert.equal(riprendeDopoPagamento(ab({ stato: "in-ritardo" }), ORA), true);
+  assert.equal(riprendeDopoPagamento(ab({ stato: "disdetto" }), ORA), true);
+  // Prova non partita, prova finita o scaduto: il server rifiuterebbe di nuovo, niente giro di 402
+  assert.equal(riprendeDopoPagamento(ab({ stato: "nuovo" }), ORA), false);
+  assert.equal(riprendeDopoPagamento(prova(), FINE), false);
+  assert.equal(riprendeDopoPagamento(ab({ stato: "scaduto" }), ORA), false);
+  // In prova le scritture passano: quelle in attesa ripartono
+  assert.equal(riprendeDopoPagamento(prova(), ORA), true);
 });

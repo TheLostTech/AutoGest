@@ -17,6 +17,7 @@ import { lavoroAperto } from "@/lib/moduli-lavoro";
 import { useStore } from "@/lib/store";
 import type { ModalitaStripe } from "@/lib/stripe/chiavi";
 import { useAbbonamento } from "@/lib/use-abbonamento";
+import { useOra } from "@/lib/use-ora";
 import { StrumentiProva } from "@/components/StrumentiProva";
 import { Button, Notice, PageTitle, Panel } from "@/components/ui";
 
@@ -103,7 +104,8 @@ function Pagina({
   const path = usePathname();
   const sp = useSearchParams();
   const richiesto = sp.get("aggiungi");
-  const attivi = moduliDaAbbonamento(a);
+  const ora = useOra();
+  const attivi = moduliDaAbbonamento(a, ora);
   const [conferma, setConferma] = useState<Conferma | null>(null);
   const [esito, setEsito] = useState<{ tono: "ok" | "danger"; testo: string } | null>(null);
   const [attesa, setAttesa] = useState<"portale" | "riattiva" | null>(null);

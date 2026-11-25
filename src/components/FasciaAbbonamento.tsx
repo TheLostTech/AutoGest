@@ -1,7 +1,8 @@
 "use client";
 
-// Fascia in cima al gestionale, solo per il titolare: pagamento non riuscito, oppure disdetta negli ultimi 7 giorni
-// (spec registrazione-pagamento, sezione 6). Il testo è la riga del conto alla rovescia.
+// Fascia in cima al gestionale, solo per il titolare: prova gratuita in corso, pagamento non riuscito, oppure disdetta
+// negli ultimi 7 giorni (spec registrazione-pagamento, sezione 6; prova-15-giorni, sezione 4). Il testo è la riga del
+// conto alla rovescia. L'ora è quella del browser (useOra), mai del server.
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { contoAllaRovescia, fasciaDaMostrare, type Abbonamento } from "@/lib/abbonamento";

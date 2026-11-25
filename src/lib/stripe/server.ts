@@ -78,7 +78,8 @@ export function clientePer(aziendaId: string, nome: string, email: string): Prom
         case "rifiuta":
           throw new Error(ALTRO_AMBIENTE);
         case "azzera-e-crea":
-          return { ...ABBONAMENTO_NUOVO(prova, ora), ...ids };
+          // Si azzerano i dati Stripe dell'altro ambiente, non la prova: la fine e lo spostamento restano quelli di prima
+          return { ...ABBONAMENTO_NUOVO(prova, ora), fineProva: prima?.fineProva ?? null, spostamentoProva: prima?.spostamentoProva ?? 0, ...ids };
         case "crea":
           return { ...(prima ?? ABBONAMENTO_NUOVO(prova, ora)), ...ids };
       }

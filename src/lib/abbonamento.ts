@@ -19,13 +19,49 @@ export type Abbonamento = {
   prova: boolean;
   pagatoAlmenoUnaVolta: boolean;
   aggiornato: number;
+  // Prova gratuita (spec prova-15-giorni, sezione 4): stato "nuovo" con una fine. null = prova non ancora partita
+  // (email non confermata). Pagando lo stato diventa "attivo" e la prova non conta più.
+  fineProva: number | null; // ms
+  // Strumenti di prova (solo con le chiavi di prova): di quanto l'orologio dell'app è avanti per la prova. Di serie 0.
+  spostamentoProva: number; // ms
 };
 
 export const ABBONAMENTO_NUOVO = (prova: boolean, ora: number): Abbonamento => ({
   stato: "nuovo", periodo: null, moduli: [], rinnovo: null,
   customerId: null, subscriptionId: null, orologioId: null, oraOrologio: null,
   prova, pagatoAlmenoUnaVolta: false, aggiornato: ora,
+  fineProva: null, spostamentoProva: 0,
 });
+
+// Documenti salvati prima della prova di 15 giorni non hanno fineProva e spostamentoProva: si leggono come null e 0
+// (anche un valore non valido vale come assente). Chi legge l'abbonamento dal deposito passa di qui.
+export function normalizzaAbbonamento(a: Abbonamento): Abbonamento {
+  const { fineProva, spostamentoProva } = a as { fineProva?: unknown; spostamentoProva?: unknown };
+  return {
+    ...a,
+    fineProva: typeof fineProva === "number" && Number.isFinite(fineProva) ? fineProva : null,
+    spostamentoProva: typeof spostamentoProva === "number" && Number.isFinite(spostamentoProva) ? spostamentoProva : 0,
+  };
+}
+
+export const GIORNI_PROVA = 15;
+
+const GIORNO_MS = 86_400_000;
+
+// La prova parte una volta sola (alla conferma dell'email) e solo per un'azienda nuova: altrimenti niente cambia.
+export function avviaProva(a: Abbonamento, ora: number): Abbonamento {
+  if (a.stato !== "nuovo" || a.fineProva !== null) return a;
+  return { ...a, fineProva: ora + GIORNI_PROVA * GIORNO_MS };
+}
+
+// L'ora con cui si conta la prova: quella vera più lo spostamento degli strumenti di prova (l'orologio di Stripe no).
+export function oraProva(a: Abbonamento, ora: number): number {
+  return ora + a.spostamentoProva;
+}
+
+export function inProva(a: Abbonamento, ora: number): boolean {
+  return a.stato === "nuovo" && a.fineProva !== null && oraProva(a, ora) < a.fineProva;
+}
 
 const NOMI_STRIPE: Record<Modulo, "magazzino" | "pratiche" | "ambiente" | "banco"> = {
   magazzino: "magazzino", accettazione: "pratiche", ambiente: "ambiente", vendite: "banco",
@@ -50,24 +86,30 @@ export function sceltaValida(corpo: unknown): { periodo: Periodo; moduli: Modulo
   return { periodo, moduli: ORDINE_MODULI.filter((m) => scelti.has(m)) };
 }
 
-// Il magazzino base c'è sempre; gli altri solo con un abbonamento in corso.
-export function moduliDaAbbonamento(a: Abbonamento): Modulo[] {
+// I moduli pagati: il magazzino base c'è sempre, gli altri solo con un abbonamento in corso.
+function moduliPagati(a: Abbonamento): Modulo[] {
   const attivi = a.stato === "nuovo" || a.stato === "scaduto" ? [] : a.moduli;
   const set = new Set<Modulo>(["magazzino", ...attivi]);
   return ORDINE_MODULI.filter((m) => set.has(m));
 }
 
-// Nuovo: si prova finché non si carica il primo veicolo. Scaduto: sempre bloccato (i dati restano).
-export function bloccato(a: Abbonamento, veicoli: number): boolean {
+// In prova tutti i moduli (offerta massima); fuori prova i moduli pagati (nuovo e scaduto: solo il magazzino).
+export function moduliDaAbbonamento(a: Abbonamento, ora: number): Modulo[] {
+  return inProva(a, ora) ? [...ORDINE_MODULI] : moduliPagati(a);
+}
+
+// Scaduto: sempre bloccato (i dati restano). Nuovo: bloccato se la prova non è partita o è finita. I veicoli non contano.
+export function bloccato(a: Abbonamento, ora: number): boolean {
   if (a.stato === "scaduto") return true;
-  if (a.stato === "nuovo") return veicoli >= 1;
+  if (a.stato === "nuovo") return a.fineProva === null || oraProva(a, ora) >= a.fineProva;
   return false;
 }
 
-// Modifiche rimaste in attesa del pagamento (rifiuto 402): ripartono solo con un abbonamento in corso, o per un'azienda
-// senza abbonamento. In prova (nuovo) o scaduto il server le rifiuterebbe di nuovo: niente giro di 402.
-export function riprendeDopoPagamento(a: Abbonamento | null | undefined): boolean {
-  return a == null || a.stato === "attivo" || a.stato === "in-ritardo" || a.stato === "disdetto";
+// Modifiche rimaste in attesa del pagamento (rifiuto 402): ripartono quando l'azienda non è più bloccata (pagato,
+// oppure ancora in prova), o per un'azienda senza abbonamento. Prova finita o scaduto: il server le rifiuterebbe di
+// nuovo, niente giro di 402.
+export function riprendeDopoPagamento(a: Abbonamento | null | undefined, ora: number): boolean {
+  return a == null || !bloccato(a, ora);
 }
 
 // Il cliente Stripe non c'è più (cancellato dalla dashboard, conto di prova ripulito): si dimenticano i suoi id, così
@@ -78,8 +120,8 @@ export function senzaCliente(a: Abbonamento): Abbonamento {
 }
 
 // Il negozio online di un'azienda registrata chiude quando è bloccata; le altre aziende non sono toccate.
-export function negozioAperto(registrata: boolean, a: Abbonamento | null, veicoli: number): boolean {
-  return !registrata || !bloccato(a ?? ABBONAMENTO_NUOVO(true, 0), veicoli);
+export function negozioAperto(registrata: boolean, a: Abbonamento | null, ora: number): boolean {
+  return !registrata || !bloccato(a ?? ABBONAMENTO_NUOVO(true, 0), ora);
 }
 
 // Forma minima di un abbonamento Stripe, così il test non dipende dalla libreria. cancel_at in secondi.
@@ -150,6 +192,14 @@ const data = (ms: number) => FMT.format(new Date(ms));
 const tra = (g: number) => (g === 1 ? "tra 1 giorno" : `tra ${g} giorni`);
 
 export function contoAllaRovescia(a: Abbonamento, oraMac: number): Conto | null {
+  if (a.fineProva !== null && inProva(a, oraMac)) {
+    const giorni = Math.max(0, Math.ceil((a.fineProva - oraProva(a, oraMac)) / GIORNO_MS));
+    return {
+      tono: giorni <= 3 ? "avviso" : "ok",
+      testo: giorni === 0 ? "Prova gratuita: finisce oggi" : `Prova gratuita: ${tra(giorni)} il gestionale si blocca`,
+      giorni,
+    };
+  }
   const ora = a.oraOrologio ?? oraMac;
   if (a.stato === "nuovo" || a.stato === "scaduto") return null;
   if (a.stato === "in-ritardo") {
@@ -164,9 +214,11 @@ export function contoAllaRovescia(a: Abbonamento, oraMac: number): Conto | null 
   return { tono: "ok", testo: `Si rinnova ${quando}`, giorni };
 }
 
-// Fascia in cima al gestionale (solo per il titolare): pagamento non riuscito sempre, disdetta negli ultimi 7 giorni.
-// I giorni sono quelli della riga del conto alla rovescia (con l'orologio di prova contano da oraOrologio).
+// Fascia in cima al gestionale (solo per il titolare): per tutta la prova gratuita, pagamento non riuscito sempre,
+// disdetta negli ultimi 7 giorni. I giorni sono quelli della riga del conto alla rovescia (con l'orologio di prova
+// contano da oraOrologio).
 export function fasciaDaMostrare(a: Abbonamento, ora: number): boolean {
+  if (inProva(a, ora)) return true;
   if (a.stato === "in-ritardo") return true;
   if (a.stato !== "disdetto") return false;
   const c = contoAllaRovescia(a, ora);
@@ -251,7 +303,7 @@ export function rifiutoCambio(a: Abbonamento, r: RichiestaModuli): { stato: numb
   if (r.azione === "riattiva") return a.stato === "disdetto" ? null : { stato: 409, messaggio: "L'abbonamento non è disdetto" };
   if (!CAMBIABILE.has(a.stato) || !a.periodo) return { stato: 409, messaggio: "Abbonamento non attivo" };
   if (r.azione === "togli" && r.modulo === "magazzino") return { stato: 400, messaggio: "Il Magazzino non si toglie" };
-  const presente = moduliDaAbbonamento(a).includes(r.modulo);
+  const presente = moduliPagati(a).includes(r.modulo); // qui lo stato è attivo o disdetto: niente prova
   if (r.azione === "togli") return presente ? null : { stato: 409, messaggio: "Modulo non attivo" };
   return presente ? { stato: 409, messaggio: "Modulo già attivo" } : null;
 }
@@ -273,31 +325,21 @@ export function righeCambio(prima: Abbonamento, dopo: Abbonamento): string[] {
 
 export type Scrittura = { esito: "ok"; corpo: Push } | { esito: "bloccato" };
 
-// Veicoli di uno stato: assente = 0; un valore che c'è ma non è una lista vale "troppi" (si blocca, mai si lascia passare).
-export function contaVeicoli(state: Record<string, unknown> | null | undefined): number {
-  const v = state?.vehicles;
-  if (v === undefined || v === null) return 0;
-  return Array.isArray(v) ? v.length : Infinity;
-}
-
 // Un salvataggio dal browser. Per le aziende registrate i moduli non li decide il browser (li decide l'abbonamento)
-// e, se l'abbonamento non è in regola, non si scrive nulla.
-// veicoli: quelli dell'archivio prima e dopo la fusione del salvataggio (vedi contaVeicoli). In prova (nuovo) passa solo
-// il primo salvataggio: archivio senza veicoli e, dopo la fusione, al massimo uno. Poi tutto aspetta il pagamento.
-export function scritturaAzienda(registrata: boolean, a: Abbonamento | null, veicoli: { prima: number; dopo: number }, corpo: Push): Scrittura {
+// e, se l'azienda è bloccata (prova non partita o finita, abbonamento scaduto), non si scrive nulla.
+// File assente: nuovo senza prova, quindi bloccato.
+export function scritturaAzienda(registrata: boolean, a: Abbonamento | null, ora: number, corpo: Push): Scrittura {
   if (!registrata) return { esito: "ok", corpo };
-  const ab = a ?? ABBONAMENTO_NUOVO(true, 0);
-  if (bloccato(ab, veicoli.prima)) return { esito: "bloccato" };
-  if (ab.stato === "nuovo" && veicoli.dopo > 1) return { esito: "bloccato" };
+  if (bloccato(a ?? ABBONAMENTO_NUOVO(true, 0), ora)) return { esito: "bloccato" };
   if (!corpo.whole) return { esito: "ok", corpo };
   const whole = { ...corpo.whole };
   delete whole.moduli;
   return { esito: "ok", corpo: { ...corpo, whole } };
 }
 
-// Lo stato mandato al browser: per le aziende registrate i moduli vengono dall'abbonamento.
-export function statoPerBrowser(registrata: boolean, a: Abbonamento | null, stato: unknown): unknown {
+// Lo stato mandato al browser: per le aziende registrate i moduli vengono dall'abbonamento (in prova tutti).
+export function statoPerBrowser(registrata: boolean, a: Abbonamento | null, ora: number, stato: unknown): unknown {
   if (!registrata || !stato || typeof stato !== "object") return stato;
-  const attivi = new Set(moduliDaAbbonamento(a ?? ABBONAMENTO_NUOVO(true, 0)));
+  const attivi = new Set(moduliDaAbbonamento(a ?? ABBONAMENTO_NUOVO(true, 0), ora));
   return { ...(stato as object), moduli: ORDINE_MODULI.map((id) => ({ id, attivo: attivi.has(id) })) };
 }

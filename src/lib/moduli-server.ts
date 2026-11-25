@@ -8,7 +8,8 @@ import { moduliDaArchivio, type Modulo } from "./moduli";
 
 export async function moduloAttivoSulServer(azienda: { id: string; registrata: boolean }, m: Modulo): Promise<boolean> {
   if (azienda.registrata) {
-    return moduliDaAbbonamento((await leggiAbbonamento(azienda.id)) ?? ABBONAMENTO_NUOVO(true, Date.now())).includes(m);
+    const ora = Date.now();
+    return moduliDaAbbonamento((await leggiAbbonamento(azienda.id)) ?? ABBONAMENTO_NUOVO(true, ora), ora).includes(m);
   }
   let stored: unknown = null;
   try {

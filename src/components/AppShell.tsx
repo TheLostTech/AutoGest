@@ -20,6 +20,7 @@ import { LostarCredit } from "./Lostar";
 import { inAttesaDiPagamento, inviaInSospeso, resetShared } from "@/lib/sync";
 import { bloccato } from "@/lib/abbonamento";
 import { useAbbonamento } from "@/lib/use-abbonamento";
+import { useOra } from "@/lib/use-ora";
 import { RiquadroPagamento } from "./RiquadroPagamento";
 import { FasciaAbbonamento } from "./FasciaAbbonamento";
 import { useEbaySync } from "@/lib/ebay-sync";
@@ -200,9 +201,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const storageFull = useDeviceStorageFull();
   useEbaySync();
   const moduli = useModuli();
-  // Riquadro di pagamento, solo per le aziende registrate: dopo il primo veicolo (o a scadenza) finché non si paga
+  // Riquadro di pagamento, solo per le aziende registrate: finita la prova di 15 giorni (o a scadenza) finché non si paga.
+  // L'ora è quella del browser, riletta una volta al minuto: il server decide comunque da sé (402).
   const { dati: abbonamento, ricarica: ricaricaAbbonamento } = useAbbonamento();
-  const veicoli = useStore((s) => s.vehicles.length);
+  const ora = useOra();
   const attesaPagamento = useAttesaPagamento();
   // Il server ha rifiutato una scrittura con 402: lo stato in memoria è vecchio, si rilegge da Stripe
   // (al massimo una volta ogni 15 secondi per azienda) per il titolo e la scelta del riquadro
@@ -210,7 +212,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (attesaPagamento) void ricaricaAbbonamento(true);
   }, [attesaPagamento, ricaricaAbbonamento]);
   const pagamento =
-    !!accesso?.azienda.registrata && !!abbonamento?.registrata && ((!!abbonamento.abbonamento && bloccato(abbonamento.abbonamento, veicoli)) || attesaPagamento);
+    !!accesso?.azienda.registrata && !!abbonamento?.registrata && ((!!abbonamento.abbonamento && bloccato(abbonamento.abbonamento, ora)) || attesaPagamento);
   const registrata = !!accesso?.azienda.registrata;
   const titolare = !!accesso && (accesso.ruoli.includes("responsabile") || !!accesso.assistenza);
   const subAperta = (s: { href: string }) => attivo(moduli, moduloDi(s.href));

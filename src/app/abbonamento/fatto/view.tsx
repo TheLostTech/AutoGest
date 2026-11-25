@@ -37,7 +37,7 @@ export function FattoView({ esito }: { esito: EsitoFatto }) {
         const j = r.ok ? ((await r.json()) as { pagata?: boolean; abbonamento?: Abbonamento }) : null;
         if (!attivo) return;
         if (j?.pagata && j.abbonamento) {
-          setPagati(moduliDaAbbonamento(j.abbonamento));
+          setPagati(moduliDaAbbonamento(j.abbonamento, Date.now()));
           void ricaricaAbbonamento();
           return;
         }

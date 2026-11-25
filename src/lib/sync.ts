@@ -256,8 +256,8 @@ async function pull() {
     // Risposta di un'altra azienda (la sessione è cambiata): mai applicarla a questa scheda
     if (typeof res.aziendaId === "string" && aziendaFissata() && res.aziendaId !== aziendaFissata()) return segnalaAziendaCambiata();
     demoAzienda = res.demo === true;
-    if (attesaPagamento && riprendeDopoPagamento(res.abbonamento)) {
-      // Pagato: partono le modifiche rimaste in attesa, poi il giro normale manda quelle ancora da inviare.
+    if (attesaPagamento && riprendeDopoPagamento(res.abbonamento, Date.now())) {
+      // Pagato (o ancora in prova): partono le modifiche rimaste in attesa, poi il giro normale manda quelle ancora da inviare.
       // Se l'invio non riesce (rete, di nuovo 402) attesaPagamento torna vero e il giro normale non parte.
       // La risposta di adesso non contiene le modifiche appena inviate: la prossima lettura scarica l'archivio unito.
       attesaPagamento = false;

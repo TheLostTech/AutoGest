@@ -4,7 +4,7 @@ import { connection } from "next/server";
 import { accessoDaRichiesta } from "@/lib/accesso/server";
 import { aggiornaStato, leggiStato } from "@/lib/archivio-azienda";
 import { leggiAbbonamento } from "@/lib/abbonamento-server";
-import { ABBONAMENTO_NUOVO, contaVeicoli, scritturaAzienda, statoPerBrowser } from "@/lib/abbonamento";
+import { ABBONAMENTO_NUOVO, scritturaAzienda, statoPerBrowser } from "@/lib/abbonamento";
 import { modalitaStripe } from "@/lib/stripe/server";
 import { esitoPush, unisciPush, type Push, type Stored } from "@/lib/archivio-unione";
 
@@ -24,8 +24,9 @@ export async function GET(req: Request) {
     // aziendaId: la scheda controlla che la risposta sia della sua azienda (mai applicare i dati di un'altra)
     const reg = a.azienda.registrata;
     // Senza file un'azienda registrata è "nuovo", come per il PUT: GET e PUT devono dire la stessa cosa
-    const ab = reg ? ((await leggiAbbonamento(a.azienda.id)) ?? ABBONAMENTO_NUOVO(modalitaStripe() !== "live", Date.now())) : null;
-    return Response.json({ ...s, state: statoPerBrowser(reg, ab, s.state), abbonamento: ab, demo: a.azienda.demo, aziendaId: a.azienda.id }, { headers: NOSTORE });
+    const ora = Date.now();
+    const ab = reg ? ((await leggiAbbonamento(a.azienda.id)) ?? ABBONAMENTO_NUOVO(modalitaStripe() !== "live", ora)) : null;
+    return Response.json({ ...s, state: statoPerBrowser(reg, ab, ora, s.state), abbonamento: ab, demo: a.azienda.demo, aziendaId: a.azienda.id }, { headers: NOSTORE });
   } catch (e) {
     return erroreArchivio(e);
   }
@@ -44,9 +45,8 @@ export async function PUT(req: Request) {
     const reg = a.azienda.registrata;
     const ab = reg ? ((await leggiAbbonamento(a.azienda.id)) ?? ABBONAMENTO_NUOVO(modalitaStripe() !== "live", Date.now())) : null;
     r = await aggiornaStato<Stored | 402 | 403 | 409>(a.azienda.id, (cur) => {
-      // In prova passa solo il primo salvataggio: si contano i veicoli prima e dopo la fusione (le altre aziende non fondono qui)
-      const veicoli = reg ? { prima: contaVeicoli(cur.state), dopo: contaVeicoli(unisciPush(cur, body).state) } : { prima: 0, dopo: 0 };
-      const scr = scritturaAzienda(reg, ab, veicoli, body);
+      // Bloccata (prova non partita o finita, abbonamento scaduto): niente si scrive. L'ora si legge qui, dentro il blocco.
+      const scr = scritturaAzienda(reg, ab, Date.now(), body);
       if (scr.esito === "bloccato") return { stored: cur, risultato: 402, nonScrivere: true };
       const esito = esitoPush(cur, scr.corpo, ctx);
       if (esito === 403 || esito === 409) return { stored: cur, risultato: esito, nonScrivere: true };

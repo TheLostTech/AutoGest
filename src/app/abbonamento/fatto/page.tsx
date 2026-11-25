@@ -28,7 +28,7 @@ async function esito(searchParams: Props["searchParams"]): Promise<EsitoFatto> {
   }
   const e = await esitoCheckout(a.azienda.id, sessionId);
   if ("errore" in e) return { tipo: "errore", messaggio: e.errore };
-  if (e.pagata) return { tipo: "pagata", moduli: moduliDaAbbonamento(e.abbonamento) };
+  if (e.pagata) return { tipo: "pagata", moduli: moduliDaAbbonamento(e.abbonamento, Date.now()) };
   return { tipo: "in-corso", sessionId };
 }
 

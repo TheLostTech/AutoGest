@@ -13,6 +13,29 @@ test("leggiAbbonamento di un'azienda senza file dà null", async () => {
   assert.equal(await leggiAbbonamento("azienda-vuota"), null);
 });
 
+test("un abbonamento salvato prima della prova di 15 giorni si legge con fineProva null e spostamentoProva 0", async () => {
+  const { aggiornaAbbonamento, leggiAbbonamento } = await import("./abbonamento-server.ts");
+  const { ABBONAMENTO_NUOVO } = await import("./abbonamento.ts");
+  const { cartellaAzienda } = await import("./server-data.ts");
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const vecchio: Record<string, unknown> = { ...ABBONAMENTO_NUOVO(true, 0), stato: "attivo", moduli: ["magazzino"] };
+  delete vecchio.fineProva;
+  delete vecchio.spostamentoProva;
+  await mkdir(cartellaAzienda("azienda-vecchia"), { recursive: true });
+  await writeFile(path.join(cartellaAzienda("azienda-vecchia"), "abbonamento.json"), JSON.stringify(vecchio));
+  const letto = await leggiAbbonamento("azienda-vecchia");
+  assert.equal(letto?.stato, "attivo");
+  assert.equal(letto?.fineProva, null);
+  assert.equal(letto?.spostamentoProva, 0);
+  // Anche chi aggiorna riceve il documento con i campi della prova
+  let visto: unknown;
+  await aggiornaAbbonamento("azienda-vecchia", (p) => {
+    visto = { fineProva: p?.fineProva, spostamentoProva: p?.spostamentoProva };
+    return p!;
+  });
+  assert.deepEqual(visto, { fineProva: null, spostamentoProva: 0 });
+});
+
 test("aggiornaAbbonamento mette in fila le scritture della stessa azienda", async () => {
   const { aggiornaAbbonamento, leggiAbbonamento } = await import("./abbonamento-server.ts");
   const { ABBONAMENTO_NUOVO } = await import("./abbonamento.ts");
