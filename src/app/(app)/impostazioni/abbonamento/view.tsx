@@ -7,7 +7,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { CreditCard } from "lucide-react";
-import { moduliDaAbbonamento, type Abbonamento, type Conto, type StatoAbbonamento } from "@/lib/abbonamento";
+import { inProva, moduliDaAbbonamento, type Abbonamento, type Conto, type StatoAbbonamento } from "@/lib/abbonamento";
 import { fetchAzienda } from "@/lib/accesso/azienda-client";
 import { useSessione } from "@/lib/accesso/client";
 import { scritturaPersoneNegata } from "@/lib/accesso/persone-regole";
@@ -18,7 +18,8 @@ import { useStore } from "@/lib/store";
 import type { ModalitaStripe } from "@/lib/stripe/chiavi";
 import { useAbbonamento } from "@/lib/use-abbonamento";
 import { useOra } from "@/lib/use-ora";
-import { StrumentiProva } from "@/components/StrumentiProva";
+import { SceltaModuli } from "@/components/RiquadroPagamento";
+import { conProvaGratuita, StrumentiProva } from "@/components/StrumentiProva";
 import { Button, Notice, PageTitle, Panel } from "@/components/ui";
 
 const STATO: Record<StatoAbbonamento, string> = {
@@ -187,7 +188,7 @@ function Pagina({
         actions={
           <span className="code inline-flex min-h-9 items-center rounded-full border border-hair bg-label px-3.5 text-[14px] font-semibold text-ink-2">
             {a.periodo ? `${PERIODO[a.periodo]} · ` : ""}
-            {STATO[a.stato]}
+            {ora && inProva(a, ora) ? "Prova gratuita" : STATO[a.stato]}
           </span>
         }
       />
@@ -196,8 +197,10 @@ function Pagina({
         <div className="space-y-3 px-4 py-4 md:px-5">
           {conto ? (
             <p className={`text-[18px] font-semibold ${tonoConto}`}>{conto.testo}</p>
+          ) : a.stato === "nuovo" && a.fineProva !== null ? (
+            <p className="text-[17px] text-ink-2">La prova gratuita è finita. I tuoi dati restano qui: scegli i moduli per continuare.</p>
           ) : a.stato === "nuovo" ? (
-            <p className="text-[17px] text-ink-2">Stai provando il gestionale: l&apos;abbonamento si paga dopo il primo veicolo.</p>
+            <p className="text-[17px] text-ink-2">15 giorni di prova con tutti i moduli, poi scegli quelli che ti servono.</p>
           ) : (
             <p className="text-[17px] text-ink-2">L&apos;abbonamento è finito. I dati restano: riattivalo per continuare.</p>
           )}
@@ -228,62 +231,72 @@ function Pagina({
         </div>
       )}
 
-      <Panel title="Moduli" className="mt-5">
-        {negata ? (
-          <p className="border-b border-hair-soft bg-warn-bg px-4 py-3 text-[15px] font-semibold text-warn">{negata}</p>
-        ) : !puoCambiare && (
-          <p className="border-b border-hair-soft px-4 py-3 text-[15px] text-ink-3">
-            {a.stato === "in-ritardo" ? "Aggiorna la carta prima di cambiare i moduli." : "I moduli si cambiano con l'abbonamento attivo."}
+      {a.stato === "nuovo" ? (
+        // Prova gratuita (in corso o finita): si sceglie e si paga con Checkout, come nel riquadro di pagamento
+        <Panel title="Scegli i moduli" className="mt-5">
+          <p className="border-b border-hair-soft px-4 py-3 text-[15px] text-ink-2 md:px-5">
+            15 giorni di prova con tutti i moduli. Pagando adesso l&apos;abbonamento parte subito e la prova finisce.
           </p>
-        )}
-        <ul className="divide-y divide-hair-soft">
-          {ORDINE_MODULI.map((m) => {
-            const acceso = attivi.includes(m);
-            const aperta = conferma?.modulo === m ? conferma : null;
-            return (
-              <li key={m} className="px-4 py-3 md:px-5">
-                <div className="flex min-h-12 flex-wrap items-center gap-x-4 gap-y-2">
-                  <span className="min-w-28 flex-1 text-[17px] font-semibold">{LISTINO[m].nome}</span>
-                  <span className="code whitespace-nowrap text-[15px] tabular-nums text-ink-2">
-                    {euro(prezzo(m, periodo))} {perPeriodo(periodo)}
-                  </span>
-                  <span className="flex w-28 justify-end">
-                    {m === "magazzino" ? (
-                      <span className="text-[14px] font-semibold text-ok">incluso</span>
-                    ) : negata ? (
-                      <span className={`text-[14px] font-semibold ${acceso ? "text-ok" : "text-ink-3"}`}>{acceso ? "attivo" : "non attivo"}</span>
-                    ) : acceso ? (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={!puoCambiare || !!conferma}
-                        onClick={() => {
-                          setEsito(null);
-                          setConferma({ tipo: "togli", modulo: m, aperto: lavoroAperto(m, useStore.getState()) });
-                        }}
-                      >
-                        Togli
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        disabled={!puoCambiare || !!conferma}
-                        onClick={() => {
-                          setEsito(null);
-                          setConferma({ tipo: "aggiungi", modulo: m, importo: null });
-                        }}
-                      >
-                        Aggiungi
-                      </Button>
-                    )}
-                  </span>
-                </div>
-                {aperta && <Riquadro c={aperta} a={a} periodo={periodo} onConferma={confermaCambio} onAnnulla={() => setConferma(null)} />}
-              </li>
-            );
-          })}
-        </ul>
-      </Panel>
+          <SceltaModuli abbonamento={a} modalita={modalita} negata={negata} />
+        </Panel>
+      ) : (
+        <Panel title="Moduli" className="mt-5">
+          {negata ? (
+            <p className="border-b border-hair-soft bg-warn-bg px-4 py-3 text-[15px] font-semibold text-warn">{negata}</p>
+          ) : !puoCambiare && (
+            <p className="border-b border-hair-soft px-4 py-3 text-[15px] text-ink-3">
+              {a.stato === "in-ritardo" ? "Aggiorna la carta prima di cambiare i moduli." : "I moduli si cambiano con l'abbonamento attivo."}
+            </p>
+          )}
+          <ul className="divide-y divide-hair-soft">
+            {ORDINE_MODULI.map((m) => {
+              const acceso = attivi.includes(m);
+              const aperta = conferma?.modulo === m ? conferma : null;
+              return (
+                <li key={m} className="px-4 py-3 md:px-5">
+                  <div className="flex min-h-12 flex-wrap items-center gap-x-4 gap-y-2">
+                    <span className="min-w-28 flex-1 text-[17px] font-semibold">{LISTINO[m].nome}</span>
+                    <span className="code whitespace-nowrap text-[15px] tabular-nums text-ink-2">
+                      {euro(prezzo(m, periodo))} {perPeriodo(periodo)}
+                    </span>
+                    <span className="flex w-28 justify-end">
+                      {m === "magazzino" ? (
+                        <span className="text-[14px] font-semibold text-ok">incluso</span>
+                      ) : negata ? (
+                        <span className={`text-[14px] font-semibold ${acceso ? "text-ok" : "text-ink-3"}`}>{acceso ? "attivo" : "non attivo"}</span>
+                      ) : acceso ? (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={!puoCambiare || !!conferma}
+                          onClick={() => {
+                            setEsito(null);
+                            setConferma({ tipo: "togli", modulo: m, aperto: lavoroAperto(m, useStore.getState()) });
+                          }}
+                        >
+                          Togli
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          disabled={!puoCambiare || !!conferma}
+                          onClick={() => {
+                            setEsito(null);
+                            setConferma({ tipo: "aggiungi", modulo: m, importo: null });
+                          }}
+                        >
+                          Aggiungi
+                        </Button>
+                      )}
+                    </span>
+                  </div>
+                  {aperta && <Riquadro c={aperta} a={a} periodo={periodo} onConferma={confermaCambio} onAnnulla={() => setConferma(null)} />}
+                </li>
+              );
+            })}
+          </ul>
+        </Panel>
+      )}
 
       {negata ? (
         <p className="mt-5 text-[15px] text-ink-3">Carta, fatture e disdetta: {negata.charAt(0).toLowerCase() + negata.slice(1)}</p>
@@ -297,8 +310,8 @@ function Pagina({
         </div>
       )}
 
-      {/* Solo con le chiavi di prova e l'orologio di prova di Stripe (spec, sezione 7) */}
-      {modalita === "prova" && a.prova && a.orologioId && <StrumentiProva abbonamento={a} negata={negata} />}
+      {/* Solo con le chiavi di prova: durante la prova gratuita l'orologio dell'app, dopo il pagamento quello di Stripe */}
+      {modalita === "prova" && a.prova && (conProvaGratuita(a) || a.orologioId) && <StrumentiProva abbonamento={a} negata={negata} />}
     </div>
   );
 }

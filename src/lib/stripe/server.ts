@@ -6,7 +6,7 @@ import { ABBONAMENTO_NON_LEGGIBILE, aggiornaAbbonamento, leggiAbbonamento } from
 import { aggiungiEventi } from "@/lib/archivio-azienda";
 import type { Periodo } from "@/lib/listino";
 import type { Modulo } from "@/lib/moduli";
-import { azioneCliente, ESPANSIONI, modalitaDaChiave, pagamentoInCorso, sessioniDaScadere, sincronizzazioneLimitata, stessoAmbiente, type ModalitaStripe, type SessioneCheckout } from "./chiavi";
+import { abbonamentoAzzerato, azioneCliente, ESPANSIONI, modalitaDaChiave, pagamentoInCorso, sessioniDaScadere, sincronizzazioneLimitata, stessoAmbiente, type ModalitaStripe, type SessioneCheckout } from "./chiavi";
 import { creaFila, type Fila } from "./fila";
 import { abbonamentoModificabile, differenzaDalListino, importoSenzaTasse, OROLOGIO_IN_AVANZAMENTO, PREZZI_DIVERSI, pagamentoRifiutato, risorsaMancante, rifiutoAvanzamento, subMinima, TROPPI_PERIODI, voceDelModulo, type SubDaStripe } from "./forma";
 
@@ -78,8 +78,8 @@ export function clientePer(aziendaId: string, nome: string, email: string): Prom
         case "rifiuta":
           throw new Error(ALTRO_AMBIENTE);
         case "azzera-e-crea":
-          // Si azzerano i dati Stripe dell'altro ambiente, non la prova: la fine e lo spostamento restano quelli di prima
-          return { ...ABBONAMENTO_NUOVO(prova, ora), fineProva: prima?.fineProva ?? null, spostamentoProva: prima?.spostamentoProva ?? 0, ...ids };
+          // Si azzerano i dati Stripe dell'altro ambiente, non la prova (lo spostamento solo con le chiavi di prova)
+          return { ...abbonamentoAzzerato(prima, m, ora), ...ids };
         case "crea":
           return { ...(prima ?? ABBONAMENTO_NUOVO(prova, ora)), ...ids };
       }

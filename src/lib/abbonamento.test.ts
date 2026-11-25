@@ -4,6 +4,7 @@ import {
   ABBONAMENTO_NUOVO, lookupKey, nomeStripe, moduliDaAbbonamento, bloccato, GIORNI_PROVA, avviaProva, oraProva, inProva, normalizzaAbbonamento,
   abbonamentoDaStripe, contoAllaRovescia, righeCambio, scritturaAzienda, statoPerBrowser, sceltaValida,
   fasciaDaMostrare, negozioAperto, riprendeDopoPagamento, senzaCliente, richiestaModuli, rifiutoCambio, nuovaOraOrologio, avanzamentoPermesso, passoValido,
+  passoProvaValido, spostamentoPermesso, spostaProva,
   type Abbonamento, type SubStripe,
 } from "./abbonamento.ts";
 
@@ -14,8 +15,8 @@ const RINNOVO = T(2026, 12, 22);
 const ab = (o: Partial<Abbonamento> = {}): Abbonamento => ({ ...ABBONAMENTO_NUOVO(false, ORA), ...o });
 const GIORNO = 86_400_000;
 const FINE = ORA + 15 * GIORNO;
-// In prova: registrata e confermata adesso, 15 giorni da ORA
-const prova = (o: Partial<Abbonamento> = {}): Abbonamento => ab({ fineProva: FINE, ...o });
+// In prova: registrata e confermata adesso (con le chiavi di prova di Stripe), 15 giorni da ORA
+const prova = (o: Partial<Abbonamento> = {}): Abbonamento => ab({ prova: true, fineProva: FINE, ...o });
 
 const sub = (o: { id?: string; status?: string; cancel?: boolean; cancelAt?: number | null; created?: number; modulo?: string; interval?: "month" | "year"; fine?: number } = {}): SubStripe => ({
   id: o.id ?? "sub_1", status: o.status ?? "active", cancel_at_period_end: o.cancel ?? false, cancel_at: o.cancelAt ?? null, created: o.created ?? 1000,
@@ -93,6 +94,43 @@ test("oraProva e inProva", () => {
   assert.equal(inProva(ab(), ORA), false);
   assert.equal(inProva(prova({ stato: "attivo" }), ORA), false);
   assert.equal(inProva(prova({ spostamentoProva: 15 * GIORNO }), ORA), false);
+});
+
+test("oraProva: lo spostamento conta solo con le chiavi di prova (a.prova), mai per un'azienda con le chiavi vere", () => {
+  const vera = prova({ prova: false, spostamentoProva: 20 * GIORNO });
+  assert.equal(oraProva(vera, ORA), ORA);
+  assert.equal(inProva(vera, ORA), true);
+  assert.equal(bloccato(vera, ORA), false);
+  assert.equal(bloccato(vera, FINE), true);
+  assert.equal(contoAllaRovescia(vera, ORA)?.giorni, 15);
+  assert.equal(bloccato(prova({ spostamentoProva: 20 * GIORNO }), ORA), true);
+});
+
+test("passoProvaValido: solo giorno o settimana", () => {
+  assert.equal(passoProvaValido({ passo: "giorno" }), "giorno");
+  assert.equal(passoProvaValido({ passo: "settimana" }), "settimana");
+  for (const c of [{ passo: "mese" }, { passo: "anno" }, {}, null, "giorno", ["giorno"], { passo: 1 }]) assert.equal(passoProvaValido(c), null, JSON.stringify(c));
+});
+
+test("spostamentoPermesso: solo nuovo, prova partita e chiavi di prova", () => {
+  assert.equal(spostamentoPermesso(prova()), true);
+  assert.equal(spostamentoPermesso(prova({ spostamentoProva: 30 * GIORNO })), true); // finita: si può ancora spostare
+  assert.equal(spostamentoPermesso(ab({ prova: true })), false); // prova non partita
+  assert.equal(spostamentoPermesso(prova({ prova: false })), false);
+  for (const stato of ["attivo", "in-ritardo", "disdetto", "scaduto"] as const) assert.equal(spostamentoPermesso(prova({ stato })), false, stato);
+  assert.equal(spostamentoPermesso(null), false);
+});
+
+test("spostaProva: +1 o +7 giorni allo spostamento, il resto non cambia", () => {
+  const a = prova({ spostamentoProva: GIORNO });
+  const g = spostaProva(a, "giorno");
+  assert.equal(g.spostamentoProva, 2 * GIORNO);
+  assert.deepEqual({ ...g, spostamentoProva: a.spostamentoProva }, a);
+  assert.equal(spostaProva(a, "settimana").spostamentoProva, 8 * GIORNO);
+  // Tre settimane dalla conferma: 21 giorni, oltre i 15 della prova
+  const tre = spostaProva(spostaProva(spostaProva(prova(), "settimana"), "settimana"), "settimana");
+  assert.equal(tre.spostamentoProva, 21 * GIORNO);
+  assert.equal(bloccato(tre, ORA), true);
 });
 
 test("ABBONAMENTO_NUOVO: prova non partita, nessuno spostamento", () => {

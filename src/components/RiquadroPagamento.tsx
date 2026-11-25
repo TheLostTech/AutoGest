@@ -1,8 +1,10 @@
 "use client";
 
-// Riquadro di pagamento: copre il gestionale quando l'abbonamento blocca (dopo il primo veicolo, oppure a scadenza).
-// Non si chiude: fuori restano solo "Esci" e, in assistenza, la fascia del super admin. Spec registrazione-pagamento, sezione 3.
-import { useEffect, useId, useRef, useState } from "react";
+// Riquadro di pagamento: copre il gestionale quando l'abbonamento blocca (finita la prova gratuita di 15 giorni, oppure
+// a scadenza). Non si chiude: fuori restano solo "Esci" e, in assistenza, la fascia del super admin. Spec
+// registrazione-pagamento, sezione 3; prova-15-giorni, sezione 4: a fine prova partono spuntati i moduli usati davvero.
+// La scelta (SceltaModuli) serve anche alla pagina Abbonamento per pagare durante la prova.
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Check } from "lucide-react";
 import type { Abbonamento } from "@/lib/abbonamento";
@@ -12,6 +14,8 @@ import { CARTE_DI_PROVA } from "@/lib/carte-prova";
 import { BRAND } from "@/lib/config";
 import { euro, LISTINO, prezzo, risparmioAnnuale, totale, type Periodo } from "@/lib/listino";
 import { ORDINE_MODULI, type Modulo } from "@/lib/moduli";
+import { moduliUsati } from "@/lib/moduli-usati";
+import { useStore } from "@/lib/store";
 import type { ModalitaStripe } from "@/lib/stripe/chiavi";
 import { ricaricaAbbonamento } from "@/lib/use-abbonamento";
 import { Button } from "./ui";
@@ -23,11 +27,25 @@ const perPeriodo = (p: Periodo) => (p === "anno" ? "/ anno" : "/ mese");
 // una ogni 15 per azienda): un pagamento finito in un'altra scheda, o arrivato in ritardo, chiude il riquadro da solo.
 const RICONTROLLA_MS = 10_000;
 
-// Scelta di partenza: con lo stato scaduto si riparte da quello che il cliente aveva
-function sceltaIniziale(a: Abbonamento | null): { periodo: Periodo; moduli: Set<Modulo> } {
-  if (a?.stato !== "scaduto") return { periodo: "mese", moduli: new Set() };
-  return { periodo: a.periodo ?? "mese", moduli: new Set(a.moduli.filter((m) => m !== "magazzino")) };
+// I moduli usati davvero durante la prova (dati salvati che solo quel modulo scrive), dall'archivio nel browser
+function useModuliUsati(): Modulo[] {
+  const vehicles = useStore((s) => s.vehicles);
+  const wasteMoves = useStore((s) => s.wasteMoves);
+  const firs = useStore((s) => s.firs);
+  const orders = useStore((s) => s.orders);
+  const docs = useStore((s) => s.docs);
+  return useMemo(() => moduliUsati({ vehicles, wasteMoves, firs, orders, docs }), [vehicles, wasteMoves, firs, orders, docs]);
 }
+
+// Moduli spuntati in partenza (il magazzino c'è sempre): con lo stato scaduto quelli che il cliente aveva, altrimenti
+// (fine prova, o pagamento durante la prova) quelli usati nella prova
+function moduliIniziali(a: Abbonamento | null, usati: Modulo[]): Set<Modulo> {
+  const da = a?.stato === "scaduto" ? a.moduli : usati;
+  return new Set(da.filter((m) => m !== "magazzino"));
+}
+
+// La prova gratuita è partita ed è finita senza pagare
+const provaFinita = (a: Abbonamento | null) => a?.stato === "nuovo" && a.fineProva !== null;
 
 export function RiquadroPagamento({
   abbonamento,
@@ -87,10 +105,15 @@ export function RiquadroPagamento({
               "L'abbonamento non è attivo."
             ) : scaduto ? (
               TITOLO_SCADUTO
+            ) : provaFinita(abbonamento) ? (
+              <>
+                La prova gratuita è finita.
+                <span className="mt-1 block text-[17px] font-medium text-ink-2">I tuoi dati restano qui: scegli i moduli per continuare.</span>
+              </>
             ) : (
               <>
-                Il tuo primo veicolo è dentro. <span aria-hidden>🚗</span>
-                <span className="mt-1 block text-[17px] font-medium text-ink-2">Scegli come continuare con {BRAND.azienda}.</span>
+                Scegli i moduli per continuare.
+                <span className="mt-1 block text-[17px] font-medium text-ink-2">I tuoi dati restano qui, con {BRAND.azienda}.</span>
               </>
             )}
           </h2>
@@ -100,7 +123,7 @@ export function RiquadroPagamento({
         </div>
         {titolare ? (
           // Con lo stato nuovo (per esempio diventato scaduto) la scelta riparte da quello che il cliente aveva
-          <Scelta key={abbonamento?.stato ?? "nessuno"} abbonamento={abbonamento} modalita={modalita} negata={negata} />
+          <SceltaModuli key={abbonamento?.stato ?? "nessuno"} abbonamento={abbonamento} modalita={modalita} negata={negata} />
         ) : (
           <p className="px-5 py-6 text-[17px] md:px-7">Chiedi al titolare di attivarlo.</p>
         )}
@@ -109,23 +132,27 @@ export function RiquadroPagamento({
   );
 }
 
-function Scelta({ abbonamento, modalita, negata }: { abbonamento: Abbonamento | null; modalita: ModalitaStripe; negata: string | null }) {
+// Periodo, moduli e "Paga con Stripe" (Checkout). Il Magazzino è sempre incluso e non si toglie; gli altri partono
+// spuntati come da moduliIniziali e il cliente li toglie o li aggiunge.
+export function SceltaModuli({ abbonamento, modalita, negata }: { abbonamento: Abbonamento | null; modalita: ModalitaStripe; negata: string | null }) {
   const path = usePathname();
-  const [periodo, setPeriodo] = useState<Periodo>(() => sceltaIniziale(abbonamento).periodo);
-  const [extra, setExtra] = useState<Set<Modulo>>(() => sceltaIniziale(abbonamento).moduli);
+  const usati = useModuliUsati();
+  const [periodo, setPeriodo] = useState<Periodo>(() => (abbonamento?.stato === "scaduto" ? (abbonamento.periodo ?? "mese") : "mese"));
+  // null finché il cliente non tocca nulla: la partenza segue l'archivio, anche se arriva dopo l'apertura del riquadro
+  const [scelti, setScelti] = useState<Set<Modulo> | null>(null);
+  const extra = scelti ?? moduliIniziali(abbonamento, usati);
   const [attesa, setAttesa] = useState(false);
   const [errore, setErrore] = useState("");
   const moduli = ORDINE_MODULI.filter((m) => m === "magazzino" || extra.has(m));
   const somma = totale(moduli, periodo);
   const risparmio = moduli.reduce((s, m) => s + risparmioAnnuale(m), 0);
 
-  const cambia = (m: Modulo, on: boolean) =>
-    setExtra((prima) => {
-      const s = new Set(prima);
-      if (on) s.add(m);
-      else s.delete(m);
-      return s;
-    });
+  const cambia = (m: Modulo, on: boolean) => {
+    const s = new Set(extra);
+    if (on) s.add(m);
+    else s.delete(m);
+    setScelti(s);
+  };
 
   async function paga() {
     setErrore("");

@@ -3,7 +3,7 @@
 // Stato dell'abbonamento nel browser, da GET /api/abbonamento/stato: una copia sola per la pagina, condivisa da
 // AppShell (riquadro di pagamento), pagina Abbonamento e ritorno da Checkout.
 import { useEffect, useState } from "react";
-import type { Abbonamento, Conto } from "./abbonamento";
+import { contoAllaRovescia, type Abbonamento, type Conto } from "./abbonamento";
 import type { ModalitaStripe } from "./stripe/chiavi";
 import { fetchAzienda } from "./accesso/azienda-client";
 import { intestazioniPassive } from "./accesso/attivita";
@@ -41,6 +41,18 @@ async function leggi(parametri: string): Promise<StatoApi | null> {
  */
 export function controllaOrologio(): Promise<StatoApi | null> {
   return leggi("?orologio=1");
+}
+
+/**
+ * Strumenti della prova gratuita: mette nella copia condivisa l'abbonamento appena risposto dal server (con lo
+ * spostamento della prova), così fascia, pagina e riquadro di pagamento si aggiornano subito senza un'altra lettura.
+ * Il conto alla rovescia si ricalcola con l'ora del browser. Senza una copia già letta non fa nulla.
+ */
+export function mettiAbbonamento(a: Abbonamento): void {
+  if (!dati) return;
+  dati = { ...dati, abbonamento: a, conto: contoAllaRovescia(a, Date.now()) };
+  letto = Date.now();
+  ascoltatori.forEach((f) => f());
 }
 
 /** Rilegge lo stato; con `sincronizza` il server lo chiede prima a Stripe (al massimo una volta ogni 15 secondi). */

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ABBONAMENTO_NUOVO, type Abbonamento } from "../abbonamento.ts";
-import { azioneCliente, aziendaDaEvento, chiaveCheckout, daSincronizzare, eventoDiUnAltroAmbiente, origineRitorno, pagamentoInCorso, sessioniDaScadere, type SessioneCheckout, ESPANSIONI, espansioneValida, etichettaStripe, modalitaDaChiave, sincronizzazioneLimitata, stessoAmbiente } from "./chiavi.ts";
+import { abbonamentoAzzerato, azioneCliente, aziendaDaEvento, chiaveCheckout, daSincronizzare, eventoDiUnAltroAmbiente, origineRitorno, pagamentoInCorso, sessioniDaScadere, type SessioneCheckout, ESPANSIONI, espansioneValida, etichettaStripe, modalitaDaChiave, sincronizzazioneLimitata, stessoAmbiente } from "./chiavi.ts";
 
 test("modalitaDaChiave: senza chiave è spenta", () => {
   assert.equal(modalitaDaChiave(undefined, undefined), "spenta");
@@ -102,6 +102,22 @@ test("azioneCliente: altro ambiente mai pagato si azzera, pagato si rifiuta", ()
   assert.equal(azioneCliente(ab({ prova: true, customerId: "cus_t", orologioId: "clock_1" }), "live"), "azzera-e-crea");
   assert.equal(azioneCliente(ab({ prova: false, customerId: "cus_l" }), "prova"), "azzera-e-crea");
   assert.equal(azioneCliente(ab({ prova: true, customerId: "cus_t", pagatoAlmenoUnaVolta: true, stato: "scaduto" }), "live"), "rifiuta");
+});
+
+test("abbonamentoAzzerato: cambiando ambiente Stripe la prova resta, lo spostamento solo con le chiavi di prova", () => {
+  const prima = ab({ prova: true, customerId: "cus_t", orologioId: "clock_1", oraOrologio: 5, fineProva: 1_000_000, spostamentoProva: 86_400_000 });
+  const live = abbonamentoAzzerato(prima, "live", 42);
+  assert.equal(live.prova, false);
+  assert.equal(live.customerId, null);
+  assert.equal(live.orologioId, null);
+  assert.equal(live.fineProva, 1_000_000);
+  assert.equal(live.spostamentoProva, 0);
+  assert.equal(live.aggiornato, 42);
+  const test = abbonamentoAzzerato({ ...prima, prova: false }, "prova", 42);
+  assert.equal(test.prova, true);
+  assert.equal(test.fineProva, 1_000_000);
+  assert.equal(test.spostamentoProva, 86_400_000);
+  assert.deepEqual(abbonamentoAzzerato(null, "live", 7), ABBONAMENTO_NUOVO(false, 7));
 });
 
 test("azioneCliente: con Stripe spento si rifiuta", () => {

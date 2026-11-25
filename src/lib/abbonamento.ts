@@ -55,8 +55,9 @@ export function avviaProva(a: Abbonamento, ora: number): Abbonamento {
 }
 
 // L'ora con cui si conta la prova: quella vera più lo spostamento degli strumenti di prova (l'orologio di Stripe no).
+// Lo spostamento conta solo con le chiavi di prova (a.prova): un'azienda con le chiavi vere non lo vede mai.
 export function oraProva(a: Abbonamento, ora: number): number {
-  return ora + a.spostamentoProva;
+  return a.prova ? ora + a.spostamentoProva : ora;
 }
 
 export function inProva(a: Abbonamento, ora: number): boolean {
@@ -277,6 +278,28 @@ export function nuovaOraOrologio(ora: number, passo: Passo): number {
  */
 export function avanzamentoPermesso(a: Abbonamento, passo: Passo): boolean {
   return passo !== "anno" || a.periodo === "anno";
+}
+
+// Strumenti della prova gratuita: di quanto si sposta in avanti l'orologio dell'app (spec prova-15-giorni, sezione 4).
+// Nella prova il cliente Stripe e il suo orologio non ci sono ancora: si sposta solo l'ora con cui si conta la prova.
+export type PassoProva = "giorno" | "settimana";
+
+const GIORNI_PASSO: Record<PassoProva, number> = { giorno: 1, settimana: 7 };
+
+// Il corpo di POST /api/abbonamento/prova/sposta: { passo: "giorno" | "settimana" }, altrimenti null.
+export function passoProvaValido(corpo: unknown): PassoProva | null {
+  if (!corpo || typeof corpo !== "object" || Array.isArray(corpo)) return null;
+  const p = (corpo as { passo?: unknown }).passo;
+  return p === "giorno" || p === "settimana" ? p : null;
+}
+
+// Si sposta solo una prova partita, non ancora pagata, con le chiavi di prova (anche già finita: resta bloccata).
+export function spostamentoPermesso(a: Abbonamento | null): a is Abbonamento {
+  return !!a && a.prova && a.stato === "nuovo" && a.fineProva !== null;
+}
+
+export function spostaProva(a: Abbonamento, passo: PassoProva): Abbonamento {
+  return { ...a, spostamentoProva: a.spostamentoProva + GIORNI_PASSO[passo] * GIORNO_MS };
 }
 
 export type RichiestaModuli ={ azione: "aggiungi" | "togli" | "anteprima"; modulo: Modulo } | { azione: "riattiva" };

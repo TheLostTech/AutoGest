@@ -1,6 +1,6 @@
 // Regole pure per Stripe: che modalità danno le chiavi, da dove si prende l'azienda di un avviso,
 // quando si risincronizza. Nessun accesso a rete o disco: si provano con i test (spec registrazione-pagamento, 5, 7, 9).
-import type { Abbonamento } from "../abbonamento.ts";
+import { ABBONAMENTO_NUOVO, type Abbonamento } from "../abbonamento.ts";
 
 export type ModalitaStripe = "prova" | "live" | "spenta";
 
@@ -94,6 +94,16 @@ export const ESPANSIONI = {
 /** Le aziende scritte con chiavi di prova non vanno con le chiavi vere (e viceversa): i loro id non esistono lì. Spento: nessuna. */
 export function stessoAmbiente(a: Abbonamento, m: ModalitaStripe): boolean {
   return m !== "spenta" && a.prova === (m === "prova");
+}
+
+/**
+ * Abbonamento di un altro ambiente Stripe, mai pagato, rifatto da zero per l'ambiente `m` (azione "azzera-e-crea"):
+ * si tolgono i dati Stripe dell'altro ambiente, non la prova. La fine della prova resta; lo spostamento degli strumenti
+ * di prova resta solo con le chiavi di prova, così un'azienda passata alle chiavi vere non lo porta con sé.
+ */
+export function abbonamentoAzzerato(prima: Abbonamento | null, m: ModalitaStripe, ora: number): Abbonamento {
+  const prova = m === "prova";
+  return { ...ABBONAMENTO_NUOVO(prova, ora), fineProva: prima?.fineProva ?? null, spostamentoProva: prova ? (prima?.spostamentoProva ?? 0) : 0 };
 }
 
 export type AzioneCliente = "riusa" | "crea" | "azzera-e-crea" | "rifiuta";

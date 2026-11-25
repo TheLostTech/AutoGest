@@ -549,3 +549,100 @@ test("registrazione: se l'email di conferma non parte, la registrazione resta e 
     delete process.env.RESEND_API_KEY;
   }
 });
+
+// ——— Strumenti della prova gratuita: POST /api/abbonamento/prova/sposta (spec prova-15-giorni, Task 6) ———
+
+/** Registra e conferma un titolare: la prova è partita e il cookie è quello della sessione con email e password. */
+async function titolareInProva(email: string, azienda: string): Promise<{ orgId: string; userId: string; cookie: string }> {
+  const reg = await registra(email, azienda);
+  assert.equal(reg.r.stato, 201, JSON.stringify(reg.r.corpo));
+  const ok = await conferma(gettoneDa(reg.email[0]), "password-lunga-1");
+  assert.equal(ok.stato, 200, JSON.stringify(ok.corpo));
+  const cookie = ok.cookie.find((x) => x.startsWith(`${c.authCookies.sessionToken.name}=`))!.split(";")[0];
+  const userId = (await c.internalAdapter.findUserByEmail(email)).user.id;
+  return { orgId: await aziendaDi(userId), userId, cookie };
+}
+
+async function sposta(cookie: string, passo: unknown) {
+  const { POST } = await import("../../app/api/abbonamento/prova/sposta/route.ts");
+  const r = await POST(
+    new Request(`${SITO}/api/abbonamento/prova/sposta`, {
+      method: "POST",
+      headers: { origin: SITO, host: "localhost:3000", "content-type": "application/json", cookie },
+      body: JSON.stringify({ passo }),
+    }),
+  );
+  return { stato: r.status, corpo: (await r.json()) as { abbonamento?: import("../abbonamento.ts").Abbonamento; error?: string } };
+}
+
+/** Esegue fn con le variabili di Stripe indicate, poi le rimette com'erano. */
+async function conStripe<T>(chiave: string | undefined, live: string | undefined, fn: () => Promise<T>): Promise<T> {
+  const prima = { chiave: process.env.STRIPE_SECRET_KEY, live: process.env.STRIPE_LIVE };
+  const metti = (k: string, v: string | undefined) => (v === undefined ? delete process.env[k] : (process.env[k] = v));
+  metti("STRIPE_SECRET_KEY", chiave);
+  metti("STRIPE_LIVE", live);
+  try {
+    return await fn();
+  } finally {
+    metti("STRIPE_SECRET_KEY", prima.chiave);
+    metti("STRIPE_LIVE", prima.live);
+  }
+}
+const PROVA = "sk_test_finta_per_la_prova";
+const GIORNO = 86_400_000;
+
+test("sposta: con le chiavi vere o senza Stripe 403, e la prova non si sposta", async () => {
+  const t = await titolareInProva("sposta-live@prova.invalid", "Sposta Live");
+  const { leggiAbbonamento } = await import("../abbonamento-server.ts");
+  for (const [chiave, live] of [["sk_live_finta_per_la_prova", "1"], [undefined, undefined]] as const) {
+    const r = await conStripe(chiave, live, () => sposta(t.cookie, "giorno"));
+    assert.equal(r.stato, 403, `${chiave}: ${JSON.stringify(r.corpo)}`);
+  }
+  assert.equal((await leggiAbbonamento(t.orgId))?.spostamentoProva, 0);
+});
+
+test("sposta: con la sessione da PIN 403 serve-password; passo non valido 400", async () => {
+  const t = await titolareInProva("sposta-pin@prova.invalid", "Sposta Pin");
+  const d = await c.adapter.create({ model: "dispositivo", data: { organizationId: t.orgId, nome: "Tablet sposta", tokenHash: randomBytes(16).toString("hex"), creatoDa: t.userId, creato: new Date(), bloccato: false, erroriPin: "[]" } });
+  const pin = await sessione(t.userId, { activeOrganizationId: t.orgId, tipoAccesso: "pin", dispositivoId: d.id, expiresAt: new Date(Date.now() + m.regole.PIN_TURNO_MS) });
+  const r = await conStripe(PROVA, undefined, async () => sposta(await cookieDi(pin), "settimana"));
+  assert.equal(r.stato, 403, JSON.stringify(r.corpo));
+  for (const passo of ["mese", "anno", 7, null]) assert.equal((await conStripe(PROVA, undefined, () => sposta(t.cookie, passo))).stato, 400, String(passo));
+  const { leggiAbbonamento } = await import("../abbonamento-server.ts");
+  assert.equal((await leggiAbbonamento(t.orgId))?.spostamentoProva, 0);
+});
+
+test("sposta: tre settimane dopo la conferma la prova è finita e il gestionale si blocca", async () => {
+  const t = await titolareInProva("sposta-settimane@prova.invalid", "Sposta Settimane");
+  const { bloccato, inProva } = await import("../abbonamento.ts");
+  const { leggiAbbonamento } = await import("../abbonamento-server.ts");
+  let ultimo = (await leggiAbbonamento(t.orgId))!;
+  for (let i = 0; i < 3; i++) {
+    assert.equal(bloccato(ultimo, Date.now()), false, `settimana ${i + 1}`);
+    const r = await conStripe(PROVA, undefined, () => sposta(t.cookie, "settimana"));
+    assert.equal(r.stato, 200, JSON.stringify(r.corpo));
+    ultimo = r.corpo.abbonamento!;
+  }
+  assert.equal(ultimo.spostamentoProva, 21 * GIORNO);
+  assert.equal(inProva(ultimo, Date.now()), false);
+  assert.equal(bloccato(ultimo, Date.now()), true);
+  assert.deepEqual(await leggiAbbonamento(t.orgId), ultimo);
+  // Bloccata: il salvataggio dei dati è rifiutato anche dal server
+  const { scritturaAzienda } = await import("../abbonamento.ts");
+  assert.equal(scritturaAzienda(true, ultimo, Date.now(), { whole: {} } as never).esito, "bloccato");
+});
+
+test("sposta: abbonamento attivo (o prova non partita) 409, niente cambia", async () => {
+  const t = await titolareInProva("sposta-attivo@prova.invalid", "Sposta Attivo");
+  const { aggiornaAbbonamento, leggiAbbonamento } = await import("../abbonamento-server.ts");
+  // In prova "+1 giorno" sposta di un giorno
+  const g = await conStripe(PROVA, undefined, () => sposta(t.cookie, "giorno"));
+  assert.equal(g.stato, 200, JSON.stringify(g.corpo));
+  assert.equal(g.corpo.abbonamento?.spostamentoProva, GIORNO);
+  await aggiornaAbbonamento(t.orgId, (p) => ({ ...p!, stato: "attivo", periodo: "mese", moduli: ["magazzino"] }));
+  const r = await conStripe(PROVA, undefined, () => sposta(t.cookie, "giorno"));
+  assert.equal(r.stato, 409, JSON.stringify(r.corpo));
+  assert.equal((await leggiAbbonamento(t.orgId))?.spostamentoProva, GIORNO);
+  await aggiornaAbbonamento(t.orgId, (p) => ({ ...p!, stato: "nuovo", periodo: null, moduli: [], fineProva: null }));
+  assert.equal((await conStripe(PROVA, undefined, () => sposta(t.cookie, "giorno"))).stato, 409);
+});
