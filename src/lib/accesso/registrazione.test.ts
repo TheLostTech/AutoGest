@@ -108,3 +108,21 @@ test("registrazioneConsentita: senza indirizzo un contatore comune", () => {
   assert.equal(registrazioneConsentita(null, t + 3), false);
   assert.equal(registrazioneConsentita("198.51.100.9", t + 3), true);
 });
+
+test("validaRegistrazione: niente numeri, indirizzi web o email nel nome del titolare (finisce nelle email)", () => {
+  for (const nome of ["Chiama 3331234567", "Mario 2", "vai su evil.example.com", "Mario www.rossi", "https://x.it", "mario@rossi.it", "Conto sospeso rossi.it"]) {
+    assert.match(errore({ ...buono, nome }), /titolare/, nome);
+  }
+  for (const nome of ["Mario Rossi", "D'Angelo Maria", "Anna-Maria De Luca", "F. Bianchi", "Ñúñez José"]) {
+    assert.ok("ok" in validaRegistrazione({ ...buono, nome }), nome);
+  }
+});
+
+test("validaRegistrazione: niente indirizzi web o email nel nome dell'azienda", () => {
+  for (const azienda of ["Vai su evil.example.com", "www.rossi", "https://x.it", "info@rossi.it", "Rossi.it"]) {
+    assert.match(errore({ ...buono, azienda }), /azienda/, azienda);
+  }
+  for (const azienda of ["Autodemolizioni 2000 S.r.l.", "F.lli Rossi s.n.c.", "Rossi & C."]) {
+    assert.ok("ok" in validaRegistrazione({ ...buono, azienda }), azienda);
+  }
+});

@@ -200,10 +200,12 @@ const tra = (g: number) => (g === 1 ? "tra 1 giorno" : `tra ${g} giorni`);
 
 export function contoAllaRovescia(a: Abbonamento, oraMac: number): Conto | null {
   if (a.fineProva !== null && inProva(a, oraMac)) {
-    const giorni = Math.max(0, Math.ceil((a.fineProva - oraProva(a, oraMac)) / GIORNO_MS));
+    const resta = a.fineProva - oraProva(a, oraMac);
+    const giorni = Math.max(0, Math.ceil(resta / GIORNO_MS));
     return {
       tono: giorni <= 3 ? "avviso" : "ok",
-      testo: giorni === 0 ? "Prova gratuita: finisce oggi" : `Prova gratuita: ${tra(giorni)} il gestionale si blocca`,
+      // inProva: resta sempre qualcosa, quindi giorni è almeno 1; sotto le 24 ore "tra 1 giorno" non è vero
+      testo: resta < GIORNO_MS ? "Prova gratuita: finisce entro 24 ore" : `Prova gratuita: ${tra(giorni)} il gestionale si blocca`,
       giorni,
     };
   }

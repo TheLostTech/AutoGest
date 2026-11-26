@@ -448,6 +448,17 @@ test("conferma: rimandare l'email dalla pagina di accesso manda un nuovo link so
         }),
       ),
     );
+  // Subito dopo la registrazione (meno di un minuto): stessa risposta, nessuna email
+  const subito = await rimanda(email);
+  assert.equal(subito.r.status, 200);
+  assert.equal(subito.email.length, 0);
+  // Un minuto dopo l'ultimo invio si rimanda: si sposta indietro l'orario segnato sulla scheda
+  const { deposito } = await import("../deposito/index.ts");
+  const u = (await c.internalAdapter.findUserByEmail(email)).user;
+  await deposito().aggiornaDocumento<{ inviiConferma?: number[] }, null>(await aziendaDi(u.id), "registrazione", (sc) => ({
+    dati: { ...sc!, inviiConferma: (sc?.inviiConferma ?? []).map((t) => t - 2 * 60_000) },
+    risultato: null,
+  }));
   const si = await rimanda(email);
   assert.equal(si.r.status, 200);
   assert.equal(si.email.length, 1);

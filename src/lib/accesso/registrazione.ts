@@ -20,13 +20,21 @@ const testo = (v: unknown, min: number, max: number): string | null => {
   return t.length >= min && t.length <= max ? t : null;
 };
 
+// Il nome del titolare finisce nelle email che partono dal nostro dominio (e il nome dell'azienda potrebbe finirci):
+// non deve poter portare un indirizzo web, un'email o un numero di telefono scritti da chi registra con l'email di altri.
+const TLD = "com|it|net|org|eu|info|biz|io|co|me|ly|xyz|app|dev|link|online|site|shop|store|top|club|live|click|ru|cn|de|fr|uk|es|us|tk";
+const DOMINIO = new RegExp(`(^|[^\\p{L}\\p{N}])[\\p{L}\\p{N}-]+\\.(${TLD})(?![\\p{L}\\p{N}])`, "iu");
+const conIndirizzo = (t: string) => /:\/\/|www\.|@/i.test(t) || DOMINIO.test(t);
+
 export function validaRegistrazione(corpo: unknown): { ok: DatiRegistrazione } | { errore: string } {
   if (!corpo || typeof corpo !== "object" || Array.isArray(corpo)) return { errore: "Richiesta non valida." };
   const b = corpo as Record<string, unknown>;
   const azienda = testo(b.azienda, 2, 80);
   if (!azienda) return { errore: "Scrivi il nome dell'azienda (da 2 a 80 caratteri)." };
+  if (conIndirizzo(azienda)) return { errore: "Il nome dell'azienda non può contenere indirizzi web o email." };
   const nome = testo(b.nome, 1, 100);
   if (!nome) return { errore: "Scrivi nome e cognome del titolare." };
+  if (/\p{N}/u.test(nome) || conIndirizzo(nome)) return { errore: "Nel nome del titolare scrivi solo nome e cognome, senza numeri o indirizzi." };
   const email = typeof b.email === "string" ? b.email.trim().toLowerCase() : "";
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { errore: "Scrivi un'email valida." };
   const password = typeof b.password === "string" ? b.password : "";
@@ -44,7 +52,8 @@ export function validaRegistrazione(corpo: unknown): { ok: DatiRegistrazione } |
 }
 
 // Al massimo 3 registrazioni all'ora per indirizzo (ipCliente: x-real-ip su Vercel, altrimenti cf-connecting-ip).
-// Senza indirizzo (localhost, rete interna) un contatore comune. Conta ogni richiesta all'arrivo. In memoria: un solo processo Node (docs/ACCESSO.md).
+// Senza indirizzo (localhost, rete interna) un contatore comune. Conta le richieste con i campi validi (un errore di
+// battitura non consuma un tentativo). In memoria: un solo processo Node (docs/ACCESSO.md).
 export const REGISTRAZIONI_MAX = 3;
 export const REGISTRAZIONI_FINESTRA_MS = 60 * 60_000;
 

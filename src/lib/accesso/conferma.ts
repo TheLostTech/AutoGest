@@ -38,6 +38,20 @@ export function richiestaConferma(corpo: unknown): { token: string; password: st
   return { token: t, password };
 }
 
+// Email di conferma per un titolare in attesa: al massimo 5 in 24 ore e almeno un minuto tra una e l'altra. Il rimando
+// non ha BotID: senza tetto chi registra con l'email di altri potrebbe farle arrivare di continuo dal nostro dominio.
+export const INVII_CONFERMA_MAX = 5;
+export const INVII_CONFERMA_FINESTRA_MS = 24 * 3600_000;
+export const INVII_CONFERMA_PAUSA_MS = 60_000;
+
+/** Orari degli invii aggiornati se si può mandare adesso, altrimenti null. Valori rotti o nel futuro non contano. */
+export function invioConferma(invii: unknown, ora: number): number[] | null {
+  const vivi = (Array.isArray(invii) ? invii : []).filter((t): t is number => typeof t === "number" && t <= ora && ora - t < INVII_CONFERMA_FINESTRA_MS);
+  if (vivi.length >= INVII_CONFERMA_MAX) return null;
+  if (vivi.some((t) => ora - t < INVII_CONFERMA_PAUSA_MS)) return null;
+  return [...vivi, ora];
+}
+
 export type Avviso = { tono: "ok" | "danger"; testo: string };
 
 /** Esito di "Rimanda l'email", dallo stato HTTP della risposta (0 = rete). */

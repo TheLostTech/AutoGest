@@ -233,6 +233,8 @@ test("contoAllaRovescia in prova: giorni alla fine, più evidente negli ultimi 3
   assert.deepEqual(contoAllaRovescia(prova(), FINE - 4 * GIORNO), { tono: "ok", testo: "Prova gratuita: tra 4 giorni il gestionale si blocca", giorni: 4 });
   assert.deepEqual(contoAllaRovescia(prova(), FINE - 3 * GIORNO), { tono: "avviso", testo: "Prova gratuita: tra 3 giorni il gestionale si blocca", giorni: 3 });
   assert.deepEqual(contoAllaRovescia(prova(), FINE - GIORNO), { tono: "avviso", testo: "Prova gratuita: tra 1 giorno il gestionale si blocca", giorni: 1 });
+  // Meno di 24 ore: non "tra 1 giorno"
+  assert.deepEqual(contoAllaRovescia(prova(), FINE - 20 * 60_000), { tono: "avviso", testo: "Prova gratuita: finisce entro 24 ore", giorni: 1 });
   // Meno di un giorno: si arrotonda in su
   assert.equal(contoAllaRovescia(prova(), FINE - 1)?.giorni, 1);
   // Lo spostamento della prova conta, l'orologio di Stripe no

@@ -18,6 +18,8 @@ export type SchedaRegistrazione = {
   condizioni: Consenso;
   privacy: Consenso;
   commerciale: Consenso | null;
+  /** Orari (ms) delle email di conferma mandate nelle ultime 24 ore (invioConferma). */
+  inviiConferma?: number[];
 };
 
 export function schedaRegistrazione(d: DatiRegistrazione, ip: string | null, ora: number): SchedaRegistrazione {

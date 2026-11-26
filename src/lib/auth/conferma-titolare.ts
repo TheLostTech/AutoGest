@@ -12,7 +12,7 @@ import type { AuthContext, BetterAuthPlugin, User } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { avviaProva } from "@/lib/abbonamento";
 import { aggiornaAbbonamento, leggiAbbonamento } from "@/lib/abbonamento-server";
-import { CODICE_DA_CONFERMARE, linkConferma, MESSAGGIO_DA_CONFERMARE } from "@/lib/accesso/conferma";
+import { CODICE_DA_CONFERMARE, invioConferma, linkConferma, MESSAGGIO_DA_CONFERMARE } from "@/lib/accesso/conferma";
 import { ruoliDaStringa } from "@/lib/accesso/ruoli";
 import { aggiungiEventi } from "@/lib/archivio-azienda";
 import type { SchedaRegistrazione } from "@/lib/consensi";
@@ -82,7 +82,20 @@ export async function registrazioneInSospeso(c: AuthContext, user: { id: string;
 // Il link porta alla nostra pagina /conferma con il gettone di Better Auth (non al suo /verify-email): per confermare
 // serve anche la password scelta alla registrazione (api/conferma). In produzione l'indirizzo è solo quello pubblico.
 export async function inviaConferma(c: AuthContext, d: { user: User; token: string }, request?: Request): Promise<void> {
-  if (!(await daConfermare(c, d.user))) return;
+  if (d.user.emailVerified === true) return;
+  const aziende = await aziendeInAttesa(c, d.user.id);
+  if (!aziende.length) return;
+  // Tetto agli invii (invioConferma), segnato sulla scheda della registrazione prima di mandare. Oltre il tetto non parte
+  // nulla e la risposta resta la stessa. Una scheda assente (non dovrebbe succedere) non ferma l'invio.
+  const consentito = await deposito().aggiornaDocumento<SchedaRegistrazione, boolean>(aziende[0], "registrazione", (s) => {
+    if (!s) return { dati: s as unknown as SchedaRegistrazione, risultato: true, nonScrivere: true };
+    const invii = invioConferma(s.inviiConferma, Date.now());
+    return invii ? { dati: { ...s, inviiConferma: invii }, risultato: true } : { dati: s, risultato: false, nonScrivere: true };
+  });
+  if (!consentito) {
+    console.warn("Email di conferma non mandata: troppi invii per questa registrazione", aziende[0]);
+    return;
+  }
   const link = linkConferma(d.token, request ? new URL(request.url).origin : null);
   await inviaEmail({ ...emailConferma(d.user.name, link), a: d.user.email });
 }

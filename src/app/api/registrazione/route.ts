@@ -69,6 +69,9 @@ async function inviaConferma(req: Request, email: string): Promise<boolean> {
 // tentativo (togliendo prima i membri resterebbe un utente senza azienda: 409 per sempre su quell'email).
 async function togliInSospeso(c: Contesto, userId: string, aziende: string[]): Promise<boolean> {
   try {
+    // Il vero titolare può aver confermato un attimo fa (dopo il controllo di registrazioneInSospeso): allora non si toglie
+    const adesso = await c.internalAdapter.findUserById(userId);
+    if (!adesso || adesso.emailVerified) return false;
     await c.adapter.deleteMany({ model: "session", where: [{ field: "userId", value: userId }] });
     await c.adapter.deleteMany({ model: "account", where: [{ field: "userId", value: userId }] });
     await c.adapter.delete({ model: "user", where: [{ field: "id", value: userId }] });
@@ -86,15 +89,16 @@ export async function POST(req: Request) {
   if (nonPronta) return nonPronta;
   const x = daAltroSito(req, true);
   if (x) return x;
+  // Prima i campi: un errore di battitura non consuma uno dei tentativi per indirizzo
+  const v = validaRegistrazione(await leggiJson(req));
+  if ("errore" in v) return errore(400, v.errore);
+  const d = v.ok;
   const ip = ipCliente(req.headers);
   if (!registrazioneConsentita(ip, Date.now())) {
     return errore(429, "Troppe registrazioni da questo indirizzo: riprova più tardi.");
   }
   // Dopo il limite per indirizzo, che costa meno: BotID chiede a Vercel a ogni richiesta
   if (await registrazioneDaRobot(() => checkBotId())) return errore(403, "Registrazione non riuscita.");
-  const v = validaRegistrazione(await leggiJson(req));
-  if ("errore" in v) return errore(400, v.errore);
-  const d = v.ok;
   const c = await contesto();
   const esistente = await c.internalAdapter.findUserByEmail(d.email);
   if (esistente) {

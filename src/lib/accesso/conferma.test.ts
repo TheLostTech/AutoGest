@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EMAIL_CONFERMATA, esitoRimando, linkConferma, richiestaConferma } from "./conferma.ts";
+import { EMAIL_CONFERMATA, esitoRimando, invioConferma, linkConferma, richiestaConferma } from "./conferma.ts";
 
 test("testo della conferma riuscita", () => {
   assert.equal(EMAIL_CONFERMATA, "Email confermata: la prova di 15 giorni è iniziata.");
@@ -33,4 +33,19 @@ test("esito del rimando", () => {
   assert.ok(esitoRimando(429).testo.includes("troppe"));
   assert.ok(esitoRimando(0).testo.includes("rete"));
   assert.equal(esitoRimando(500).tono, "danger");
+});
+
+test("invioConferma: al massimo 5 email in 24 ore e almeno un minuto tra una e l'altra", () => {
+  const ORA = 1_800_000_000_000;
+  assert.deepEqual(invioConferma(undefined, ORA), [ORA]);
+  assert.deepEqual(invioConferma("rotto", ORA), [ORA]);
+  assert.equal(invioConferma([ORA - 30_000], ORA), null);
+  assert.deepEqual(invioConferma([ORA - 60_000], ORA), [ORA - 60_000, ORA]);
+  const cinque = [1, 2, 3, 4, 5].map((h) => ORA - h * 3_600_000);
+  assert.equal(invioConferma(cinque, ORA), null);
+  // Quelli di più di 24 ore fa non contano e si dimenticano
+  const vecchi = [ORA - 25 * 3_600_000, ...cinque.slice(0, 4)];
+  assert.deepEqual(invioConferma(vecchi, ORA), [...cinque.slice(0, 4), ORA]);
+  // Un orario nel futuro (orologio spostato) non blocca per sempre
+  assert.deepEqual(invioConferma([ORA + 3_600_000], ORA), [ORA]);
 });
