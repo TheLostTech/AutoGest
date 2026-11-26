@@ -14,6 +14,8 @@ export function RegistratiView({ prova }: { prova: boolean }) {
   const [telefono, setTelefono] = useState("");
   const [password, setPassword] = useState("");
   const [condizioni, setCondizioni] = useState(false);
+  // Approvazione specifica delle clausole onerose (artt. 1341 e 1342 c.c.)
+  const [clausole, setClausole] = useState(false);
   // Contatti commerciali: facoltativi e di serie non spuntati
   const [commerciale, setCommerciale] = useState(false);
   const [errore, setErrore] = useState("");
@@ -31,7 +33,7 @@ export function RegistratiView({ prova }: { prova: boolean }) {
       r = await fetch("/api/registrazione", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ azienda, nome, email, telefono, password, condizioni, commerciale }),
+        body: JSON.stringify({ azienda, nome, email, telefono, password, condizioni, clausole, commerciale }),
       });
     } catch {
       setErrore("Non riesco a collegarmi al server. Controlla la rete e riprova.");
@@ -103,8 +105,22 @@ export function RegistratiView({ prova }: { prova: boolean }) {
               <span>
                 Accetto le{" "}
                 <Link href="/condizioni" target="_blank" className="font-semibold text-band underline">
-                  condizioni del servizio e l&apos;accordo sul trattamento dei dati
+                  condizioni del servizio
+                </Link>{" "}
+                e l&apos;
+                <Link href="/condizioni#accordo" target="_blank" className="font-semibold text-band underline">
+                  accordo sul trattamento dei dati
                 </Link>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 text-[15px] text-ink">
+              <input type="checkbox" className="mt-0.5 size-6 shrink-0 accent-band" checked={clausole} onChange={(e) => setClausole(e.target.checked)} />
+              <span>
+                Approvo specificamente le{" "}
+                <Link href="/condizioni#clausole" target="_blank" className="font-semibold text-band underline">
+                  clausole indicate nelle condizioni
+                </Link>{" "}
+                (artt. 1341 e 1342 c.c.)
               </span>
             </label>
             <p className="text-[15px] text-ink">
@@ -117,7 +133,7 @@ export function RegistratiView({ prova }: { prova: boolean }) {
               <input type="checkbox" className="mt-0.5 size-6 shrink-0 accent-band" checked={commerciale} onChange={(e) => setCommerciale(e.target.checked)} />
               <span>Acconsento a essere contattato da Lostar Technology per proposte commerciali su Piazzale</span>
             </label>
-            <Button type="submit" size="lg" className="w-full" disabled={attesa || !azienda || !nome || !email || !password || !condizioni}>
+            <Button type="submit" size="lg" className="w-full" disabled={attesa || !azienda || !nome || !email || !password || !condizioni || !clausole}>
               {attesa ? "Registrazione…" : "Registrati"}
             </Button>
             {prova && <p className="text-center text-[13px] text-ink-3">Ambiente di prova: nessun addebito vero</p>}

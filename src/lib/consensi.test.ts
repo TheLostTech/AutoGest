@@ -11,6 +11,7 @@ const dati: DatiRegistrazione = {
   password: "unapassword",
   telefono: "+39 333 1234567",
   condizioni: true,
+  clausole: true,
   commerciale: false,
 };
 const ora = Date.UTC(2026, 10, 26, 9, 30);
@@ -30,6 +31,7 @@ test("schedaRegistrazione: senza consenso commerciale → commerciale null; vers
     registrata: iso,
     confermata: null,
     condizioni: { versione: VERSIONE_CONDIZIONI, ora: iso, ip: "198.51.100.7" },
+    clausole: { versione: VERSIONE_CONDIZIONI, ora: iso, ip: "198.51.100.7" },
     privacy: { versione: VERSIONE_PRIVACY, ora: iso, ip: "198.51.100.7" },
     commerciale: null,
   });

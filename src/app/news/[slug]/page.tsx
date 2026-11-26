@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ARTICOLI, articolo, dataLunga } from "@/lib/news";
 import { BRAND, PRODUTTORE } from "@/lib/config";
-import { DEMO, Piede, SITO, Testata } from "@/components/sito/Sito";
+import { Piede, REGISTRAZIONE, SITO, Testata } from "@/components/sito/Sito";
 import "../../scopri/scopri.css";
 
 // Gli articoli sono tutti prerenderizzati (generateStaticParams): il parametro serve solo a scegliere quale.
@@ -138,8 +138,8 @@ export default async function ArticoloPage({ params }: PageProps<"/news/[slug]">
                 <>
                   <h2 className="mt-12 text-[26px] font-bold tracking-[-0.02em]">Nel gestionale</h2>
                   <p className="mt-4 text-[18px] leading-[1.65] text-ink-2">{a.nelGestionale}</p>
-                  <a href={DEMO} className="mt-6 inline-flex h-12 items-center rounded-md bg-band px-5 text-[16px] font-semibold text-white hover:bg-band-deep">
-                    Apri la demo
+                  <a href={REGISTRAZIONE} className="mt-6 inline-flex h-12 items-center rounded-md bg-band px-5 text-[16px] font-semibold text-white hover:bg-band-deep">
+                    Registrati gratis
                   </a>
                 </>
               )}

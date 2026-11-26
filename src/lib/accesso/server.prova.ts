@@ -302,7 +302,7 @@ async function registra(email: string, azienda = "Ricambi Conferma", password = 
       new Request(`${SITO}/api/registrazione`, {
         method: "POST",
         headers: { origin: SITO, host: "localhost:3000", "content-type": "application/json", "cf-connecting-ip": nuovoIp() },
-        body: JSON.stringify({ azienda, nome: "Titolare Prova", email, password, condizioni: true }),
+        body: JSON.stringify({ azienda, nome: "Titolare Prova", email, password, condizioni: true, clausole: true }),
       }),
     );
     return { stato: r.status, corpo: (await r.json()) as Record<string, unknown> };

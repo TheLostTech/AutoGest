@@ -7,6 +7,7 @@ export type DatiRegistrazione = {
   password: string;
   telefono: string | null;
   condizioni: true;
+  clausole: true;
   commerciale: boolean;
 };
 
@@ -52,7 +53,8 @@ export function validaRegistrazione(corpo: unknown): { ok: DatiRegistrazione } |
     telefono = t || null;
   }
   if (b.condizioni !== true) return { errore: "Per registrarti devi accettare le condizioni del servizio." };
-  return { ok: { azienda, nome, email, password, telefono, condizioni: true, commerciale: b.commerciale === true } };
+  if (b.clausole !== true) return { errore: "Per registrarti devi approvare specificamente le clausole indicate nelle condizioni." };
+  return { ok: { azienda, nome, email, password, telefono, condizioni: true, clausole: true, commerciale: b.commerciale === true } };
 }
 
 // Al massimo 3 registrazioni all'ora per indirizzo (ipCliente: x-real-ip su Vercel, altrimenti cf-connecting-ip).

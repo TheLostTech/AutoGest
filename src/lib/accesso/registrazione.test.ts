@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { registrazioneConsentita, validaRegistrazione } from "./registrazione.ts";
 
-const buono = { azienda: "Rossi Autodemolizioni", nome: "Mario Rossi", email: "mario@rossi.it", password: "unapassword", telefono: "+39 333 1234567", condizioni: true, commerciale: true };
+const buono = { azienda: "Rossi Autodemolizioni", nome: "Mario Rossi", email: "mario@rossi.it", password: "unapassword", telefono: "+39 333 1234567", condizioni: true, clausole: true, commerciale: true };
 
 const errore = (corpo: unknown) => {
   const r = validaRegistrazione(corpo);
@@ -49,6 +49,14 @@ test("validaRegistrazione: condizioni da accettare", () => {
   const { condizioni: _, ...senza } = buono;
   void _;
   assert.match(errore(senza), /condizioni/);
+});
+
+test("validaRegistrazione: clausole da approvare specificamente", () => {
+  assert.match(errore({ ...buono, clausole: false }), /clausole/);
+  assert.match(errore({ ...buono, clausole: "true" }), /clausole/);
+  const { clausole: _, ...senza } = buono;
+  void _;
+  assert.match(errore(senza), /clausole/);
 });
 
 test("validaRegistrazione: senza codice invito, e un invito mandato lo stesso non conta", () => {

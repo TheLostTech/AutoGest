@@ -16,6 +16,8 @@ export type SchedaRegistrazione = {
   registrata: string;
   confermata: string | null;
   condizioni: Consenso;
+  /** Approvazione specifica delle clausole onerose (artt. 1341-1342 c.c.): stessa versione delle condizioni. */
+  clausole: Consenso;
   privacy: Consenso;
   commerciale: Consenso | null;
   /** Orari (ms) delle email di conferma mandate nelle ultime 24 ore (invioConferma). */
@@ -33,6 +35,7 @@ export function schedaRegistrazione(d: DatiRegistrazione, ip: string | null, ora
     registrata: quando,
     confermata: null,
     condizioni: consenso(VERSIONE_CONDIZIONI),
+    clausole: consenso(VERSIONE_CONDIZIONI),
     privacy: consenso(VERSIONE_PRIVACY),
     // Il consenso ai contatti commerciali è descritto nell'informativa privacy: ne prende la versione
     commerciale: d.commerciale ? consenso(VERSIONE_PRIVACY) : null,

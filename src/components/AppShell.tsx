@@ -343,6 +343,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
         <div className="border-t border-white/20 px-4 py-3">
           <LostarCredit className="text-white/75 hover:text-white" />
+          <p className="mt-1 flex gap-3 text-[12px] text-white/75">
+            <Link href="/privacy" target="_blank" className="hover:text-white hover:underline">
+              Privacy
+            </Link>
+            <Link href="/condizioni" target="_blank" className="hover:text-white hover:underline">
+              Condizioni
+            </Link>
+          </p>
         </div>
       </aside>
 
@@ -427,8 +435,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
         {/* Pagina di un modulo non attivo, anche aperta a mano dall'indirizzo: si vede cosa fa, non il contenuto */}
         <main className="flex-1 px-4 pb-6 pt-5 md:px-8 md:pb-12 md:pt-7">{attivo(moduli, moduloDi(path)) ? children : <ModuloBloccato modulo={moduloDi(path)} />}</main>
-        <footer className="no-print flex justify-center px-4 pb-28 md:hidden">
+        <footer className="no-print flex flex-col items-center gap-1 px-4 pb-28 md:hidden">
           <LostarCredit className="text-ink-3" />
+          <p className="flex gap-4 text-[13px] text-ink-3">
+            <Link href="/privacy" target="_blank" className="inline-flex min-h-11 items-center underline">
+              Privacy
+            </Link>
+            <Link href="/condizioni" target="_blank" className="inline-flex min-h-11 items-center underline">
+              Condizioni
+            </Link>
+          </p>
         </footer>
 
         {/* Barra inferiore mobile: bersagli grandi, usabili coi guanti */}

@@ -7,8 +7,8 @@ import { LostarCredit } from "@/components/Lostar";
 
 // Demo pubblica: entra senza credenziali dove DEMO_PUBBLICA=1, altrimenti porta all'accesso normale.
 export const DEMO = "/demo";
-// Dove si parte per comprare: la registrazione dell'azienda. Finché la pagina di registrazione non c'è, porta alla demo.
-export const REGISTRAZIONE = DEMO;
+// Dove si parte: la registrazione dell'azienda (prova di 15 giorni). La demo resta raggiungibile a /demo ma nessun pulsante pubblico la usa.
+export const REGISTRAZIONE = "/registrati";
 
 // Indirizzo pubblico del sito, per canonical, sitemap e condivisioni. SITO_PUBBLICO lo cambia (per esempio in prova).
 export const SITO = (process.env.SITO_PUBBLICO ?? "https://miopiazzale.it").replace(/\/$/, "");
@@ -41,8 +41,8 @@ export function Testata({ attiva }: { attiva?: "news" }) {
             <Link href="/accesso" className="inline-flex h-11 items-center rounded-md px-3 text-[15px] font-semibold text-white/90 hover:bg-white/12">
               Accedi
             </Link>
-            <a href={DEMO} className="ml-1 inline-flex h-11 items-center rounded-md bg-label px-4 text-[15px] font-semibold text-band hover:bg-band-tint">
-              Apri la demo
+            <a href={REGISTRAZIONE} className="ml-1 inline-flex h-11 items-center rounded-md bg-label px-4 text-[15px] font-semibold text-band hover:bg-band-tint">
+              Registrati gratis
             </a>
           </nav>
         </div>
@@ -64,6 +64,12 @@ export function Piede() {
           </Link>
           <Link href="/news" className="hover:text-white">
             Normative commentate
+          </Link>
+          <Link href="/privacy" className="hover:text-white">
+            Privacy
+          </Link>
+          <Link href="/condizioni" className="hover:text-white">
+            Condizioni
           </Link>
         </nav>
         <LostarCredit className="text-white/80 hover:text-white" />

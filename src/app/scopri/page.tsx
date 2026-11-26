@@ -6,7 +6,7 @@ import { Suspense } from "react";
 import { BRAND, PRODUTTORE } from "@/lib/config";
 import { ORDINE_MODULI } from "@/lib/moduli";
 import { LISTINO, euro } from "@/lib/listino";
-import { DEMO, Piede, SITO, Testata } from "@/components/sito/Sito";
+import { Piede, REGISTRAZIONE, SITO, Testata } from "@/components/sito/Sito";
 import { modalitaStripe } from "@/lib/stripe/server";
 import { EtichettaStampata, EtichettaPiccola, Percorso } from "./parti";
 import { Offerta } from "./offerta";
@@ -129,9 +129,9 @@ const OBBLIGHI = [
 ] as const;
 
 const ATTIVAZIONE = [
-  { titolo: "Ti registri", testo: "Crei l'account della tua azienda dal sito. Gli accessi dei dipendenti li crei tu, uno per ruolo." },
-  { titolo: "Inserisci il primo veicolo", testo: "Fotografi la targa e vedi come lavora sul tuo piazzale, senza pagare niente." },
-  { titolo: "Scegli e paghi", testo: "Scegli i moduli e se pagare al mese o all'anno. Paghi con carta su Stripe e i moduli si attivano subito." },
+  { titolo: "Ti registri", testo: "Crei l'account della tua azienda dal sito e confermi l'email." },
+  { titolo: "15 giorni con tutto", testo: "Tutti i moduli sono accesi, senza carta, sul tuo piazzale." },
+  { titolo: "Scegli i moduli", testo: "Al mese o all'anno. Paghi con carta su Stripe e il gestionale resta aperto." },
 ] as const;
 
 // Listino per i motori di ricerca: un'offerta mensile per modulo, IVA esclusa
@@ -168,13 +168,14 @@ export default function ScopriPage() {
                 registro rifiuti e scadenze si compilano mentre lavori. Nessuna ora persa davanti a un vecchio gestionale a ricopiare dati.
               </p>
               <div className="mt-9 flex flex-wrap gap-3">
-                <a href={DEMO} className="inline-flex h-14 items-center rounded-md bg-band px-6 text-[17px] font-semibold text-white hover:bg-band-deep">
-                  Apri la demo
+                <a href={REGISTRAZIONE} className="inline-flex h-14 items-center rounded-md bg-band px-6 text-[17px] font-semibold text-white hover:bg-band-deep">
+                  Registrati gratis
                 </a>
                 <a href="#in-regola" className="inline-flex h-14 items-center rounded-md border border-hair bg-label px-6 text-[17px] font-semibold text-ink hover:border-ink-3">
                   Come ti tiene in regola
                 </a>
               </div>
+              <p className="mt-3 text-[15px] font-semibold text-ink-2">15 giorni con tutto incluso, senza carta</p>
               <p className="mt-6 max-w-[52ch] text-[15px] text-ink-3">
                 Gira nel browser: telefono in piazzale, computer al banco, pistola laser in magazzino. Niente da installare sui telefoni.
               </p>
@@ -321,8 +322,8 @@ export default function ScopriPage() {
                 Portiamo il gestionale nel tuo piazzale: un veicolo in accettazione, i pezzi etichettati e messi a scaffale, uno venduto. Poi decidi.
               </p>
               <div className="mt-9 flex flex-wrap gap-3">
-                <a href={DEMO} className="inline-flex h-14 items-center rounded-md bg-label px-6 text-[17px] font-semibold text-band hover:bg-band-tint">
-                  Apri la demo
+                <a href={REGISTRAZIONE} className="inline-flex h-14 items-center rounded-md bg-label px-6 text-[17px] font-semibold text-band hover:bg-band-tint">
+                  Registrati gratis
                 </a>
                 <a
                   href={PRODUTTORE.sito}
