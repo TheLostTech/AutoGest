@@ -12,12 +12,19 @@ import type { Pool, PoolClient } from "pg";
 // non resta nulla a metà.
 export const SQL_TEMPI_AVVIO = ["set local lock_timeout = '5s'", "set local statement_timeout = '30s'"];
 
+// Su Vercel più istanze possono avviarsi insieme: se due eliminano e ricreano la vista o cambiano i permessi nello stesso
+// momento Postgres risponde "tuple concurrently deleted" e l'avvio fallisce. Un lock "advisory" preso nella transazione
+// fa passare una sola istanza alla volta; si libera da solo al commit o al rollback e anche la sua attesa ha il limite
+// di 5 secondi (lock_timeout): se scade l'avvio si riprova come per ogni altro errore.
+export const SQL_UN_AVVIO_ALLA_VOLTA = "select pg_advisory_xact_lock(4247001)";
+
 async function conTempiMassimi(p: Pool, corpo: (c: PoolClient) => Promise<void>): Promise<void> {
   const c = await p.connect();
   let rotta: Error | undefined;
   try {
     await c.query("begin");
     for (const q of SQL_TEMPI_AVVIO) await c.query(q);
+    await c.query(SQL_UN_AVVIO_ALLA_VOLTA);
     await corpo(c);
     await c.query("commit");
   } catch (e) {
