@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "schedules": {
+    "avvisi-prova": {
+      "schedule": "0 9 * * *",
+      "timezone": "Europe/Rome",
+      "path": "/api/pianificato/prova",
+      "requestMethod": "GET"
+    }
+  }
+}

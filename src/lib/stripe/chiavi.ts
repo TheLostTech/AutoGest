@@ -103,7 +103,7 @@ export function stessoAmbiente(a: Abbonamento, m: ModalitaStripe): boolean {
  */
 export function abbonamentoAzzerato(prima: Abbonamento | null, m: ModalitaStripe, ora: number): Abbonamento {
   const prova = m === "prova";
-  return { ...ABBONAMENTO_NUOVO(prova, ora), fineProva: prima?.fineProva ?? null, spostamentoProva: prova ? (prima?.spostamentoProva ?? 0) : 0 };
+  return { ...ABBONAMENTO_NUOVO(prova, ora), fineProva: prima?.fineProva ?? null, spostamentoProva: prova ? (prima?.spostamentoProva ?? 0) : 0, avvisi: prima?.avvisi ?? {} };
 }
 
 export type AzioneCliente = "riusa" | "crea" | "azzera-e-crea" | "rifiuta";

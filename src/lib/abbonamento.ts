@@ -24,23 +24,29 @@ export type Abbonamento = {
   fineProva: number | null; // ms
   // Strumenti di prova (solo con le chiavi di prova): di quanto l'orologio dell'app è avanti per la prova. Di serie 0.
   spostamentoProva: number; // ms
+  // Avvisi di fine prova già mandati per email (date ISO dell'invio), ognuno una volta sola. Di serie {}.
+  avvisi: { scadenza?: string; finita?: string };
 };
 
 export const ABBONAMENTO_NUOVO = (prova: boolean, ora: number): Abbonamento => ({
   stato: "nuovo", periodo: null, moduli: [], rinnovo: null,
   customerId: null, subscriptionId: null, orologioId: null, oraOrologio: null,
   prova, pagatoAlmenoUnaVolta: false, aggiornato: ora,
-  fineProva: null, spostamentoProva: 0,
+  fineProva: null, spostamentoProva: 0, avvisi: {},
 });
 
 // Documenti salvati prima della prova di 15 giorni non hanno fineProva e spostamentoProva: si leggono come null e 0
 // (anche un valore non valido vale come assente). Chi legge l'abbonamento dal deposito passa di qui.
 export function normalizzaAbbonamento(a: Abbonamento): Abbonamento {
-  const { fineProva, spostamentoProva } = a as { fineProva?: unknown; spostamentoProva?: unknown };
+  const { fineProva, spostamentoProva, avvisi } = a as { fineProva?: unknown; spostamentoProva?: unknown; avvisi?: unknown };
+  const dati = avvisi && typeof avvisi === "object" && !Array.isArray(avvisi) ? (avvisi as Record<string, unknown>) : {};
+  const data = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+  const scadenza = data(dati.scadenza), finita = data(dati.finita);
   return {
     ...a,
     fineProva: typeof fineProva === "number" && Number.isFinite(fineProva) ? fineProva : null,
     spostamentoProva: typeof spostamentoProva === "number" && Number.isFinite(spostamentoProva) ? spostamentoProva : 0,
+    avvisi: { ...(scadenza ? { scadenza } : {}), ...(finita ? { finita } : {}) },
   };
 }
 
