@@ -10,6 +10,11 @@ export function proxy(req: NextRequest) {
   if (percorsoApi(pathname) || percorsoPubblico(pathname)) return NextResponse.next();
   if (getSessionCookie(req)) return NextResponse.next();
   const url = req.nextUrl.clone();
+  // Chi apre miopiazzale.it senza accesso vede la presentazione (anche Google), non la pagina di accesso
+  if (pathname === "/" && !demoPubblica()) {
+    url.pathname = "/scopri";
+    return NextResponse.redirect(url);
+  }
   // Vetrina online: senza sessione si entra (o si rientra) nella demo, senza passare dalla pagina di accesso
   url.pathname = demoPubblica() ? "/demo" : "/accesso";
   url.search = "";

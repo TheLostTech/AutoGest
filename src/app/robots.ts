@@ -5,7 +5,7 @@ import { SITO } from "@/components/sito/Sito";
 // gestionale dell'azienda.
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: { userAgent: "*", allow: ["/scopri", "/news", "/llms.txt", "/_next/", "/renders/"], disallow: ["/"] },
+    rules: { userAgent: "*", allow: ["/$", "/scopri", "/news", "/llms.txt", "/_next/", "/renders/"], disallow: ["/"] },
     sitemap: `${SITO}/sitemap.xml`,
   };
 }
