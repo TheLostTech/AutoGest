@@ -5,14 +5,11 @@
 // dell'azienda e li trattiamo come responsabili (accordo in /condizioni#accordo).
 import { BRAND, PRODUTTORE } from "../config.ts";
 import { VERSIONE_PRIVACY } from "../consensi.ts";
-import { FORNITORI, SERVIZI_COLLEGATI, type Documento, type Fornitore } from "./comune.ts";
+import { FORNITORI, SERVIZI_COLLEGATI, voceFornitore, voceServizioCollegato, type Documento } from "./comune.ts";
 
 const PEC = `[${PRODUTTORE.pec}](mailto:${PRODUTTORE.pec})`;
 const ACCORDO = "[accordo sul trattamento dei dati](/condizioni#accordo)";
 const NOI = PRODUTTORE.ragioneSociale;
-
-const voceFornitore = (f: Fornitore) => `${f.nome}: ${f.cosa}. Dove: ${f.dove}. Garanzia: ${f.garanzia}.`;
-const voceCollegato = (f: Fornitore) => `${f.nome}, solo se ${f.soloSe}: ${f.cosa}. È ${f.garanzia}; dove tratta i dati è ${f.dove}.`;
 
 export const INFORMATIVA_PRIVACY: Documento = {
   titolo: "Informativa privacy",
@@ -76,7 +73,9 @@ export const INFORMATIVA_PRIVACY: Documento = {
         "Registrazioni mai confermate e prove finite senza abbonamento: fino a 12 mesi, poi li cancelliamo.",
         "Dati delle fatture e prova dei consensi: 10 anni, il tempo che la legge chiede per le scritture contabili e per far valere i propri diritti.",
         "Contatti per le proposte commerciali: fino alla revoca del consenso, e comunque non oltre 24 mesi dall'ultimo contatto.",
-        "Conteggi dei tentativi di accesso sbagliati: pochi minuti. Log tecnici dei fornitori: pochi giorni.",
+        "Tentativi sbagliati di accesso con email e password: 15 minuti.",
+        "Errori e blocchi del PIN: gli errori di un nome restano finché non si entra con il PIN giusto, quelli di un dispositivo contano per 24 ore, un blocco dura 15 minuti. Un PIN disattivato o un dispositivo bloccato dopo troppi errori restano così finché l'azienda non imposta un nuovo PIN o non sblocca il dispositivo.",
+        "Log tecnici dei fornitori: pochi giorni.",
       ],
       dopo: [{ paragrafi: [`I dati di cui è titolare l'azienda si tengono e si cancellano come dice l'${ACCORDO}.`] }],
     },
@@ -91,9 +90,9 @@ export const INFORMATIVA_PRIVACY: Documento = {
       dopo: [
         {
           paragrafi: [
-            "Se l'azienda collega un suo account a uno di questi servizi, su sua istruzione passiamo al servizio i dati che servono. Non sono nostri fornitori: ognuno tratta i dati come titolare autonomo.",
+            "Se l'azienda collega un suo account a uno dei servizi qui sotto, su sua istruzione passiamo al servizio i dati che servono. Non sono nostri fornitori: ognuno tratta i dati come titolare autonomo.",
           ],
-          elenco: SERVIZI_COLLEGATI.map(voceCollegato),
+          elenco: SERVIZI_COLLEGATI.map(voceServizioCollegato),
         },
       ],
     },
@@ -134,9 +133,10 @@ export const INFORMATIVA_PRIVACY: Documento = {
     {
       id: "cookie",
       titolo: "Cookie e memoria del browser",
-      paragrafi: ["Usiamo solo due cookie, tutti e due tecnici:"],
+      paragrafi: ["Usiamo solo cookie tecnici:"],
       elenco: [
         "sessione dell'accesso, per restare dentro senza rifare il login a ogni pagina;",
+        "verifica in due passaggi, per pochi minuti durante l'accesso con il codice;",
         "dispositivo, per riconoscere il telefono o il tablet condiviso su cui i dipendenti entrano con il PIN.",
       ],
       dopo: [

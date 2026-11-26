@@ -11,7 +11,10 @@ export type Sezione = { id: string; titolo: string; paragrafi: string[]; elenco?
 
 export type Documento = { titolo: string; versione: string /* AAAA-MM-GG, da consensi.ts */; sezioni: Sezione[] };
 
-export type Fornitore = { nome: string; cosa: string; dove: string; garanzia: string; soloSe?: string };
+export type Fornitore = { nome: string; cosa: string; dove: string; garanzia: string };
+
+/** Un servizio che l'azienda collega con un suo account: non è un nostro fornitore, tratta i dati come titolare autonomo. */
+export type ServizioCollegato = { nome: string; cosa: string; soloSe: string };
 
 const FUORI_UE = "decisione di adeguatezza (EU-US Data Privacy Framework) o clausole contrattuali standard, artt. 44 e seguenti del GDPR";
 
@@ -32,23 +35,17 @@ export const FORNITORI: Fornitore[] = [
 
 // Servizi che l'azienda collega con un suo account: non sono nostri fornitori. Su istruzione dell'azienda passiamo
 // loro i dati che servono; li trattano come titolari autonomi. Openapi: visura-server.ts usa il token dell'azienda.
-const AUTONOMO = "titolare autonomo dei dati che riceve, secondo la sua informativa";
-export const SERVIZI_COLLEGATI: Fornitore[] = [
-  {
-    nome: "eBay",
-    cosa: "pubblicazione degli annunci dei ricambi e ricezione degli ordini",
-    dove: "come indicato nella sua informativa",
-    garanzia: AUTONOMO,
-    soloSe: "l'azienda collega il suo account eBay",
-  },
-  {
-    nome: "Openapi",
-    cosa: "visure PRA dei veicoli",
-    dove: "come indicato nella sua informativa",
-    garanzia: AUTONOMO,
-    soloSe: "l'azienda collega il suo account Openapi",
-  },
+export const SERVIZI_COLLEGATI: ServizioCollegato[] = [
+  { nome: "eBay", cosa: "pubblicazione degli annunci dei ricambi e ricezione degli ordini", soloSe: "l'azienda collega il suo account eBay" },
+  { nome: "Openapi", cosa: "visure PRA dei veicoli", soloSe: "l'azienda collega il suo account Openapi" },
 ];
+
+/** Voce di elenco di un fornitore (sub-responsabile), uguale in /privacy e nell'accordo. */
+export const voceFornitore = (f: Fornitore) => `${f.nome}: ${f.cosa}. Dove: ${f.dove}. Garanzia: ${f.garanzia}.`;
+
+/** Voce di elenco di un servizio collegato dall'azienda, uguale in /privacy e nell'accordo. */
+export const voceServizioCollegato = (s: ServizioCollegato) =>
+  `${s.nome}, solo se ${s.soloSe}: ${s.cosa}. È titolare autonomo: dove e come tratta i dati lo dice la sua informativa.`;
 
 /** "2026-11-27" → "27 novembre 2026". È una data senza ora: niente fusi orari. Una data impossibile è un errore. */
 export function dataVersione(v: string): string {

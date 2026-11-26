@@ -1,19 +1,18 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { BRAND, PRODUTTORE } from "@/lib/config";
+import { CONDIZIONI } from "@/lib/legale/condizioni";
+import { DocumentoLegale } from "@/components/sito/DocumentoLegale";
+import { SITO } from "@/components/sito/Sito";
 
-export const metadata: Metadata = { title: "Condizioni del servizio · Gestionale", robots: { index: false } };
+// Condizioni del servizio pubbliche, con l'accordo sul trattamento dei dati in fondo (ancora #accordo, l'id della
+// sezione): si aprono senza accesso (percorsi.ts) e si indicizzano (robots.ts, sitemap.ts).
+export const metadata: Metadata = {
+  metadataBase: new URL(SITO),
+  title: `${CONDIZIONI.titolo} · ${BRAND.azienda}`,
+  description: `Le condizioni con cui ${PRODUTTORE.ragioneSociale} fornisce ${BRAND.azienda}, il gestionale per autodemolizioni: prova gratuita, abbonamento a moduli, commissione sulle vendite online, disdetta e accordo sul trattamento dei dati.`,
+  alternates: { canonical: "/condizioni" },
+};
 
-// Segnaposto: il testo delle condizioni arriverà più avanti.
 export default function CondizioniPage() {
-  return (
-    <main className="grid min-h-dvh place-items-center bg-ground px-4 py-10">
-      <div className="label-sheet w-full max-w-md space-y-4 p-5">
-        <h1 className="code text-[18px] font-bold uppercase tracking-wide text-ink">Condizioni del servizio</h1>
-        <p className="text-[16px] text-ink-2">Condizioni del servizio: in preparazione.</p>
-        <Link href="/registrati" className="inline-flex min-h-11 items-center text-[14px] font-semibold text-band underline">
-          Torna alla registrazione
-        </Link>
-      </div>
-    </main>
-  );
+  return <DocumentoLegale documento={CONDIZIONI} />;
 }
