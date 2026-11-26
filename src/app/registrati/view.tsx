@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { BRAND } from "@/lib/config";
 import { Button, Field, Notice } from "@/components/ui";
+import { CLAUSOLE_SPECIFICHE, CONDIZIONI } from "@/lib/legale/condizioni";
 import { RimandaEmail } from "../accesso/rimanda-email";
 
 // Registrazione libera: dopo l'invio non si entra, si conferma l'email (il link fa partire la prova di 15 giorni).
@@ -123,6 +124,16 @@ export function RegistratiView({ prova }: { prova: boolean }) {
                 (artt. 1341 e 1342 c.c.)
               </span>
             </label>
+            <ul className="space-y-1 break-words pl-9 text-[13px] leading-snug text-ink-3">
+              {CLAUSOLE_SPECIFICHE.map((c) => {
+                const i = CONDIZIONI.sezioni.findIndex((s) => s.id === c.sezione);
+                return (
+                  <li key={c.clausola}>
+                    {c.clausola} (punto {i + 1}, {CONDIZIONI.sezioni[i].titolo})
+                  </li>
+                );
+              })}
+            </ul>
             <p className="text-[15px] text-ink">
               Ho letto l&apos;
               <Link href="/privacy" target="_blank" className="font-semibold text-band underline">

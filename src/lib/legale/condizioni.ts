@@ -94,7 +94,7 @@ const SEZIONI: Sezione[] = [
       paragrafi: [
         `L'azienda può disdire in ogni momento dalla pagina Abbonamento, con ${PORTALE}. La disdetta vale alla fine del periodo già pagato: fino ad allora il gestionale funziona come prima e l'abbonamento si può riattivare.`,
         "Con la disdetta non rimborsiamo la parte del periodo in corso. Un rimborso c'è solo se l'azienda recede per una modifica in peggio delle condizioni o dei prezzi, o per un nuovo sub-responsabile, come dicono la sezione sulle modifiche e l'accordo.",
-        "Dopo la fine il gestionale si blocca. I dati restano per 12 mesi, così l'azienda può riattivare l'abbonamento e ritrovarli; poi li cancelliamo, tranne quello che la legge ci chiede di tenere, come le fatture. Lo stesso vale per una prova finita senza abbonamento.",
+        "Dopo la fine il gestionale si blocca. I dati restano per 12 mesi, o meno se l'azienda ci chiede prima la cancellazione scrivendo alla PEC, così può riattivare l'abbonamento e ritrovarli; poi li cancelliamo, tranne quello che la legge ci chiede di tenere, come le fatture. Lo stesso vale per una prova finita senza abbonamento.",
         `Prima della cancellazione l'azienda può chiedere una copia dei suoi dati alla PEC ${PEC}.`,
         "Possiamo sospendere o chiudere l'account se l'azienda non paga la commissione, o se usa il servizio in modo illecito o contro queste condizioni. Prima la avvisiamo per email, salvo i casi urgenti, come un attacco alla piattaforma. Il blocco dopo un pagamento dell'abbonamento non riuscito invece è automatico, come detto sopra.",
       ],
@@ -154,7 +154,7 @@ const SEZIONI: Sezione[] = [
         "aiutare l'azienda a rispondere alle richieste delle persone sui loro dati (accesso, correzione, cancellazione e le altre del GDPR). Se una richiesta arriva a noi, la passiamo all'azienda;",
         "avvisare l'azienda senza ingiustificato ritardo, all'email di chi ha registrato l'azienda, se scopriamo una violazione dei suoi dati, con le informazioni che le servono per valutarla e, se serve, per notificarla al Garante;",
         "aiutare l'azienda, per la nostra parte, con la sicurezza, la valutazione d'impatto e la consultazione del Garante (artt. 32-36 del GDPR);",
-        `alla fine del contratto restituire all'azienda una copia dei dati, se la chiede alla PEC ${PEC}, e poi cancellarli entro 12 mesi dalla fine, tranne quello che la legge ci obbliga a tenere;`,
+        `alla fine del contratto restituire all'azienda una copia dei dati, se la chiede alla PEC ${PEC}, e poi cancellarli entro 12 mesi dalla fine, o prima se l'azienda chiede la cancellazione alla PEC, tranne quello che la legge ci obbliga a tenere;`,
         "dare all'azienda le informazioni che servono a dimostrare che rispettiamo questo accordo, e permettere controlli, anche ispezioni, da parte sua o di un revisore da lei incaricato, su richiesta scritta alla PEC e con un preavviso ragionevole.",
       ],
       dopo: [

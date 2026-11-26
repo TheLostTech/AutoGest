@@ -125,3 +125,8 @@ Cosa cambia:
 - La pulizia automatica che i testi promettono: registrazioni mai confermate e prove finite senza abbonamento cancellate dopo 12 mesi; dati di chi disdice cancellati 12 mesi dopo la fine.
 - Le chiavi Stripe vere con la regola per gli abbonamenti pagati in prova (`docs/PAGAMENTI.md`).
 - IVA e fattura elettronica da confermare con il commercialista (`docs/PAGAMENTI.md`).
+- Verificare che `gustipreziosisrls@pec.cgn.it` sia la PEC di LOSTAR al Registro Imprese e che riceva anche email normali; se no, aggiungere un indirizzo ordinario per i diritti privacy e la revoca del consenso.
+- Il tetto di 24 mesi per i contatti commerciali (oggi nessun meccanismo).
+- La pulizia automatica deve tenere fuori dalla cancellazione dell'azienda la scheda `registrazione` (prova dei consensi, 10 anni) e i dati di fatturazione.
+- Righe dei limiti per indirizzo IP di Better Auth (`rateLimit.storage: "database"`) e contatori della verifica in due passaggi: controllare se si cancellano da sole, altrimenti una pulizia o una riga sui tempi nell'informativa.
+- Per il consulente: 30 giorni invece di 12 mesi per le registrazioni mai confermate; Stripe e Resend come sub-responsabili; se la casella online vale come approvazione «per iscritto» (art. 1341); limite di responsabilità a 0 € durante la prova; P. IVA alla registrazione.

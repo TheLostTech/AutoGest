@@ -274,3 +274,8 @@ test("parti e accordo: attività d'impresa o professionale, email di chi ha regi
   assert.doesNotMatch(accordo, /per email al titolare/);
   assert.match(accordo, /risponde per intero[^.]*sub-responsabili[^.]*art\. 28\.4/);
 });
+
+test("l'accordo dice che il recesso vale prima che il cambio di sub-responsabile valga", () => {
+  const accordo = CONDIZIONI.sezioni.at(-1)!;
+  assert.ok(testoSezione(accordo).includes("prima che il cambio valga"));
+});

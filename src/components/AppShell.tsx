@@ -343,11 +343,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
         <div className="border-t border-white/20 px-4 py-3">
           <LostarCredit className="text-white/75 hover:text-white" />
-          <p className="mt-1 flex gap-3 text-[12px] text-white/75">
-            <Link href="/privacy" target="_blank" className="hover:text-white hover:underline">
+          <p className="mt-1 flex gap-3 text-[13px] text-white/75">
+            <Link href="/privacy" target="_blank" className="inline-flex min-h-8 items-center py-1 hover:text-white hover:underline">
               Privacy
             </Link>
-            <Link href="/condizioni" target="_blank" className="hover:text-white hover:underline">
+            <Link href="/condizioni" target="_blank" className="inline-flex min-h-8 items-center py-1 hover:text-white hover:underline">
               Condizioni
             </Link>
           </p>

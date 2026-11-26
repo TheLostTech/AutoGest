@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { dataVersione, pezziTesto, type Blocco, type Documento, type Sezione } from "@/lib/legale/comune";
 import { Piede, Testata } from "./Sito";
+import { VaiAllAncora } from "./VaiAllAncora";
 
 // Pagina di un documento legale pubblico (/privacy, /condizioni): titolo, versione, indice con ancore, sezioni.
 // La versione è quella di consensi.ts, la stessa salvata con il consenso. Server component.
@@ -99,6 +100,7 @@ export function DocumentoLegale({ documento }: { documento: Documento }) {
         </div>
       </main>
       <Piede />
+      <VaiAllAncora />
     </div>
   );
 }

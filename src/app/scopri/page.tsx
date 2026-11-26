@@ -4,6 +4,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { BRAND, PRODUTTORE } from "@/lib/config";
+import { GIORNI_PROVA } from "@/lib/abbonamento";
 import { ORDINE_MODULI } from "@/lib/moduli";
 import { LISTINO, euro } from "@/lib/listino";
 import { Piede, REGISTRAZIONE, SITO, Testata } from "@/components/sito/Sito";
@@ -130,7 +131,7 @@ const OBBLIGHI = [
 
 const ATTIVAZIONE = [
   { titolo: "Ti registri", testo: "Crei l'account della tua azienda dal sito e confermi l'email." },
-  { titolo: "15 giorni con tutto", testo: "Tutti i moduli sono accesi, senza carta, sul tuo piazzale." },
+  { titolo: `${GIORNI_PROVA} giorni con tutto`, testo: "Tutti i moduli sono accesi, senza carta, sul tuo piazzale." },
   { titolo: "Scegli i moduli", testo: "Al mese o all'anno. Paghi con carta su Stripe e il gestionale resta aperto." },
 ] as const;
 
@@ -175,7 +176,7 @@ export default function ScopriPage() {
                   Come ti tiene in regola
                 </a>
               </div>
-              <p className="mt-3 text-[15px] font-semibold text-ink-2">15 giorni con tutto incluso, senza carta</p>
+              <p className="mt-3 text-[15px] font-semibold text-ink-2">{GIORNI_PROVA} giorni con tutto incluso, senza carta</p>
               <p className="mt-6 max-w-[52ch] text-[15px] text-ink-3">
                 Gira nel browser: telefono in piazzale, computer al banco, pistola laser in magazzino. Niente da installare sui telefoni.
               </p>

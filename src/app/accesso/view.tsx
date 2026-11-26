@@ -189,6 +189,14 @@ function AccessoEmail({ da, onNomi }: { da: string; onNomi?: () => void }) {
             Non hai un account? Registrati gratis
           </Link>
         </div>
+        <p className="flex justify-center gap-4 text-[13px] text-ink-3">
+          <Link href="/privacy" target="_blank" className="inline-flex min-h-11 items-center underline">
+            Privacy
+          </Link>
+          <Link href="/condizioni" target="_blank" className="inline-flex min-h-11 items-center underline">
+            Condizioni
+          </Link>
+        </p>
         {onNomi && (
           <div className="mt-4 text-center">
             <button type="button" onClick={onNomi} className="min-h-11 px-2 text-[14px] font-semibold text-ink-3 underline">
