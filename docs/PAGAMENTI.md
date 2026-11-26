@@ -4,10 +4,13 @@ Come si registra una nuova autodemolizione, come paga l'abbonamento (Stripe) e c
 
 ## Come funziona in breve
 
-- **Registrazione con codice invito.** Il super admin crea i codici in Piattaforma, Inviti; chi li riceve apre `/registrati` e crea la propria azienda (`src/app/registrati`, `src/app/api/registrazione`). Il registrante diventa `responsabile` (il titolare) dell'azienda.
+- **Registrazione libera.** Chiunque apre `/registrati` e crea la propria azienda, senza codice invito (`src/app/registrati`, `src/app/api/registrazione`). Il telefono è facoltativo. I consensi si salvano con versione, ora e indirizzo IP. La registrazione è protetta da BotID su Vercel; fuori da Vercel, in produzione, passa solo con `PIAZZALE_SENZA_BOTID=1` (resta il limite di 3 all'ora per indirizzo). Il registrante diventa `responsabile` (il titolare) dell'azienda.
+- **Email di conferma.** Parte da Lostar Technology tramite Resend (`src/lib/email/`). Il link porta a `/conferma` (valido 48 ore) e lì serve la password scelta alla registrazione (`src/app/api/conferma`). Senza conferma non si entra.
 - **Dipendenti.** Il titolare crea gli accessi della sua gente da Impostazioni, Persone (nome, ruoli, email e password oppure solo PIN). Vedi `docs/ACCESSO.md`.
 - **Stato dell'abbonamento.** Ogni azienda ha il suo: su disco in `DATI_DIR/aziende/<id>/abbonamento.json`, con Supabase nella tabella `documento` (tipo `abbonamento`, vedi `docs/SUPABASE.md`) (`src/lib/abbonamento*.ts`). Stati: nuovo, attivo, in ritardo, disdetto, scaduto. Il server decide, mai il browser.
-- **Prova fino al primo veicolo.** Un'azienda nuova lavora finché non carica il primo veicolo; poi compare il riquadro di pagamento (`src/components/RiquadroPagamento.tsx`) e, senza abbonamento, il gestionale si blocca. Un abbonamento scaduto blocca sempre. I dati restano visibili.
+- **Prova di 15 giorni con tutti i moduli.** Parte alla conferma dell'email (`GIORNI_PROVA` in `src/lib/abbonamento.ts`). Durante la prova, in cima al gestionale c'è la fascia con i giorni rimasti e il pulsante "Scegli i moduli". Alla fine, senza abbonamento, compare il riquadro di pagamento (`src/components/RiquadroPagamento.tsx`) con già spuntati i moduli che l'azienda ha usato, e il gestionale si blocca. Un abbonamento scaduto blocca sempre. I dati restano visibili.
+- **Avvisi di fine prova.** Un'email tre giorni prima e una alla fine, una volta sola ciascuna. Li manda un giro giornaliero alle 09:00 (Europe/Rome), pianificato in `vercel.json`, che chiama `/api/pianificato/prova`. La route risponde 401 senza `Authorization: Bearer <CRON_SECRET>` (`CRON_SECRET`, almeno 16 caratteri).
+- **Strumenti di prova per la prova gratuita.** Con le chiavi di prova di Stripe, su Abbonamento compaiono "+1 giorno" e "+1 settimana" anche durante la prova gratuita, per farla scorrere senza aspettare (vedi Orologio di prova).
 - **Negozio online chiuso durante il blocco.** Il negozio di un'azienda registrata e bloccata risponde "chiuso". Le altre aziende non cambiano.
 - **Checkout.** `src/app/api/abbonamento/checkout` apre il pagamento su Stripe. Si sceglie mese o anno per tutti i moduli insieme (Stripe non mescola i due periodi nello stesso abbonamento).
 - **Pagina Abbonamento.** Conto alla rovescia, aggiunta o rimozione di moduli (`/api/abbonamento/moduli`), portale clienti di Stripe (`/api/abbonamento/portale`) per carta, fatture, dati di fatturazione e disdetta a fine periodo. Il cambio da mensile ad annuale non c'è: si disdice e, alla scadenza, si fa un nuovo abbonamento.
@@ -23,6 +26,9 @@ Come si registra una nuova autodemolizione, come paga l'abbonamento (Stripe) e c
 | `STRIPE_SECRET_KEY` | Chiave segreta di Stripe. `sk_test_…` o `rk_test_…`: modalità **prova** (sandbox AutoLost demo). `sk_live_…` o `rk_live_…`: vale solo con `STRIPE_LIVE=1`, altrimenti Stripe resta **spento**. Se manca, Stripe è spento: nessun pagamento. Mai nel codice, mai in un file versionato. |
 | `STRIPE_WEBHOOK_SECRET` | Segreto di firma degli avvisi (`whsec_…`): quello dell'endpoint in dashboard, oppure quello stampato da `stripe listen` in locale. Senza, il webhook risponde 503. |
 | `STRIPE_LIVE` | `1` solo quando si andrà con chiavi vere. Con qualunque altro valore una chiave live viene ignorata. |
+| `RESEND_API_KEY`, `EMAIL_MITTENTE` | Invio delle email di conferma e degli avvisi. Il mittente è `Lostar Technology <noreply@lostartechnology.com>`. Vedi `docs/ACCESSO.md`. |
+| `CRON_SECRET` | Segreto (almeno 16 caratteri) che Vercel manda al giro giornaliero degli avvisi. Senza, la route risponde 401. |
+| `BETTER_AUTH_URL`, `PIAZZALE_SENZA_BOTID` | Indirizzo pubblico per i link nelle email (obbligatorio in produzione fuori da Vercel) e rinuncia a BotID fuori da Vercel. Vedi `docs/ACCESSO.md`. |
 | `INDIRIZZO_GESTIONALE` | Facoltativo. Indirizzo di riserva per i ritorni da Stripe (Checkout, portale) quando la richiesta non porta `Origin`. Di solito Stripe riporta il titolare all'indirizzo da cui sta usando il gestionale (tunnel, rete locale), dove ha il cookie della sessione. |
 
 In Piattaforma una riga dice in che modalità è Stripe: "Stripe: prova (AutoLost demo)", "Stripe: live" o "Stripe: spento".
@@ -97,7 +103,7 @@ Con le chiavi di prova ogni cliente Stripe nasce dentro un orologio di prova (te
 - **Un solo processo Node.** Le code e i blocchi (un Checkout per volta, un cambio di moduli per volta, i 15 secondi tra sincronizzazioni) stanno in memoria: valgono per un solo processo e si azzerano al riavvio. Con più processi o più server non bastano.
 - **Cliente cancellato su Stripe.** Se il cliente, l'abbonamento o l'orologio di prova non esistono più (cancellati dalla dashboard), la sincronizzazione non sbaglia a ogni giro: l'azienda resta senza abbonamenti (scaduta se aveva pagato, altrimenti nuova) e il prossimo Checkout crea un cliente nuovo.
 - **Aziende di prova e chiavi vere.** Le aziende create con le chiavi di prova non si sincronizzano con le chiavi live (i loro id non esistono lì): se mai pagate si riparte da zero, se già pagate l'app rifiuta e serve l'assistenza. Le aziende di prova e i loro clienti Stripe non si eliminano (rimandato).
-- **Rimandato:** email (conferma indirizzo, recupero password, inviti, ricevute nostre); periodo di prova gratuito a tempo, codici sconto, prezzo "Completo"; registrazione aperta senza codice invito (serve una protezione dai robot); chiavi live e endpoint definitivo.
+- **Rimandato:** recupero password, inviti ai dipendenti per email, ricevute nostre; codici sconto, prezzo "Completo"; chiavi live e endpoint definitivo.
 
 ## Prova completa
 
@@ -105,10 +111,10 @@ Su una porta nuova e un `DATI_DIR` nuovo, con `stripe listen` acceso se c'è `st
 
 | # | Passo | Esito |
 |---|---|---|
-| 1 | Invito creato in Piattaforma, Inviti | |
-| 2 | Registrazione con il codice | |
-| 3 | Primo veicolo caricato | |
-| 4 | Compare il riquadro di pagamento | |
+| 1 | Registrazione su `/registrati`, senza invito | |
+| 2 | Email di conferma e `/conferma` con la password | |
+| 3 | Fascia della prova con i giorni rimasti | |
+| 4 | +1 settimana fino a fine prova: compare il riquadro di pagamento, con i moduli usati già spuntati | |
 | 5 | Checkout mensile con 4242 | |
 | 6 | Moduli accesi dopo il pagamento | |
 | 7 | Aggiunta di un modulo | |

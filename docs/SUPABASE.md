@@ -30,6 +30,10 @@ Su Vercel le variabili dell'ambiente **Preview** per ora sono impostate solo per
 | `DATABASE_URL` | Stringa del pooler in modalità transazione (porta 6543): `postgresql://postgres.<ref>:<password>@aws-0-eu-central-1.pooler.supabase.com:6543/postgres`. Dalla stringa copiata dal pannello vanno tolte le parentesi quadre di `[YOUR-PASSWORD]`. |
 | `BETTER_AUTH_SECRET` | Obbligatoria online: senza disco non c'è dove scrivere il segreto di riserva. |
 | `CHIAVE_COLLEGAMENTI` | 64 caratteri esadecimali (`openssl rand -hex 32`), obbligatoria online. Sostituisce il file `.chiave-collegamenti`. |
+| `RESEND_API_KEY`, `EMAIL_MITTENTE` | Email di conferma e avvisi. Mittente: `Lostar Technology <noreply@lostartechnology.com>`. |
+| `BETTER_AUTH_URL` | Indirizzo pubblico per i link nelle email; obbligatoria in produzione fuori da Vercel (su Vercel si deduce dal progetto). |
+| `CRON_SECRET` | Almeno 16 caratteri: protegge `/api/pianificato/prova`, il giro giornaliero degli avvisi di fine prova. |
+| `PIAZZALE_SENZA_BOTID` | `1` solo per i server fuori da Vercel in produzione: salta BotID alla registrazione. |
 
 Preview e Production usano valori diversi per i due segreti. Nei documenti non si scrive mai una chiave, una password o una stringa di connessione vera.
 
