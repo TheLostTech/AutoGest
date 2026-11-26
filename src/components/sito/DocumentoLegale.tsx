@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { dataVersione, pezziTesto, type Documento, type Sezione } from "@/lib/legale/comune";
+import { dataVersione, pezziTesto, type Blocco, type Documento, type Sezione } from "@/lib/legale/comune";
 import { Piede, Testata } from "./Sito";
 
 // Pagina di un documento legale pubblico (/privacy, /condizioni): titolo, versione, indice con ancore, sezioni.
@@ -32,23 +32,33 @@ function Parte({ sezione, numero }: { sezione: Sezione; numero: number }) {
         {sezione.titolo}
       </h2>
       <div className="mt-4 space-y-4 text-[17px] leading-[1.65] text-ink-2 md:text-[18px]">
-        {sezione.paragrafi.map((p) => (
-          <p key={p}>
-            <Testo s={p} />
-          </p>
+        {[sezione, ...(sezione.dopo ?? [])].map((b, i) => (
+          <ParteBlocco key={i} blocco={b} />
         ))}
-        {sezione.elenco && (
-          <ul className="space-y-3">
-            {sezione.elenco.map((v) => (
-              <li key={v} className="relative pl-6">
-                <span className="absolute left-0 top-[0.62em] size-2.5 rounded-full bg-band" aria-hidden />
-                <Testo s={v} />
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
     </section>
+  );
+}
+
+function ParteBlocco({ blocco }: { blocco: Blocco }) {
+  return (
+    <>
+      {blocco.paragrafi.map((p) => (
+        <p key={p}>
+          <Testo s={p} />
+        </p>
+      ))}
+      {blocco.elenco && (
+        <ul className="space-y-3">
+          {blocco.elenco.map((v) => (
+            <li key={v} className="relative pl-6">
+              <span className="absolute left-0 top-[0.62em] size-2.5 rounded-full bg-band" aria-hidden />
+              <Testo s={v} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 

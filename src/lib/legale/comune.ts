@@ -1,9 +1,13 @@
 // Pezzi comuni dei documenti legali pubblici (/privacy, /condizioni): forma del testo, fornitori, data della versione.
 // Puro: le pagine li mostrano con DocumentoLegale. Piano 3, Task 1.
+import { MESI } from "../periodo.ts";
 
-// Una sezione si mostra con i paragrafi e poi, se c'è, l'elenco puntato: il testo che introduce l'elenco è l'ultimo paragrafo.
-// Nei paragrafi e nell'elenco [testo](indirizzo) diventa un link.
-export type Sezione = { id: string; titolo: string; paragrafi: string[]; elenco?: string[] };
+/** Paragrafi e poi, se c'è, elenco puntato: il testo che introduce l'elenco è l'ultimo paragrafo. */
+export type Blocco = { paragrafi: string[]; elenco?: string[] };
+
+// Una sezione si mostra con i paragrafi, poi l'elenco, poi i blocchi di `dopo` nello stesso ordine
+// (per il testo che viene dopo un elenco, o per un secondo elenco). Ovunque [testo](indirizzo) diventa un link.
+export type Sezione = { id: string; titolo: string; paragrafi: string[]; elenco?: string[]; dopo?: Blocco[] };
 
 export type Documento = { titolo: string; versione: string /* AAAA-MM-GG, da consensi.ts */; sezioni: Sezione[] };
 
@@ -11,29 +15,49 @@ export type Fornitore = { nome: string; cosa: string; dove: string; garanzia: st
 
 const FUORI_UE = "decisione di adeguatezza (EU-US Data Privacy Framework) o clausole contrattuali standard, artt. 44 e seguenti del GDPR";
 
-// Decisione del 26/11/2026: i fornitori si nominano. Supabase compare solo qui e nell'accordo, mai altrove.
+// Sub-responsabili: trattano i dati per conto nostro (e, per i dati dell'azienda, come sub-responsabili).
+// Decisione del 26/11/2026: si nominano. Supabase compare solo qui e nell'accordo, mai altrove.
+// Le funzioni di Vercel girano negli Stati Uniti (iad1); il dominio di invio di Resend è in eu-west-1.
 export const FORNITORI: Fornitore[] = [
-  { nome: "Vercel", cosa: "hosting del gestionale e delle sue funzioni, controllo anti-robot (BotID)", dove: "Stati Uniti", garanzia: FUORI_UE },
-  { nome: "Supabase", cosa: "database e spazio per i file", dove: "Unione europea (Francoforte, Germania)", garanzia: "i dati restano su server nell'Unione europea" },
-  { nome: "Stripe", cosa: "pagamento dell'abbonamento", dove: "Unione europea e Stati Uniti", garanzia: FUORI_UE },
-  { nome: "Resend", cosa: "invio delle email del servizio", dove: "Stati Uniti", garanzia: FUORI_UE },
+  { nome: "Vercel", cosa: "hosting ed elaborazione del gestionale, controllo anti-robot (BotID)", dove: "Stati Uniti", garanzia: FUORI_UE },
+  { nome: "Supabase", cosa: "database e spazio per i file", dove: "Unione europea (Francoforte, Germania)", garanzia: "dati conservati su server nell'Unione europea" },
   {
-    nome: "eBay",
-    cosa: "pubblicazione degli annunci e ricezione degli ordini sul conto eBay dell'azienda",
+    nome: "Stripe",
+    cosa: "pagamento dell'abbonamento; per alcuni dati, come la prevenzione delle frodi, Stripe è titolare autonomo secondo la sua informativa",
     dove: "Unione europea e Stati Uniti",
     garanzia: FUORI_UE,
+  },
+  { nome: "Resend", cosa: "invio delle email del servizio", dove: "Unione europea (Irlanda) per l'invio; società con sede negli Stati Uniti", garanzia: FUORI_UE },
+];
+
+// Servizi che l'azienda collega con un suo account: non sono nostri fornitori. Su istruzione dell'azienda passiamo
+// loro i dati che servono; li trattano come titolari autonomi. Openapi: visura-server.ts usa il token dell'azienda.
+const AUTONOMO = "titolare autonomo dei dati che riceve, secondo la sua informativa";
+export const SERVIZI_COLLEGATI: Fornitore[] = [
+  {
+    nome: "eBay",
+    cosa: "pubblicazione degli annunci dei ricambi e ricezione degli ordini",
+    dove: "come indicato nella sua informativa",
+    garanzia: AUTONOMO,
     soloSe: "l'azienda collega il suo account eBay",
+  },
+  {
+    nome: "Openapi",
+    cosa: "visure PRA dei veicoli",
+    dove: "come indicato nella sua informativa",
+    garanzia: AUTONOMO,
+    soloSe: "l'azienda collega il suo account Openapi",
   },
 ];
 
-const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
-
-/** "2026-11-27" → "27 novembre 2026". È una data senza ora: niente fusi orari. */
+/** "2026-11-27" → "27 novembre 2026". È una data senza ora: niente fusi orari. Una data impossibile è un errore. */
 export function dataVersione(v: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
-  const mese = m ? MESI[Number(m[2]) - 1] : undefined;
-  if (!m || !mese) throw new Error(`Versione non valida: ${v}`);
-  return `${Number(m[3])} ${mese} ${m[1]}`;
+  const [anno, mese, giorno] = m ? [Number(m[1]), Number(m[2]), Number(m[3])] : [0, 0, 0];
+  // Giorno 0 del mese dopo = ultimo giorno del mese (calendario UTC: nessun fuso)
+  const giorniDelMese = mese >= 1 && mese <= 12 ? new Date(Date.UTC(anno, mese, 0)).getUTCDate() : 0;
+  if (!m || giorno < 1 || giorno > giorniDelMese) throw new Error(`Versione non valida: ${v}`);
+  return `${giorno} ${MESI[mese - 1]} ${anno}`;
 }
 
 export type PezzoTesto = string | { testo: string; href: string };

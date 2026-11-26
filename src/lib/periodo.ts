@@ -4,7 +4,7 @@
 // manuale RENTRI §3.2.1 e §4.2 (registrazione numerata non modificabile: rettifica o annullamento).
 import type { Fir, WasteMove } from "./types";
 
-const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
+export const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
 
 // Il mese si legge in ora locale: le 23:30 del 31 ottobre in Italia sono ottobre
 export function monthKey(iso: string): string {
