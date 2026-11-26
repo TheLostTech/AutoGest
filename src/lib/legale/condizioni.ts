@@ -10,7 +10,7 @@ import { VERSIONE_CONDIZIONI } from "../consensi.ts";
 import { COMMISSIONE_ONLINE, euro, LISTINO } from "../listino.ts";
 import { GIORNI_PROVA } from "../abbonamento.ts";
 import { ORDINE_MODULI } from "../moduli.ts";
-import { FORNITORI, SERVIZI_COLLEGATI, voceFornitore, voceServizioCollegato, type Documento } from "./comune.ts";
+import { FORNITORI, SERVIZI_COLLEGATI, voceFornitore, voceServizioCollegato, type Documento, type Sezione } from "./comune.ts";
 
 const NOI = PRODUTTORE.ragioneSociale;
 const PEC = `[${PRODUTTORE.pec}](mailto:${PRODUTTORE.pec})`;
@@ -26,10 +26,9 @@ const elencoNomi = (nomi: string[]) => (nomi.length < 2 ? nomi.join("") : `${nom
 const vocePrezzo = (m: (typeof ORDINE_MODULI)[number]) =>
   `${LISTINO[m].nome}: ${euro(LISTINO[m].mese)} al mese oppure ${euro(LISTINO[m].anno)} all'anno${m === "magazzino" ? ", sempre compreso" : ""}.`;
 
-export const CONDIZIONI: Documento = {
-  titolo: "Condizioni del servizio",
-  versione: VERSIONE_CONDIZIONI,
-  sezioni: [
+const RECESSO_CON_RIMBORSO = `può recedere prima che valga, scrivendo alla PEC ${PEC}: le restituiamo la parte non usata del periodo già pagato, in proporzione ai giorni`;
+
+const SEZIONI: Sezione[] = [
     {
       id: "parti",
       titolo: "Chi siamo e a chi è rivolto il servizio",
@@ -37,7 +36,7 @@ export const CONDIZIONI: Documento = {
         `Queste condizioni regolano l'uso di ${BRAND.azienda}, il gestionale online per autodemolizioni di ${PRODUTTORE.nome}.`,
         `Il servizio lo fornisce ${NOI}, ${PRODUTTORE.sede}, P. IVA e C.F. ${PRODUTTORE.piva}, REA ${PRODUTTORE.rea} («noi»). Il contratto è tra noi e l'impresa che si registra («l'azienda»).`,
         `${BRAND.azienda} è un servizio per autodemolizioni e altre imprese, da usare per la loro attività. Non è rivolto ai consumatori: per questo non si applicano le regole del Codice del consumo pensate per loro, come il recesso di 14 giorni.`,
-        "Chi registra l'azienda dichiara di poterla rappresentare. Il contratto si conclude quando completa la registrazione e accetta queste condizioni.",
+        "Chi registra l'azienda dichiara di poterla rappresentare e di agire per la propria attività d'impresa o professionale. Il contratto si conclude quando completa la registrazione e accetta queste condizioni.",
       ],
     },
     {
@@ -73,7 +72,7 @@ export const CONDIZIONI: Documento = {
             "All'importo si aggiunge l'IVA. Si paga in anticipo, per un mese o per un anno, con carta su Stripe.",
             "L'abbonamento si rinnova da solo alla fine di ogni periodo, con un nuovo addebito sulla carta, finché l'azienda non lo disdice.",
             "Un modulo aggiunto durante il periodo si paga subito, per i giorni che mancano al rinnovo. Un modulo tolto si spegne subito e i giorni non usati diventano credito sulla fattura successiva, se l'abbonamento non è disdetto.",
-            "Se un pagamento non riesce, Stripe riprova da solo. Se alla fine non riesce, l'abbonamento finisce e il gestionale si blocca; i dati restano.",
+            "Se un pagamento non riesce, Stripe riprova da solo e ne avvisa per email. Se alla fine non riesce, l'abbonamento finisce e il gestionale si blocca da solo; i dati restano.",
             `Carta, dati di fatturazione e pagamenti fatti si vedono dalla pagina Abbonamento, con ${PORTALE}.`,
           ],
         },
@@ -84,7 +83,7 @@ export const CONDIZIONI: Documento = {
       titolo: "Commissione sui pezzi venduti online",
       paragrafi: [
         `Quando l'azienda vende un pezzo online con ${BRAND.azienda} (negozio online, eBay o altri marketplace), il prezzo pubblicato è il suo prezzo più l'${PERCENTUALE}. Questo ${PERCENTUALE} è la nostra commissione per la gestione del venduto.`,
-        "Il pagamento dell'acquirente arriva all'azienda, non a noi: per questo la commissione la fatturiamo all'azienda sui pezzi venduti. Se un pezzo viene reso e rimborsato, la commissione su quel pezzo si storna.",
+        "La commissione la fatturiamo all'azienda sui pezzi venduti. Se un pezzo viene reso e rimborsato, la commissione su quel pezzo si storna.",
         "Sui pezzi venduti al banco non c'è nessuna commissione.",
         "Le commissioni dei marketplace le applica il marketplace all'azienda, secondo il contratto che ha con lei.",
       ],
@@ -94,10 +93,10 @@ export const CONDIZIONI: Documento = {
       titolo: "Disdetta e fine del contratto",
       paragrafi: [
         `L'azienda può disdire in ogni momento dalla pagina Abbonamento, con ${PORTALE}. La disdetta vale alla fine del periodo già pagato: fino ad allora il gestionale funziona come prima e l'abbonamento si può riattivare.`,
-        "Non rimborsiamo la parte del periodo in corso.",
+        "Con la disdetta non rimborsiamo la parte del periodo in corso. Un rimborso c'è solo se l'azienda recede per una modifica in peggio delle condizioni o dei prezzi, o per un nuovo sub-responsabile, come dicono la sezione sulle modifiche e l'accordo.",
         "Dopo la fine il gestionale si blocca. I dati restano per 12 mesi, così l'azienda può riattivare l'abbonamento e ritrovarli; poi li cancelliamo, tranne quello che la legge ci chiede di tenere, come le fatture. Lo stesso vale per una prova finita senza abbonamento.",
         `Prima della cancellazione l'azienda può chiedere una copia dei suoi dati alla PEC ${PEC}.`,
-        "Possiamo sospendere o chiudere l'account se l'azienda non paga, o se usa il servizio in modo illecito o contro queste condizioni. Prima la avvisiamo per email, salvo i casi urgenti, come un attacco alla piattaforma.",
+        "Possiamo sospendere o chiudere l'account se l'azienda non paga la commissione, o se usa il servizio in modo illecito o contro queste condizioni. Prima la avvisiamo per email, salvo i casi urgenti, come un attacco alla piattaforma. Il blocco dopo un pagamento dell'abbonamento non riuscito invece è automatico, come detto sopra.",
       ],
     },
     {
@@ -123,8 +122,9 @@ export const CONDIZIONI: Documento = {
       titolo: "Modifiche alle condizioni e ai prezzi",
       paragrafi: [
         "Possiamo cambiare queste condizioni e i prezzi. Le modifiche le diciamo per email almeno 30 giorni prima che valgano, e aggiorniamo la data della versione in cima alla pagina.",
-        "Un nuovo prezzo vale dal primo rinnovo dopo quella data. Se l'azienda non è d'accordo può disdire prima.",
-        "Le modifiche chieste dalla legge, o che non peggiorano le condizioni dell'azienda, possono valere subito.",
+        "Un nuovo prezzo vale dal primo rinnovo dopo quella data.",
+        `Se una modifica peggiora le condizioni per l'azienda, compreso un aumento di prezzo, l'azienda ${RECESSO_CON_RIMBORSO}.`,
+        "Le modifiche che non peggiorano le condizioni dell'azienda, o che la legge impone subito, possono valere prima dei 30 giorni.",
         "Con l'accettazione salviamo la versione delle condizioni, così resta chiaro quale testo l'azienda ha accettato e quando.",
       ],
     },
@@ -152,7 +152,7 @@ export const CONDIZIONI: Documento = {
         `far vedere i dati solo alle persone di ${NOI} autorizzate, per assistenza e manutenzione, e tenute alla riservatezza. Quando entriamo nel gestionale dell'azienda per assistenza, l'accesso resta nel suo registro delle attività;`,
         "proteggere i dati con misure adatte (art. 32): accessi personali con password o PIN e ruoli che limitano cosa vede ognuno; blocchi dopo troppi tentativi sbagliati; collegamenti cifrati tra browser, server e database; database e file raggiungibili solo dal server del gestionale, mai direttamente dal browser; credenziali dei servizi collegati salvate cifrate;",
         "aiutare l'azienda a rispondere alle richieste delle persone sui loro dati (accesso, correzione, cancellazione e le altre del GDPR). Se una richiesta arriva a noi, la passiamo all'azienda;",
-        "avvisare l'azienda senza ingiustificato ritardo, per email al titolare, se scopriamo una violazione dei suoi dati, con le informazioni che le servono per valutarla e, se serve, per notificarla al Garante;",
+        "avvisare l'azienda senza ingiustificato ritardo, all'email di chi ha registrato l'azienda, se scopriamo una violazione dei suoi dati, con le informazioni che le servono per valutarla e, se serve, per notificarla al Garante;",
         "aiutare l'azienda, per la nostra parte, con la sicurezza, la valutazione d'impatto e la consultazione del Garante (artt. 32-36 del GDPR);",
         `alla fine del contratto restituire all'azienda una copia dei dati, se la chiede alla PEC ${PEC}, e poi cancellarli entro 12 mesi dalla fine, tranne quello che la legge ci obbliga a tenere;`,
         "dare all'azienda le informazioni che servono a dimostrare che rispettiamo questo accordo, e permettere controlli, anche ispezioni, da parte sua o di un revisore da lei incaricato, su richiesta scritta alla PEC e con un preavviso ragionevole.",
@@ -160,18 +160,54 @@ export const CONDIZIONI: Documento = {
       dopo: [
         {
           paragrafi: [
-            "L'azienda ci autorizza a usare questi sub-responsabili. Ognuno è vincolato da un contratto con obblighi di protezione dei dati come quelli di questo accordo:",
+            `L'azienda ci autorizza a usare questi sub-responsabili. Ognuno è vincolato da un contratto con obblighi di protezione dei dati come quelli di questo accordo, e ${NOI} risponde per intero verso l'azienda dei suoi sub-responsabili (art. 28.4 del GDPR):`,
           ],
           elenco: FORNITORI.map(voceFornitore),
         },
         {
           paragrafi: [
-            "Se aggiungiamo o cambiamo un sub-responsabile lo diciamo per email almeno 30 giorni prima. L'azienda può opporsi per motivi legati alla protezione dei dati; se non troviamo una soluzione, può disdire prima che il cambio valga.",
+            `Se aggiungiamo o cambiamo un sub-responsabile lo diciamo per email almeno 30 giorni prima. L'azienda può opporsi per motivi legati alla protezione dei dati; se non troviamo una soluzione, ${RECESSO_CON_RIMBORSO.replace("prima che valga", "prima che il cambio valga")}.`,
             "Questi servizi invece non sono nostri sub-responsabili: l'azienda li collega con un suo account e su sua istruzione passiamo loro i dati che servono.",
           ],
           elenco: SERVIZI_COLLEGATI.map(voceServizioCollegato),
         },
       ],
     },
+];
+
+/**
+ * Clausole onerose da approvare in modo specifico (artt. 1341 e 1342 c.c.), con la seconda casella della registrazione
+ * (Task 3). `sezione` è l'id della sezione dove sta la clausola.
+ */
+export const CLAUSOLE_SPECIFICHE: { sezione: string; clausola: string }[] = [
+  { sezione: "servizio", clausola: "nessuna nostra responsabilità per i servizi di altri collegati dall'azienda e facoltà di cambiare le funzioni" },
+  { sezione: "prova", clausola: "blocco del gestionale alla fine della prova gratuita" },
+  { sezione: "abbonamento", clausola: "rinnovo automatico dell'abbonamento e blocco del gestionale se un pagamento non riesce" },
+  { sezione: "disdetta", clausola: "disdetta valida solo alla fine del periodo pagato, senza rimborso della parte in corso" },
+  { sezione: "disdetta", clausola: "sospensione o chiusura dell'account da parte nostra" },
+  { sezione: "disdetta", clausola: "cancellazione dei dati 12 mesi dopo la fine" },
+  { sezione: "responsabilita", clausola: "limite della nostra responsabilità e nessuna garanzia che il servizio sia sempre disponibile" },
+  { sezione: "modifiche", clausola: "modifiche delle condizioni e dei prezzi decise da noi, con preavviso e diritto di recesso" },
+  { sezione: "legge", clausola: "foro di Torino competente in via esclusiva" },
+];
+
+const numero = (id: string) => SEZIONI.findIndex((s) => s.id === id) + 1;
+const titoloDi = (id: string) => SEZIONI.find((s) => s.id === id)!.titolo;
+
+const CLAUSOLE: Sezione = {
+  id: "clausole",
+  titolo: "Clausole approvate specificamente (artt. 1341 e 1342 c.c.)",
+  paragrafi: [
+    "Con la seconda casella della registrazione l'azienda approva in modo specifico, come chiedono gli artt. 1341 e 1342 del Codice civile, queste clausole:",
   ],
+  elenco: CLAUSOLE_SPECIFICHE.map(
+    (c, i) => `${c.clausola} (punto ${numero(c.sezione)}, «${titoloDi(c.sezione)}»)${i === CLAUSOLE_SPECIFICHE.length - 1 ? "." : ";"}`,
+  ),
+};
+
+// L'accordo resta l'ultima sezione; le clausole vanno subito prima
+export const CONDIZIONI: Documento = {
+  titolo: "Condizioni del servizio",
+  versione: VERSIONE_CONDIZIONI,
+  sezioni: [...SEZIONI.slice(0, -1), CLAUSOLE, SEZIONI.at(-1)!],
 };

@@ -9,7 +9,7 @@ import { GIORNI_PROVA } from "../abbonamento.ts";
 import { ORDINE_MODULI } from "../moduli.ts";
 import { dataVersione, FORNITORI, pezziTesto, SERVIZI_COLLEGATI, voceServizioCollegato, type Documento, type Sezione } from "./comune.ts";
 import { INFORMATIVA_PRIVACY } from "./privacy.ts";
-import { CONDIZIONI } from "./condizioni.ts";
+import { CLAUSOLE_SPECIFICHE, CONDIZIONI } from "./condizioni.ts";
 
 const righeSezione = (s: Sezione) => [...s.paragrafi, ...(s.elenco ?? []), ...(s.dopo ?? []).flatMap((b) => [...b.paragrafi, ...(b.elenco ?? [])])];
 const testoSezione = (s: Sezione) => [s.titolo, ...righeSezione(s)].join("\n");
@@ -158,7 +158,7 @@ test("condizioni: versione salvata con il consenso e sezioni in ordine, con l'ac
   assert.equal(CONDIZIONI.titolo, "Condizioni del servizio");
   assert.deepEqual(
     CONDIZIONI.sezioni.map((s) => s.id),
-    ["parti", "servizio", "prova", "abbonamento", "commissione", "disdetta", "dati", "responsabilita", "modifiche", "legge", "accordo"],
+    ["parti", "servizio", "prova", "abbonamento", "commissione", "disdetta", "dati", "responsabilita", "modifiche", "legge", "clausole", "accordo"],
   );
   assert.equal(sezioneCondizioni("accordo").titolo, "Allegato: accordo sul trattamento dei dati per conto del cliente (art. 28 GDPR)");
 });
@@ -170,11 +170,11 @@ test("condizioni: prezzi, prova e commissione presi dal codice", () => {
   }
   const abbonamento = testoSezione(sezioneCondizioni("abbonamento"));
   for (const m of ORDINE_MODULI) assert.ok(abbonamento.includes(`${LISTINO[m].nome}: ${euro(LISTINO[m].mese)} al mese oppure ${euro(LISTINO[m].anno)} all'anno`), m);
-  for (const atteso of ["IVA esclusa", `${GIORNI_PROVA} giorni`, `${COMMISSIONE_ONLINE * 100}%`, "consumatori", "Torino"]) {
+  for (const atteso of ["IVA esclusa", `${GIORNI_PROVA} giorni`, `${Math.round(COMMISSIONE_ONLINE * 100)}%`, "consumatori", "Torino"]) {
     assert.ok(testo.includes(atteso), `manca «${atteso}»`);
   }
   assert.ok(testoSezione(sezioneCondizioni("prova")).includes(`${GIORNI_PROVA} giorni`));
-  assert.ok(testoSezione(sezioneCondizioni("commissione")).includes(`${COMMISSIONE_ONLINE * 100}%`));
+  assert.ok(testoSezione(sezioneCondizioni("commissione")).includes(`${Math.round(COMMISSIONE_ONLINE * 100)}%`));
   assert.match(testoSezione(sezioneCondizioni("commissione")), /banco/);
   assert.match(testoSezione(sezioneCondizioni("legge")), /foro di Torino/);
   assert.match(testoSezione(sezioneCondizioni("parti")), /consumatori/);
@@ -221,4 +221,56 @@ test("condizioni: Supabase compare solo nell'accordo, mai il suo indirizzo", () 
     assert.ok(!testo.toLowerCase().includes("supabase.co"), s.id);
   }
   assert.doesNotMatch(CONDIZIONI.titolo, /supabase/i);
+});
+
+test("clausole approvate specificamente (artt. 1341 e 1342 c.c.): sezione prima dell'accordo, ognuna rimanda a una sezione vera", () => {
+  const clausole = sezioneCondizioni("clausole");
+  assert.equal(clausole.titolo, "Clausole approvate specificamente (artt. 1341 e 1342 c.c.)");
+  const testo = testoSezione(clausole);
+  assert.match(testo, /seconda casella/);
+  const ids = CONDIZIONI.sezioni.map((s) => s.id);
+  for (const c of CLAUSOLE_SPECIFICHE) {
+    assert.ok(ids.includes(c.sezione) && !["clausole", "accordo"].includes(c.sezione), `sezione «${c.sezione}» inesistente`);
+    const titolo = sezioneCondizioni(c.sezione).titolo;
+    assert.ok(clausole.elenco?.some((v) => v.includes(c.clausola) && v.includes(`«${titolo}»`)), c.clausola);
+  }
+  assert.equal(clausole.elenco?.length, CLAUSOLE_SPECIFICHE.length);
+  // Le clausole onerose scritte nel testo: limite di responsabilità, rinnovo automatico, sospensione e chiusura,
+  // modifiche unilaterali, foro esclusivo, nessun rimborso alla disdetta
+  for (const id of ["responsabilita", "abbonamento", "disdetta", "modifiche", "legge"]) {
+    assert.ok(CLAUSOLE_SPECIFICHE.some((c) => c.sezione === id), `manca una clausola della sezione «${id}»`);
+  }
+  for (const parola of [/responsabilità/, /rinnovo automatico/, /sospensione/, /modifiche/, /foro di Torino/, /rimborso/]) {
+    assert.ok(CLAUSOLE_SPECIFICHE.some((c) => parola.test(c.clausola)), String(parola));
+  }
+});
+
+test("recesso con rimborso della parte non usata per modifiche in peggio, prezzi più alti e nuovi sub-responsabili", () => {
+  const modifiche = testoSezione(sezioneCondizioni("modifiche"));
+  assert.match(modifiche, /peggiora/);
+  assert.match(modifiche, /prezzo/);
+  for (const testo of [modifiche, testoSezione(sezioneCondizioni("accordo"))]) {
+    assert.match(testo, /recedere/);
+    assert.match(testo, /parte non usata del periodo già pagato/);
+    assert.match(testo, /PEC/);
+  }
+  // La disdetta normale resta a fine periodo, senza rimborso
+  const disdetta = testoSezione(sezioneCondizioni("disdetta"));
+  assert.match(disdetta, /alla fine del periodo già pagato/);
+  assert.match(disdetta, /non rimborsiamo la parte del periodo in corso/i);
+});
+
+test("niente promesse che l'app non mantiene: pagamento dell'acquirente, email prima del blocco per mancato pagamento", () => {
+  assert.doesNotMatch(testoSezione(sezioneCondizioni("commissione")), /arriva all'azienda/);
+  const disdetta = testoSezione(sezioneCondizioni("disdetta"));
+  assert.doesNotMatch(disdetta, /se l'azienda non paga,/);
+  assert.match(testoSezione(sezioneCondizioni("abbonamento")), /Stripe riprova da solo/);
+});
+
+test("parti e accordo: attività d'impresa o professionale, email di chi ha registrato, art. 28.4", () => {
+  assert.match(testoSezione(sezioneCondizioni("parti")), /dichiara di poterla rappresentare e di agire per la propria attività d'impresa o professionale/);
+  const accordo = testoSezione(sezioneCondizioni("accordo"));
+  assert.match(accordo, /all'email di chi ha registrato l'azienda/);
+  assert.doesNotMatch(accordo, /per email al titolare/);
+  assert.match(accordo, /risponde per intero[^.]*sub-responsabili[^.]*art\. 28\.4/);
 });
