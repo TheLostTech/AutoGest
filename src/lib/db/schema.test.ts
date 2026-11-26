@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Pool } from "pg";
-import { SQL_SCHEMA, SQL_STATO_TABELLE, SQL_TEMPI_AVVIO, SQL_VISTA_REGISTRAZIONI, preparaSchema, proteggiTabelle, sqlProtezione, sqlProtezioneMancante } from "./schema.ts";
+import { SQL_SCHEMA, SQL_STATO_TABELLE, SQL_TEMPI_AVVIO, SQL_VISTA_REGISTRAZIONI, SQL_ELIMINA_VISTA, preparaSchema, proteggiTabelle, sqlProtezione, sqlProtezioneMancante } from "./schema.ts";
 
 // Un pool finto: connect() dà un client che registra tutto in `log`; `query` decide le risposte
 const poolFinto = (query: (q: string) => Promise<{ rows: unknown[] }>, log: string[] = [], rilasci: unknown[] = []) =>
@@ -44,7 +44,7 @@ test("preparaSchema: una connessione, transazione con i tempi massimi (5s lock, 
   );
   await preparaSchema(finto);
   assert.deepEqual(SQL_TEMPI_AVVIO, ["set local lock_timeout = '5s'", "set local statement_timeout = '30s'"]);
-  assert.deepEqual(log, ["begin", ...SQL_TEMPI_AVVIO, ...SQL_SCHEMA, SQL_VISTA_REGISTRAZIONI, "commit"]);
+  assert.deepEqual(log, ["begin", ...SQL_TEMPI_AVVIO, ...SQL_SCHEMA, "savepoint vista_registrazioni", SQL_ELIMINA_VISTA, SQL_VISTA_REGISTRAZIONI, "release savepoint vista_registrazioni", "commit"]);
   assert.deepEqual(rilasci, [undefined]);
 });
 
@@ -153,7 +153,7 @@ test("vista registrazioni: security_invoker, create or replace, tutte le colonne
 test("preparaSchema crea la vista dopo le tabelle", async () => {
   const log: string[] = [];
   await preparaSchema(poolFinto(async () => ({ rows: [] }), log));
-  assert.deepEqual(log, ["begin", ...SQL_TEMPI_AVVIO, ...SQL_SCHEMA, SQL_VISTA_REGISTRAZIONI, "commit"]);
+  assert.deepEqual(log, ["begin", ...SQL_TEMPI_AVVIO, ...SQL_SCHEMA, "savepoint vista_registrazioni", SQL_ELIMINA_VISTA, SQL_VISTA_REGISTRAZIONI, "release savepoint vista_registrazioni", "commit"]);
 });
 
 test("proteggiTabelle: una vista ha solo il revoke, niente RLS", async () => {
@@ -162,4 +162,23 @@ test("proteggiTabelle: una vista ha solo il revoke, niente RLS", async () => {
   await proteggiTabelle(poolFinto(async (q) => ({ rows: q === SQL_STATO_TABELLE ? stato : [] }), log));
   assert.deepEqual(log, ["begin", ...SQL_TEMPI_AVVIO, SQL_STATO_TABELLE, 'revoke all on table public."registrazioni" from "anon", "authenticated";', "commit"]);
   assert.match(SQL_STATO_TABELLE, /relkind = 'v'\) as vista/);
+});
+
+test("preparaSchema: se la vista fallisce le tabelle restano (commit) e non lancia", async () => {
+  const log: string[] = [];
+  const errori: unknown[] = [];
+  const orig = console.error;
+  console.error = (...a: unknown[]) => void errori.push(a);
+  try {
+    await preparaSchema(poolFinto(async (q) => { if (q === SQL_VISTA_REGISTRAZIONI) throw Object.assign(new Error("cannot change name of view column"), { code: "42P16" }); return { rows: [] }; }, log));
+  } finally {
+    console.error = orig;
+  }
+  assert.deepEqual(log, ["begin", ...SQL_TEMPI_AVVIO, ...SQL_SCHEMA, "savepoint vista_registrazioni", SQL_ELIMINA_VISTA, SQL_VISTA_REGISTRAZIONI, "rollback to savepoint vista_registrazioni", "commit"]);
+  assert.equal(errori.length, 1);
+  assert.match(String(errori[0]), /42P16/);
+});
+
+test("vista registrazioni: consenso_commerciale mai null", () => {
+  assert.match(SQL_VISTA_REGISTRAZIONI, /coalesce\(jsonb_typeof\(r\.dati->'commerciale'\) = 'object', false\) as consenso_commerciale/);
 });

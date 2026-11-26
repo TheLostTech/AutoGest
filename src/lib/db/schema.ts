@@ -46,6 +46,7 @@ export const SQL_SCHEMA: string[] = [
 // giorni_rimasti: solo in prova (stato nuovo con una fine), giorni interi arrotondati per eccesso, mai sotto 0; conta
 // lo spostamento degli strumenti di prova solo con le chiavi di prova (come oraProva). moduli_pagati: solo con un
 // abbonamento in corso (attivo, in ritardo, disdetto), separati da virgola.
+export const SQL_ELIMINA_VISTA = "drop view if exists registrazioni;";
 export const SQL_VISTA_REGISTRAZIONI = `create or replace view registrazioni with (security_invoker = true) as
 select
   coalesce(r.dati->>'azienda', o.name) as azienda,
@@ -62,7 +63,7 @@ select
   case when a.dati->>'stato' in ('attivo', 'in-ritardo', 'disdetto')
     then (select string_agg(m, ',' order by ord) from jsonb_array_elements_text(coalesce(a.dati->'moduli', '[]'::jsonb)) with ordinality as t(m, ord))
   end as moduli_pagati,
-  jsonb_typeof(r.dati->'commerciale') = 'object' as consenso_commerciale
+  coalesce(jsonb_typeof(r.dati->'commerciale') = 'object', false) as consenso_commerciale
 from documento r
 left join organization o on o.id = r.azienda_id
 left join documento a on a.azienda_id = r.azienda_id and a.tipo = 'abbonamento'
@@ -73,7 +74,18 @@ order by registrata desc nulls last`;
 export async function preparaSchema(p: Pool): Promise<void> {
   await conTempiMassimi(p, async (c) => {
     for (const q of SQL_SCHEMA) await c.query(q);
-    await c.query(SQL_VISTA_REGISTRAZIONI);
+    // La vista è comoda ma non essenziale: un suo errore non deve fermare l'avvio né annullare le tabelle. Dentro un
+    // savepoint si annulla solo lei. Prima si elimina: create or replace fallisce se cambiano nomi, tipi o ordine delle colonne.
+    await c.query("savepoint vista_registrazioni");
+    try {
+      await c.query(SQL_ELIMINA_VISTA);
+      await c.query(SQL_VISTA_REGISTRAZIONI);
+      await c.query("release savepoint vista_registrazioni");
+    } catch (e) {
+      await c.query("rollback to savepoint vista_registrazioni");
+      const codice = (e as { code?: unknown }).code;
+      console.error(`[schema] vista registrazioni non creata (${typeof codice === "string" ? codice : "errore"}): ${e instanceof Error ? e.message : "errore sconosciuto"}`);
+    }
   });
 }
 
