@@ -18,7 +18,7 @@ const ora = Date.UTC(2026, 10, 26, 9, 30);
 const iso = "2026-11-26T09:30:00.000Z";
 
 test("versioni dei testi come date", () => {
-  assert.equal(VERSIONE_CONDIZIONI, "2026-11-26");
+  assert.equal(VERSIONE_CONDIZIONI, "2026-11-27");
   assert.equal(VERSIONE_PRIVACY, "2026-11-26");
 });
 
