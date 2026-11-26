@@ -26,10 +26,13 @@ export default function NuovoVeicolo() {
   const [simulateFail, setSimulateFail] = useState(false);
   const [f, setF] = useState({ make: "", model: "", version: "", platform: "", year: "", fuel: "Benzina", vin: "", color: "", km: "", weight: "", massa: "", notes: "" });
   const [touched, setTouched] = useState(false);
+  // Dopo "Registra ingresso" il veicolo è già nell'elenco mentre si apre la sua scheda: senza questo, per un attimo
+  // la pagina lo trovava come doppione di sé stesso e diceva "Veicolo già presente".
+  const [registrato, setRegistrato] = useState(false);
 
   const normPlate = plate.replace(/\s+/g, "").toUpperCase();
-  const dup = normPlate ? vehicles.find((v) => v.plate === normPlate) : undefined;
-  const dupVin = f.vin ? vehicles.find((v) => v.vin === f.vin.toUpperCase()) : undefined;
+  const dup = !registrato && normPlate ? vehicles.find((v) => v.plate === normPlate) : undefined;
+  const dupVin = !registrato && f.vin ? vehicles.find((v) => v.vin === f.vin.toUpperCase()) : undefined;
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value });
 
   async function onPhoto(file?: File) {
@@ -69,7 +72,8 @@ export default function NuovoVeicolo() {
 
   function save() {
     setTouched(true);
-    if (!canSave) return;
+    if (!canSave || registrato) return;
+    setRegistrato(true);
     const id = addVehicle({
       plate: normPlate,
       vin: f.vin.toUpperCase(),
@@ -159,6 +163,7 @@ export default function NuovoVeicolo() {
           {lookupState === "notfound" && <Notice tone="warn">Nessun risultato per <span className="code font-bold">{normPlate}</span>. Compila a mano qui sotto: il veicolo resterà «da verificare».</Notice>}
           {lookupState === "error" && <Notice tone="danger">{lookupError}</Notice>}
 
+          {registrato && <Notice tone="ok">Ingresso registrato: apro la scheda del veicolo…</Notice>}
           {dup && (
             <Notice tone="danger">
               Veicolo già presente: <Link className="code font-bold underline" href={`/veicoli/${dup.id}`}>{dup.id}</Link> · {dup.make} {dup.model}, ingresso del {new Date(dup.intakeAt).toLocaleDateString("it-IT")}. Non è possibile registrarlo due volte.
@@ -237,7 +242,7 @@ export default function NuovoVeicolo() {
           {plateOk && <Plate plate={normPlate} size="sm" />}
           <span className={verified ? "font-semibold text-ok" : "font-semibold text-warn"}>{verified ? "Verificato" : "Sarà «da verificare»"}</span>
         </div>
-        <Button onClick={save} disabled={touched && !canSave} className="shrink-0">Registra ingresso</Button>
+        <Button onClick={save} disabled={registrato || (touched && !canSave)} className="shrink-0">{registrato ? "Registrato…" : "Registra ingresso"}</Button>
       </div>
     </div>
   );
