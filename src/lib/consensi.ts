@@ -2,7 +2,7 @@
 // Puro: la route la salva nel deposito (tipo "registrazione"). Spec prova-15-giorni, "Decisioni" (consensi).
 import type { DatiRegistrazione } from "./accesso/registrazione";
 
-// Data dell'ultima modifica di /condizioni e di /privacy: si cambia insieme al testo
+// Data dell'ultima modifica di /condizioni e di /privacy (testi in src/lib/legale): si cambia insieme al testo, con la data del giorno
 export const VERSIONE_CONDIZIONI = "2026-11-26";
 export const VERSIONE_PRIVACY = "2026-11-26";
 
