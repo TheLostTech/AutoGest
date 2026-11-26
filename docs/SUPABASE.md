@@ -55,6 +55,7 @@ Su Vercel l'indirizzo IP per i limiti di tentativi arriva da `x-real-ip` (`VERCE
 
 Nel pannello del progetto:
 - **Table Editor**, tabella `documento` (filtro per `azienda_id`), `conto_account`, e `user`, `organization`, `member` di Better Auth.
+- **Table Editor**, sezione delle viste, `registrazioni`: una riga per azienda registrata (azienda, titolare, email, telefono, registrata, confermata, fine_prova, giorni_rimasti, stato, moduli_pagati, consenso_commerciale), le più recenti in alto. Oppure nello **SQL Editor**: `select * from registrazioni;`. `giorni_rimasti` c'è solo durante la prova (0 se è finita); `moduli_pagati` solo con un abbonamento in corso. È una vista di sola lettura, creata all'avvio, e `anon`/`authenticated` non la vedono.
 - **Storage**, bucket `piazzale`.
 
 ## Prove in locale

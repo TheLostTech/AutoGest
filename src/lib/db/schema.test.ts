@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Pool } from "pg";
-import { SQL_SCHEMA, SQL_STATO_TABELLE, SQL_TEMPI_AVVIO, preparaSchema, proteggiTabelle, sqlProtezione, sqlProtezioneMancante } from "./schema.ts";
+import { SQL_SCHEMA, SQL_STATO_TABELLE, SQL_TEMPI_AVVIO, SQL_VISTA_REGISTRAZIONI, preparaSchema, proteggiTabelle, sqlProtezione, sqlProtezioneMancante } from "./schema.ts";
 
 // Un pool finto: connect() dà un client che registra tutto in `log`; `query` decide le risposte
 const poolFinto = (query: (q: string) => Promise<{ rows: unknown[] }>, log: string[] = [], rilasci: unknown[] = []) =>
@@ -44,7 +44,7 @@ test("preparaSchema: una connessione, transazione con i tempi massimi (5s lock, 
   );
   await preparaSchema(finto);
   assert.deepEqual(SQL_TEMPI_AVVIO, ["set local lock_timeout = '5s'", "set local statement_timeout = '30s'"]);
-  assert.deepEqual(log, ["begin", ...SQL_TEMPI_AVVIO, ...SQL_SCHEMA, "commit"]);
+  assert.deepEqual(log, ["begin", ...SQL_TEMPI_AVVIO, ...SQL_SCHEMA, SQL_VISTA_REGISTRAZIONI, "commit"]);
   assert.deepEqual(rilasci, [undefined]);
 });
 
@@ -109,7 +109,7 @@ test("sqlProtezioneMancante dà le stesse istruzioni di sqlProtezione quando man
 
 test("lettura dello stato: tabelle di public, RLS, permessi di tabella e colonne dei soli ruoli pubblici", () => {
   assert.match(SQL_STATO_TABELLE, /n\.nspname = 'public'/);
-  assert.match(SQL_STATO_TABELLE, /relkind in \('r', 'p'\)/);
+  assert.match(SQL_STATO_TABELLE, /relkind in \('r', 'p', 'v'\)/);
   assert.match(SQL_STATO_TABELLE, /relrowsecurity as rls/);
   assert.match(SQL_STATO_TABELLE, /rolname in \('anon', 'authenticated'\)/);
   assert.match(SQL_STATO_TABELLE, /aclexplode\(c\.relacl\)/);
@@ -135,4 +135,31 @@ test("proteggiTabelle: una lettura, poi solo le istruzioni che mancano (a regime
 test("proteggiTabelle: un errore del database arriva a chi chiama", async () => {
   const finto = poolFinto(async (q) => { if (q === SQL_STATO_TABELLE) throw new Error("permesso negato"); return { rows: [] }; });
   await assert.rejects(proteggiTabelle(finto), /permesso negato/);
+});
+
+test("vista registrazioni: security_invoker, create or replace, tutte le colonne nell'ordine del brief", () => {
+  assert.match(SQL_VISTA_REGISTRAZIONI, /^create or replace view registrazioni with \(security_invoker = true\) as/);
+  const colonne = ["azienda", "titolare", "email", "telefono", "registrata", "confermata", "fine_prova", "giorni_rimasti", "stato", "moduli_pagati", "consenso_commerciale"];
+  let da = 0;
+  for (const c of colonne) {
+    const i = SQL_VISTA_REGISTRAZIONI.indexOf(` as ${c}`, da);
+    assert.ok(i >= da, `manca la colonna ${c}`);
+    da = i;
+  }
+  assert.match(SQL_VISTA_REGISTRAZIONI, /tipo = 'registrazione'/);
+  assert.match(SQL_VISTA_REGISTRAZIONI, /tipo = 'abbonamento'/);
+});
+
+test("preparaSchema crea la vista dopo le tabelle", async () => {
+  const log: string[] = [];
+  await preparaSchema(poolFinto(async () => ({ rows: [] }), log));
+  assert.deepEqual(log, ["begin", ...SQL_TEMPI_AVVIO, ...SQL_SCHEMA, SQL_VISTA_REGISTRAZIONI, "commit"]);
+});
+
+test("proteggiTabelle: una vista ha solo il revoke, niente RLS", async () => {
+  const log: string[] = [];
+  const stato = [{ tabella: "registrazioni", rls: false, vista: true, ruoli: ["anon", "authenticated"] }];
+  await proteggiTabelle(poolFinto(async (q) => ({ rows: q === SQL_STATO_TABELLE ? stato : [] }), log));
+  assert.deepEqual(log, ["begin", ...SQL_TEMPI_AVVIO, SQL_STATO_TABELLE, 'revoke all on table public."registrazioni" from "anon", "authenticated";', "commit"]);
+  assert.match(SQL_STATO_TABELLE, /relkind = 'v'\) as vista/);
 });

@@ -39,9 +39,41 @@ export const SQL_SCHEMA: string[] = [
   "alter table conto_account enable row level security;",
 ];
 
+// Vista per guardare le registrazioni dal pannello di Supabase (Table Editor, tra le viste). Una riga per azienda con la
+// scheda `registrazione` (la fonte dei contatti); l'abbonamento è facoltativo. Si crea dopo le migrazioni di Better Auth
+// (usa organization). security_invoker: i permessi sono quelli di chi interroga, non del proprietario; in più
+// proteggiTabelle toglie ogni permesso ad anon e authenticated.
+// giorni_rimasti: solo in prova (stato nuovo con una fine), giorni interi arrotondati per eccesso, mai sotto 0; conta
+// lo spostamento degli strumenti di prova solo con le chiavi di prova (come oraProva). moduli_pagati: solo con un
+// abbonamento in corso (attivo, in ritardo, disdetto), separati da virgola.
+export const SQL_VISTA_REGISTRAZIONI = `create or replace view registrazioni with (security_invoker = true) as
+select
+  coalesce(r.dati->>'azienda', o.name) as azienda,
+  r.dati->>'titolare' as titolare,
+  r.dati->>'email' as email,
+  r.dati->>'telefono' as telefono,
+  (r.dati->>'registrata')::timestamptz as registrata,
+  (r.dati->>'confermata')::timestamptz as confermata,
+  case when f.ms is not null then to_timestamp(f.ms / 1000.0) end as fine_prova,
+  case when a.dati->>'stato' = 'nuovo' and f.ms is not null
+    then greatest(0, ceil((f.ms - (extract(epoch from now()) * 1000 + case when a.dati->>'prova' = 'true' then coalesce((a.dati->>'spostamentoProva')::numeric, 0) else 0 end)) / 86400000.0))::integer
+  end as giorni_rimasti,
+  coalesce(a.dati->>'stato', 'nuovo') as stato,
+  case when a.dati->>'stato' in ('attivo', 'in-ritardo', 'disdetto')
+    then (select string_agg(m, ',' order by ord) from jsonb_array_elements_text(coalesce(a.dati->'moduli', '[]'::jsonb)) with ordinality as t(m, ord))
+  end as moduli_pagati,
+  jsonb_typeof(r.dati->'commerciale') = 'object' as consenso_commerciale
+from documento r
+left join organization o on o.id = r.azienda_id
+left join documento a on a.azienda_id = r.azienda_id and a.tipo = 'abbonamento'
+left join lateral (select (a.dati->>'fineProva')::numeric as ms where jsonb_typeof(a.dati->'fineProva') = 'number') f on true
+where r.tipo = 'registrazione'
+order by registrata desc nulls last`;
+
 export async function preparaSchema(p: Pool): Promise<void> {
   await conTempiMassimi(p, async (c) => {
     for (const q of SQL_SCHEMA) await c.query(q);
+    await c.query(SQL_VISTA_REGISTRAZIONI);
   });
 }
 
@@ -60,17 +92,19 @@ export function sqlProtezione(tabelle: string[], ruoli: string[]): string[] {
 export interface StatoTabella {
   tabella: string;
   rls: boolean;
+  /** Una vista: la RLS non esiste (si toglie solo il permesso). */
+  vista?: boolean;
   ruoli: string[];
 }
 
 /** Solo le istruzioni che servono: RLS dove è spenta, revoke dove un ruolo pubblico ha ancora permessi. */
 export function sqlProtezioneMancante(stato: StatoTabella[]): string[] {
-  return stato.flatMap((t) => [...(t.rls ? [] : [accendiRls(t.tabella)]), ...(t.ruoli.length ? [togliPermessi(t.tabella, t.ruoli)] : [])]);
+  return stato.flatMap((t) => [...(t.rls || t.vista ? [] : [accendiRls(t.tabella)]), ...(t.ruoli.length ? [togliPermessi(t.tabella, t.ruoli)] : [])]);
 }
 
 // Una sola lettura del catalogo: per ogni tabella di public (comprese quelle di Better Auth) la RLS e i ruoli pubblici
 // che compaiono tra i permessi della tabella o di una sua colonna (concessi direttamente: la revoke toglie quelli).
-export const SQL_STATO_TABELLE = `select c.relname::text as tabella, c.relrowsecurity as rls,
+export const SQL_STATO_TABELLE = `select c.relname::text as tabella, c.relrowsecurity as rls, (c.relkind = 'v') as vista,
   array(
     select r.rolname::text from pg_roles r
     where r.rolname in (${RUOLI_PUBBLICI.map((r) => `'${r}'`).join(", ")}) and (
@@ -80,7 +114,7 @@ export const SQL_STATO_TABELLE = `select c.relname::text as tabella, c.relrowsec
     order by r.rolname
   ) as ruoli
 from pg_class c join pg_namespace n on n.oid = c.relnamespace
-where n.nspname = 'public' and c.relkind in ('r', 'p')
+where n.nspname = 'public' and c.relkind in ('r', 'p', 'v')
 order by c.relname`;
 
 // Si esegue a ogni avvio dopo le migrazioni, così anche le tabelle nuove restano chiuse. Ma "enable row level security"
