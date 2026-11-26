@@ -496,9 +496,11 @@ test("registrazione rifatta da un altro con l'email di un titolare che non ha co
   const troppoPresto = await registra(email, "Seconda Ricambi", "password-altro-1");
   assert.equal(troppoPresto.r.stato, 201, JSON.stringify(troppoPresto.r.corpo));
   assert.equal(troppoPresto.email.length, 0);
+  assert.equal(troppoPresto.r.corpo.inviata, false);
   await invecchiaInvii(email);
   const altro = await registra(email, "Seconda Ricambi", "password-altro-1");
   assert.equal(altro.r.stato, 201, JSON.stringify(altro.r.corpo));
+  assert.equal(altro.r.corpo.inviata, true);
   const nuovo = (await c.internalAdapter.findUserByEmail(email)).user;
   assert.notEqual(nuovo.id, vecchioUtente);
   assert.equal(await c.adapter.findOne({ model: "organization", where: [{ field: "id", value: vecchiaAzienda }] }), null);

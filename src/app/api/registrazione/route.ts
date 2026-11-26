@@ -152,6 +152,13 @@ export async function POST(req: Request) {
   }
   // Niente accesso qui: il titolare entra dopo la conferma dell'email. Se l'email non parte la registrazione resta:
   // la pagina lo dice e l'email si rimanda (anche dalla pagina di accesso).
-  const inviata = await inviaConferma(req, d.email);
+  const inizio = Date.now();
+  let inviata = await inviaConferma(req, d.email);
+  // Il tetto alle email (invioConferma) può aver fermato l'invio senza errore (registrazione rifatta entro un minuto,
+  // o oltre le 5 del giorno): allora la pagina deve dire che l'email non è partita.
+  if (inviata) {
+    const s = await deposito().leggiDocumento<SchedaRegistrazione>(org.id, "registrazione").catch(() => null);
+    inviata = !!s?.inviiConferma?.some((t) => t >= inizio);
+  }
   return ok({ ok: true, conferma: true, inviata }, 201);
 }

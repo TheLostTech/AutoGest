@@ -197,3 +197,36 @@
 - [ ] **Step 3: Prova nel browser integrato** con un'email vera di Alessandro (la sceglie lui): registrazione → email arrivata da Lostar Technology, senza la parola Supabase, con il piede di legge → link → si entra con la fascia di prova → un veicolo con una foto → nuovo deploy (redeploy) → veicolo e foto ancora lì → "+1 settimana" tre volte → riquadro di pagamento con i moduli usati spuntati. Con la chiave Stripe di prova: pagamento con la 4242 → gestionale sbloccato.
 - [ ] **Step 4: Controllare** nella vista `registrazioni` di "Piazzale prove" la riga della prova.
 - [ ] **Step 5: Commit della documentazione** — `git commit -m "Documentazione: prova di 15 giorni, email e variabili nuove"`
+
+## Decisioni prese durante il lavoro
+
+- La prova è lo stato «nuovo» con il campo `fineProva` (niente stato «prova» nuovo): meno cambi nella lettura da Stripe.
+- Niente `requireEmailVerification` di Better Auth: i dipendenti creati dal titolare hanno l'email non verificata. Si ferma solo il titolare con la prova non partita.
+- La conferma chiede la password scelta alla registrazione (pagina `/conferma`, `POST /api/conferma`); `/api/auth/verify-email` non è raggiungibile dal browser. Così né chi rifà una registrazione in sospeso né chi registra con l'email di altri può far confermare il proprio account al vero titolare.
+- Una registrazione mai confermata con la stessa email si sostituisce (azienda, utente e documenti tolti), solo se l'utente non ha confermato, non è super admin ed è l'unico membro di aziende tutte in attesa. Resta accettato che il vero proprietario possa confermare una registrazione fatta da altri con la sua email (l'email dice di ignorarla).
+- BotID solo su Vercel; in produzione fuori da Vercel si rifiuta salvo `PIAZZALE_SENZA_BOTID=1` (solo negli script di prova e di presentazione). Limite di 3 registrazioni all'ora per indirizzo, contato dopo il controllo dei campi.
+- Telefono facoltativo, ma con almeno 6 cifre.
+- `moduliUsati` conta solo l'uso vero di un modulo: il carico d'ingresso automatico (*T) e la pratica «da registrare» non spuntano Ambiente o Accettazione.
+- Durante la prova la pagina Abbonamento mostra già «Scegli i moduli» con il pagamento.
+- Avvisi di fine prova: il segno si mette prima dell'invio (meglio un avviso perso che uno al giorno).
+- Vista `registrazioni`: giorni rimasti mai sotto 0; si ricrea a ogni avvio dentro un savepoint.
+- Avvio: una sola istanza alla volta prepara il database (`pg_advisory_xact_lock`), dopo il «tuple concurrently deleted» visto sull'anteprima.
+- Email di conferma (revisione finale): nessun testo scritto da chi registra; al massimo 5 in 24 ore e una al minuto per email, con il conto che passa alla registrazione che sostituisce; un invio fallito non conta; nome del titolare senza numeri, indirizzi o punti tra parole.
+
+## Cose rimandate
+
+- Prima delle chiavi Stripe vere: un abbonamento con `prova: true` pagato con la carta di prova resterebbe attivo per sempre, e `spostamentoProva` conterebbe ancora (vedi `docs/PAGAMENTI.md`). Finché non c'è la regola, in produzione nessuna chiave Stripe.
+- Un'azienda in prova mai pagante con abbonamento `incomplete_expired`/`canceled` va a «scaduto» e perde la prova (da rivedere con i pagamenti veri, per esempio SEPA).
+- Nessun recupero di `fineProva` per aziende registrate prima del piano: online non ce ne sono; in locale risultano in attesa e chi si registra con quella email le sostituisce.
+- `runMigrations` di Better Auth fuori dal lock e senza `lock_timeout`.
+- Il blocco a fine prova si decide nel browser con l'ora del dispositivo (un tablet con l'orologio avanti si blocca prima): far restituire `bloccato` o l'ora dal server.
+- Sul sito vero, con un dominio, l'indirizzo `<progetto>.vercel.app` non è tra le origini fidate: impostare `BETTER_AUTH_URL` e `INDIRIZZO_GESTIONALE`.
+- La vista `registrazioni` si elimina e ricrea a ogni avvio (si potrebbe confrontare prima la definizione).
+- Avvisi di fine prova: `findMany` senza limite, giro in sequenza senza `maxDuration`.
+- Gli strumenti di prova restano visibili a prova finita (voluto); 409 «La prova gratuita non è in corso» con chiavi scambiate.
+- Errore all'avvio della prova al click → JSON 500 di Better Auth; due conferme insieme possono togliere la sessione appena aperta; doppio controllo della password per un titolare in attesa; utente sostituito tra il controllo e la verifica → 500 invece di 400.
+- `/registrati` mostra «Rimanda l'email» anche quando l'invio è riuscito; meta charset e title nell'HTML delle email.
+- Fuori da Vercel l'unica difesa dai robot è il limite per indirizzo, che è in memoria per istanza.
+- Da ricontrollare in produzione: sull'anteprima il pulsante dell'email ha aperto `/conferma` senza il codice (probabile protezione di Vercel in un altro browser); l'indirizzo copiato funzionava.
+- Conto delle email di conferma per email in un posto suo (oggi sta sulla scheda e passa alla registrazione che sostituisce; una sostituzione fallita a metà lo azzera). Ogni registrazione costa BotID e il limite per indirizzo.
+- Chi conosce un'email può esaurire le 5 email di conferma del giorno: il vero proprietario aspetta il giorno dopo (accettato).
