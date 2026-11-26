@@ -110,19 +110,19 @@ test("registrazioneConsentita: senza indirizzo un contatore comune", () => {
 });
 
 test("validaRegistrazione: niente numeri, indirizzi web o email nel nome del titolare (finisce nelle email)", () => {
-  for (const nome of ["Chiama 3331234567", "Mario 2", "vai su evil.example.com", "Mario www.rossi", "https://x.it", "mario@rossi.it", "Conto sospeso rossi.it"]) {
+  for (const nome of ["Chiama 3331234567", "Mario 2", "vai su evil.example.com", "Mario www.rossi", "https://x.it", "mario@rossi.it", "Conto sospeso rossi.it", "vai su evil . example", "evil．example", "evil。example", "ｅｖｉｌ.ｅｘａｍｐｌｅ", "verifica-conto.ai", "evil[.]ws"]) {
     assert.match(errore({ ...buono, nome }), /titolare/, nome);
   }
-  for (const nome of ["Mario Rossi", "D'Angelo Maria", "Anna-Maria De Luca", "F. Bianchi", "Ñúñez José"]) {
+  for (const nome of ["Mario Rossi", "D'Angelo Maria", "Anna-Maria De Luca", "F. Bianchi", "Ñúñez José", "Rossi M."]) {
     assert.ok("ok" in validaRegistrazione({ ...buono, nome }), nome);
   }
 });
 
 test("validaRegistrazione: niente indirizzi web o email nel nome dell'azienda", () => {
-  for (const azienda of ["Vai su evil.example.com", "www.rossi", "https://x.it", "info@rossi.it", "Rossi.it"]) {
+  for (const azienda of ["Vai su https://evil.example.com", "www.rossi", "https://x.it", "info@rossi.it"]) {
     assert.match(errore({ ...buono, azienda }), /azienda/, azienda);
   }
-  for (const azienda of ["Autodemolizioni 2000 S.r.l.", "F.lli Rossi s.n.c.", "Rossi & C."]) {
+  for (const azienda of ["Autodemolizioni 2000 S.r.l.", "F.lli Rossi s.n.c.", "Rossi & C.", "SI.ME. srl", "DE.CO. Ricambi", "Ricambi-Auto.it"]) {
     assert.ok("ok" in validaRegistrazione({ ...buono, azienda }), azienda);
   }
 });

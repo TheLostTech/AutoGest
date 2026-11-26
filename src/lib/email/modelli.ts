@@ -44,11 +44,13 @@ ${c.nota ? `<p style="margin:0 0 14px;font-size:13px;line-height:1.5;color:#4b55
   return { a, oggetto: c.oggetto, testo, html };
 }
 
-export function emailConferma(nome: string, link: string): Email {
+// Senza il nome: chi la riceve non ha ancora dimostrato che quell'email è sua, e il nome lo scrive chi registra (anche
+// con l'email di altri). Nessun testo scelto da chi registra entra in questa email.
+export function emailConferma(link: string): Email {
   return componi("", {
     oggetto: "Conferma la tua email su Piazzale",
     paragrafi: [
-      `Ciao ${nome},`,
+      "Ciao,",
       "grazie per esserti registrato a Piazzale, il gestionale per autodemolizioni di Lostar Technology. Per attivare la prova gratuita conferma il tuo indirizzo email.",
       "Ti chiederemo la password che hai scelto quando ti sei registrato.",
     ],

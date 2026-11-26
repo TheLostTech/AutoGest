@@ -17,7 +17,7 @@ import { creaAzienda, creaMembro, slugDa } from "@/lib/piattaforma/crea";
 import { contesto, daAltroSito, errore, leggiJson, ok, type Contesto } from "@/lib/piattaforma/server";
 import { DEFAULT_LISTINI } from "@/lib/pricing";
 import { modalitaStripe } from "@/lib/stripe/server";
-import { schedaRegistrazione } from "@/lib/consensi";
+import { schedaRegistrazione, type SchedaRegistrazione } from "@/lib/consensi";
 import { deposito } from "@/lib/deposito";
 import { statoVuoto } from "@/lib/stato-iniziale";
 import { WAREHOUSES } from "@/lib/warehouse";
@@ -67,11 +67,11 @@ async function inviaConferma(req: Request, email: string): Promise<boolean> {
 // Sostituzione di una registrazione mai confermata: prima l'utente (sessioni, account, utente), poi le aziende. Se
 // togliere l'utente non riesce ci si ferma e la vecchia registrazione resta intera, quindi sostituibile al prossimo
 // tentativo (togliendo prima i membri resterebbe un utente senza azienda: 409 per sempre su quell'email).
-async function togliInSospeso(c: Contesto, userId: string, aziende: string[]): Promise<boolean> {
+async function togliInSospeso(c: Contesto, userId: string, aziende: string[]): Promise<boolean | "confermata"> {
   try {
     // Il vero titolare può aver confermato un attimo fa (dopo il controllo di registrazioneInSospeso): allora non si toglie
     const adesso = await c.internalAdapter.findUserById(userId);
-    if (!adesso || adesso.emailVerified) return false;
+    if (!adesso || adesso.emailVerified) return "confermata";
     await c.adapter.deleteMany({ model: "session", where: [{ field: "userId", value: userId }] });
     await c.adapter.deleteMany({ model: "account", where: [{ field: "userId", value: userId }] });
     await c.adapter.delete({ model: "user", where: [{ field: "id", value: userId }] });
@@ -101,6 +101,7 @@ export async function POST(req: Request) {
   if (await registrazioneDaRobot(() => checkBotId())) return errore(403, "Registrazione non riuscita.");
   const c = await contesto();
   const esistente = await c.internalAdapter.findUserByEmail(d.email);
+  const inviiPrecedenti: number[] = [];
   if (esistente) {
     // Titolare confermato, dipendente, super admin: la stessa risposta di sempre. Registrazione in sospeso: si toglie.
     const daTogliere = await registrazioneInSospeso(c, esistente.user).catch((e: unknown) => {
@@ -108,7 +109,14 @@ export async function POST(req: Request) {
       return null;
     });
     if (!daTogliere) return errore(409, EMAIL_USATA);
-    if (!(await togliInSospeso(c, esistente.user.id, daTogliere)) || (await c.internalAdapter.findUserByEmail(d.email).catch(() => esistente))) {
+    // Il tetto alle email di conferma (invioConferma) non si azzera rifacendo la registrazione
+    for (const id of daTogliere) {
+      const s = await deposito().leggiDocumento<SchedaRegistrazione>(id, "registrazione").catch(() => null);
+      if (Array.isArray(s?.inviiConferma)) inviiPrecedenti.push(...s.inviiConferma);
+    }
+    const tolta = await togliInSospeso(c, esistente.user.id, daTogliere);
+    if (tolta === "confermata") return errore(409, EMAIL_USATA);
+    if (!tolta || (await c.internalAdapter.findUserByEmail(d.email).catch(() => esistente))) {
       return errore(500, "Non è stato possibile completare la registrazione. Riprova.");
     }
     console.info("Registrazione mai confermata sostituita da una nuova con la stessa email", daTogliere);
@@ -119,7 +127,8 @@ export async function POST(req: Request) {
   try {
     await creaStatoAzienda(org.id, statoVuoto({ listini: DEFAULT_LISTINI, warehouses: WAREHOUSES }));
     // Contatti e consensi (versione dei testi, ora, indirizzo): annulla la toglie con il resto dell'azienda
-    if (!(await deposito().creaDocumento(org.id, "registrazione", schedaRegistrazione(d, ip, Date.now())))) {
+    const scheda = schedaRegistrazione(d, ip, Date.now());
+    if (!(await deposito().creaDocumento(org.id, "registrazione", inviiPrecedenti.length ? { ...scheda, inviiConferma: inviiPrecedenti } : scheda))) {
       throw new Error("Scheda della registrazione già presente");
     }
     // Prima del titolare: quando l'utente esiste, l'abbonamento "in attesa di conferma" c'è già (e lo ferma all'accesso).

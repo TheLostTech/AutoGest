@@ -20,11 +20,15 @@ const testo = (v: unknown, min: number, max: number): string | null => {
   return t.length >= min && t.length <= max ? t : null;
 };
 
-// Il nome del titolare finisce nelle email che partono dal nostro dominio (e il nome dell'azienda potrebbe finirci):
-// non deve poter portare un indirizzo web, un'email o un numero di telefono scritti da chi registra con l'email di altri.
-const TLD = "com|it|net|org|eu|info|biz|io|co|me|ly|xyz|app|dev|link|online|site|shop|store|top|club|live|click|ru|cn|de|fr|uk|es|us|tk";
-const DOMINIO = new RegExp(`(^|[^\\p{L}\\p{N}])[\\p{L}\\p{N}-]+\\.(${TLD})(?![\\p{L}\\p{N}])`, "iu");
-const conIndirizzo = (t: string) => /:\/\/|www\.|@/i.test(t) || DOMINIO.test(t);
+// Il nome del titolare finisce nelle email di avviso della prova (non in quella di conferma): niente indirizzi web,
+// email o numeri scritti da chi registra. Dopo NFKC i punti larghi diventano "."; un punto (o simile) va bene solo
+// seguito da uno spazio o in fondo ("F. Bianchi"), e non tra due parole staccate ("evil . com").
+// Il nome dell'azienda non finisce in nessuna email: si fermano solo gli indirizzi evidenti (sigle come "SI.ME. srl" vanno).
+const conIndirizzo = (t: string) => /:\/\/|www\.|@/i.test(t);
+const nomeConIndirizzo = (t: string) => {
+  const n = t.normalize("NFKC").replace(/[\u2024\u3002\uFF0E\uFE52\uFF61]/g, ".");
+  return conIndirizzo(n) || /\.(?!\s|$)/u.test(n) || /[\p{L}\p{N}-]{2,}\s+\.\s*\p{L}{2,}/u.test(n);
+};
 
 export function validaRegistrazione(corpo: unknown): { ok: DatiRegistrazione } | { errore: string } {
   if (!corpo || typeof corpo !== "object" || Array.isArray(corpo)) return { errore: "Richiesta non valida." };
@@ -34,7 +38,7 @@ export function validaRegistrazione(corpo: unknown): { ok: DatiRegistrazione } |
   if (conIndirizzo(azienda)) return { errore: "Il nome dell'azienda non può contenere indirizzi web o email." };
   const nome = testo(b.nome, 1, 100);
   if (!nome) return { errore: "Scrivi nome e cognome del titolare." };
-  if (/\p{N}/u.test(nome) || conIndirizzo(nome)) return { errore: "Nel nome del titolare scrivi solo nome e cognome, senza numeri o indirizzi." };
+  if (/\p{N}/u.test(nome) || nomeConIndirizzo(nome)) return { errore: "Nel nome del titolare scrivi solo nome e cognome, senza numeri o indirizzi." };
   const email = typeof b.email === "string" ? b.email.trim().toLowerCase() : "";
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { errore: "Scrivi un'email valida." };
   const password = typeof b.password === "string" ? b.password : "";

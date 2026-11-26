@@ -10,7 +10,7 @@ const PIEDE_HTML = PIEDE.replace("'", "&#39;");
 const MOTIVO = "Ricevi questa email perché ti sei registrato a Piazzale.";
 
 const modelli = {
-  conferma: emailConferma("Mario", LINK),
+  conferma: emailConferma(LINK),
   scadenza: emailProvaInScadenza("Mario", 3, LINK),
   finita: emailProvaFinita("Mario", LINK),
 };
@@ -36,9 +36,14 @@ describe("modelli email", () => {
   });
 
   it("scappa i caratteri speciali del nome", () => {
-    const e = emailConferma("<b>X</b>", LINK);
+    const e = emailProvaFinita("<b>X</b>", LINK);
     assert.ok(e.html.includes("&lt;b&gt;X&lt;/b&gt;"));
     assert.ok(!e.html.includes("<b>X</b>"));
+  });
+
+  it("conferma: nessun testo di chi registra (niente nome)", () => {
+    assert.ok(modelli.conferma.testo.startsWith("Ciao,"), modelli.conferma.testo.slice(0, 40));
+    assert.ok(!modelli.conferma.testo.includes("Mario"));
   });
 
   it("conferma: avverte chi non si è registrato", () => {

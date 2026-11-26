@@ -86,18 +86,30 @@ export async function inviaConferma(c: AuthContext, d: { user: User; token: stri
   const aziende = await aziendeInAttesa(c, d.user.id);
   if (!aziende.length) return;
   // Tetto agli invii (invioConferma), segnato sulla scheda della registrazione prima di mandare. Oltre il tetto non parte
-  // nulla e la risposta resta la stessa. Una scheda assente (non dovrebbe succedere) non ferma l'invio.
+  // nulla e la risposta resta la stessa. Senza scheda (aziende registrate prima della prova) non parte nulla: il tetto
+  // non si può contare.
+  const ora = Date.now();
   const consentito = await deposito().aggiornaDocumento<SchedaRegistrazione, boolean>(aziende[0], "registrazione", (s) => {
-    if (!s) return { dati: s as unknown as SchedaRegistrazione, risultato: true, nonScrivere: true };
-    const invii = invioConferma(s.inviiConferma, Date.now());
+    if (!s) return { dati: s as unknown as SchedaRegistrazione, risultato: false, nonScrivere: true };
+    const invii = invioConferma(s.inviiConferma, ora);
     return invii ? { dati: { ...s, inviiConferma: invii }, risultato: true } : { dati: s, risultato: false, nonScrivere: true };
   });
   if (!consentito) {
-    console.warn("Email di conferma non mandata: troppi invii per questa registrazione", aziende[0]);
+    console.warn("Email di conferma non mandata: troppi invii o scheda assente", aziende[0]);
     return;
   }
   const link = linkConferma(d.token, request ? new URL(request.url).origin : null);
-  await inviaEmail({ ...emailConferma(d.user.name, link), a: d.user.email });
+  try {
+    await inviaEmail({ ...emailConferma(link), a: d.user.email });
+  } catch (e) {
+    // Invio non riuscito (Resend giù): non consuma uno dei 5 del giorno
+    await deposito()
+      .aggiornaDocumento<SchedaRegistrazione, null>(aziende[0], "registrazione", (s) =>
+        s ? { dati: { ...s, inviiConferma: (s.inviiConferma ?? []).filter((t) => t !== ora) }, risultato: null } : { dati: s as unknown as SchedaRegistrazione, risultato: null, nonScrivere: true },
+      )
+      .catch((x: unknown) => console.error("Invio di conferma non tolto dal conto", aziende[0], x));
+    throw e;
+  }
 }
 
 /**

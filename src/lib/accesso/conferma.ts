@@ -56,7 +56,8 @@ export type Avviso = { tono: "ok" | "danger"; testo: string };
 
 /** Esito di "Rimanda l'email", dallo stato HTTP della risposta (0 = rete). */
 export function esitoRimando(stato: number): Avviso {
-  if (stato >= 200 && stato < 300) return { tono: "ok", testo: "Ti abbiamo mandato un nuovo link. Controlla la posta, anche quella indesiderata." };
+  // La risposta è la stessa per tutti (e oltre il tetto non parte nulla): il testo non promette un invio
+  if (stato >= 200 && stato < 300) return { tono: "ok", testo: "Se la registrazione aspetta la conferma, il nuovo link arriva entro pochi minuti: controlla anche la posta indesiderata. Puoi chiederlo una volta al minuto, al massimo 5 volte al giorno." };
   if (stato === 429) return { tono: "danger", testo: "Hai chiesto troppe email in poco tempo: riprova tra un minuto." };
   if (stato === 0) return { tono: "danger", testo: "Non riesco a collegarmi al server. Controlla la rete e riprova." };
   return { tono: "danger", testo: "Non sono riuscito a mandare l'email. Riprova tra qualche minuto." };

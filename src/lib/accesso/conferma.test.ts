@@ -30,6 +30,7 @@ test("richiesta di conferma: gettone e password", () => {
 
 test("esito del rimando", () => {
   assert.equal(esitoRimando(200).tono, "ok");
+  assert.ok(!esitoRimando(200).testo.includes("Ti abbiamo mandato"));
   assert.ok(esitoRimando(429).testo.includes("troppe"));
   assert.ok(esitoRimando(0).testo.includes("rete"));
   assert.equal(esitoRimando(500).tono, "danger");

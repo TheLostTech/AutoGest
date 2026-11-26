@@ -336,6 +336,16 @@ async function aziendaDi(userId: string): Promise<string> {
   return righe[0].organizationId;
 }
 
+// Fa sembrare vecchie di 2 minuti le email di conferma già mandate a questa email (pausa di un minuto di invioConferma)
+async function invecchiaInvii(email: string) {
+  const { deposito } = await import("../deposito/index.ts");
+  const u = (await c.internalAdapter.findUserByEmail(email)).user;
+  await deposito().aggiornaDocumento<{ inviiConferma?: number[] }, null>(await aziendaDi(u.id), "registrazione", (sc) => ({
+    dati: { ...sc!, inviiConferma: (sc?.inviiConferma ?? []).map((t) => t - 2 * 60_000) },
+    risultato: null,
+  }));
+}
+
 const PASSWORD_SBAGLIATA = "Password non corretta.";
 const LINK_NON_VALIDO = "Il link non è più valido: chiedi una nuova email dalla pagina di accesso.";
 
@@ -452,13 +462,8 @@ test("conferma: rimandare l'email dalla pagina di accesso manda un nuovo link so
   const subito = await rimanda(email);
   assert.equal(subito.r.status, 200);
   assert.equal(subito.email.length, 0);
-  // Un minuto dopo l'ultimo invio si rimanda: si sposta indietro l'orario segnato sulla scheda
-  const { deposito } = await import("../deposito/index.ts");
-  const u = (await c.internalAdapter.findUserByEmail(email)).user;
-  await deposito().aggiornaDocumento<{ inviiConferma?: number[] }, null>(await aziendaDi(u.id), "registrazione", (sc) => ({
-    dati: { ...sc!, inviiConferma: (sc?.inviiConferma ?? []).map((t) => t - 2 * 60_000) },
-    risultato: null,
-  }));
+  // Un minuto dopo l'ultimo invio si rimanda
+  await invecchiaInvii(email);
   const si = await rimanda(email);
   assert.equal(si.r.status, 200);
   assert.equal(si.email.length, 1);
@@ -486,7 +491,12 @@ test("registrazione rifatta da un altro con l'email di un titolare che non ha co
   assert.equal(titolare.r.stato, 201);
   const vecchioUtente = (await c.internalAdapter.findUserByEmail(email)).user.id;
   const vecchiaAzienda = await aziendaDi(vecchioUtente);
-  // Un altro rifà la registrazione con la stessa email e la sua password: la vecchia si toglie
+  // Un altro rifà la registrazione con la stessa email e la sua password: la vecchia si toglie. Gli invii della vecchia
+  // contano per la nuova: subito dopo nessuna email, un minuto dopo sì
+  const troppoPresto = await registra(email, "Seconda Ricambi", "password-altro-1");
+  assert.equal(troppoPresto.r.stato, 201, JSON.stringify(troppoPresto.r.corpo));
+  assert.equal(troppoPresto.email.length, 0);
+  await invecchiaInvii(email);
   const altro = await registra(email, "Seconda Ricambi", "password-altro-1");
   assert.equal(altro.r.stato, 201, JSON.stringify(altro.r.corpo));
   const nuovo = (await c.internalAdapter.findUserByEmail(email)).user;
@@ -505,6 +515,7 @@ test("registrazione rifatta da un altro con l'email di un titolare che non ha co
   // Il link della prima email non vale più (l'utente non c'è più)
   assert.equal((await conferma(gettoneDa(titolare.email[0]), "password-titolare-1")).stato, 400);
   // Il titolare può rifare la registrazione e confermarla con la sua password
+  await invecchiaInvii(email);
   const ancora = await registra(email, "Prima Ricambi", "password-titolare-1");
   assert.equal(ancora.r.stato, 201);
   assert.equal((await conferma(gettoneDa(ancora.email[0]), "password-titolare-1")).stato, 200);
