@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useState } from "react";
 import { CircleCheck, Send } from "lucide-react";
-import { CAUSALE_LABEL, isDraft, periodsOf } from "@/lib/periodo";
+import { CAUSALE_LABEL, isDraft, mudVeicoliRicevuti, periodsOf, type MudVeicoli } from "@/lib/periodo";
 import { useStore } from "@/lib/store";
 import { EER, eerByCode, fmtKg, stockByEer } from "@/lib/ambiente";
 import { dateIt } from "@/lib/logic";
 import { ButtonLink, PageTitle, Panel } from "@/components/ui";
 
 export default function RegistroRifiuti() {
-  const { wasteMoves, firs } = useStore();
+  const { wasteMoves, firs, vehicles } = useStore();
   const [eer, setEer] = useState("tutti");
   const [all, setAll] = useState(false);
   const [allStock, setAllStock] = useState(false);
@@ -20,6 +20,10 @@ export default function RegistroRifiuti() {
     .sort((a, b) => b.pct - a.pct);
   const list = [...wasteMoves].reverse().filter((m) => eer === "tutti" || m.eer === eer);
   const shown = all ? list : list.slice(0, 40);
+  // MUD: si dichiara entro l'anno successivo; si mostrano l'anno scorso e quello in corso
+  const annoDi = (id: string) => vehicles.find((v) => v.id === id)?.year;
+  const adesso = new Date().getFullYear();
+  const mud = [adesso - 1, adesso].map((a) => mudVeicoliRicevuti(wasteMoves, annoDi, a)).filter((x) => x.veicoli > 0);
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -65,12 +69,22 @@ export default function RegistroRifiuti() {
         )}
       </section>
 
+      {mud.length > 0 && (
+        <section aria-labelledby="mud" className="mb-6">
+          <h2 id="mud" className="code mb-2 text-[15px] font-bold uppercase tracking-wide text-ink-2">MUD · veicoli fuori uso ricevuti (16 01 04)</h2>
+          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {mud.map((x) => <MudAnno key={x.anno} x={x} inCorso={x.anno === adesso} />)}
+          </ul>
+          <p className="mt-2 text-[13px] text-ink-3">La Scheda AUT chiede il peso dei veicoli ricevuti diviso per anno di immatricolazione, prima o dal 1° gennaio 1980. Sono contati i carichi registrati, con rettifiche e annullamenti.</p>
+        </section>
+      )}
+
       <Panel
         title={`Movimenti · ${list.length}`}
         action={
           <select className="h-10 max-w-[48vw] rounded border border-hair bg-label px-2 text-sm font-semibold" value={eer} onChange={(e) => setEer(e.target.value)} aria-label="Filtra per codice rifiuto">
             <option value="tutti">Tutti i codici</option>
-            {EER.map((e) => <option key={e.code} value={e.code}>{e.code} · {e.short}</option>)}
+            {EER.filter((e) => wasteMoves.some((m) => m.eer === e.code)).map((e) => <option key={e.code} value={e.code}>{e.code} · {e.short}</option>)}
           </select>
         }
       >
@@ -112,5 +126,28 @@ export default function RegistroRifiuti() {
       </Panel>
       <p className="mt-3 text-[13px] text-ink-3">Codici rifiuto, limiti e trasmissione sono dimostrativi: il collegamento reale al RENTRI richiede l&apos;accreditamento e va validato con la consulente ambientale.</p>
     </div>
+  );
+}
+
+function MudAnno({ x, inCorso }: { x: MudVeicoli; inCorso: boolean }) {
+  return (
+    <li className="label-sheet p-4">
+      <span className="flex items-baseline justify-between gap-3">
+        <span className="font-semibold">Anno {x.anno}{inCorso ? " (in corso)" : ""}</span>
+        <span className="text-sm text-ink-3">{x.veicoli} {x.veicoli === 1 ? "veicolo" : "veicoli"}</span>
+      </span>
+      <span className="code mt-2 block text-[24px] font-bold leading-none">{fmtKg(x.totaleKg)}</span>
+      <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+        <div>
+          <dt className="text-ink-3">Immatricolati prima del 1980</dt>
+          <dd className="code font-semibold">{fmtKg(x.prima1980Kg)}</dd>
+        </div>
+        <div>
+          <dt className="text-ink-3">Dal 1980</dt>
+          <dd className="code font-semibold">{fmtKg(x.dal1980Kg)}</dd>
+        </div>
+      </dl>
+      {x.senzaAnno > 0 && <p className="mt-2 text-sm font-semibold text-warn">{x.senzaAnno} {x.senzaAnno === 1 ? "veicolo" : "veicoli"} senza anno di immatricolazione: da completare</p>}
+    </li>
   );
 }

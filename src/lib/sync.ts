@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from "react";
 import { abilitaSalvataggioLocale, STORE_SCHEMA, useStore } from "./store";
 import { devePubblicareStatoLocale } from "./sync-regole";
+import { normalizzaMovimenti } from "./periodo";
 import { percorsoPubblico } from "./accesso/percorsi";
 import { intestazioniPassive } from "./accesso/attivita";
 import { aggiungiInSospeso, corpoDaRiprendere } from "./sync-in-sospeso";
@@ -160,6 +161,7 @@ function sanitize(raw: unknown): Partial<S> | null {
     if (!Array.isArray(r[k]) || !(r[k] as unknown[]).every((x) => x && typeof x === "object")) return null;
     out[k] = r[k];
   }
+  if (Array.isArray(out.wasteMoves)) out.wasteMoves = normalizzaMovimenti(out.wasteMoves as { causale?: string }[]);
   if ("counters" in r) {
     const c = r.counters;
     if (!c || typeof c !== "object" || Array.isArray(c)) return null;

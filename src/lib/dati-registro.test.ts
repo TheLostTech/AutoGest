@@ -24,7 +24,7 @@ test("bonificaRegistrabile: si registra se manca o se era segnata senza Ambiente
 });
 
 test("statoDatiRegistro: completo solo con il carico numerato", () => {
-  const carico = (p: Partial<WasteMove>) => ({ id: "M-1", at: "", kind: "carico", eer: "16 01 04*", kg: 900, origin: "V-1", note: "", rentri: "da trasmettere", causale: "*T", ...p }) as WasteMove;
+  const carico = (p: Partial<WasteMove>) => ({ id: "M-1", at: "", kind: "carico", eer: "16 01 04*", kg: 900, origin: "V-1", note: "", rentri: "da trasmettere", causale: "T*", ...p }) as WasteMove;
   const v = { id: "V-1", conferente: { tipo: "privato", nome: "A", cf: "X" }, dossier: { number: "CR-1" }, presaInCarico: { at: "", by: "" } } as unknown as Vehicle;
   assert.equal(statoDatiRegistro(v, [carico({ numero: 7 })]), "completo");
   assert.equal(statoDatiRegistro(v, [carico({ pesoPesa: false })]), "manca-pesata");

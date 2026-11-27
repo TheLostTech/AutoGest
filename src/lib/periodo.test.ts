@@ -28,6 +28,7 @@ const mv = (p: Partial<WasteMove>): WasteMove => ({
   at: "2026-10-10T10:00:00+02:00",
   kind: "carico",
   eer: "16 01 04*",
+  hp: ["HP14"], // i codici pericolosi hanno le classi di pericolo (senza, c'è un avviso: vedi codici-rifiuti.test.ts)
   kg: 1000,
   origin: "V-1",
   rentri: "da trasmettere",
@@ -72,7 +73,7 @@ test("parseKg: solo numeri maggiori di zero, virgola italiana", () => {
 });
 
 test("missingFields: carico di un veicolo fuori uso", () => {
-  const ok = mv({ causale: "*T", vfu: true, produttore: { nome: "Mario Rossi", cf: "RSSMRA80A01L219X" }, certificato: { numero: "CR-1", data: "2026-10-10" }, pesoPesa: true });
+  const ok = mv({ causale: "T*", vfu: true, produttore: { nome: "Mario Rossi", cf: "RSSMRA80A01L219X" }, certificato: { numero: "CR-1", data: "2026-10-10" }, pesoPesa: true });
   assert.deepEqual(missingFields(ok), []);
   assert.ok(missingFields({ ...ok, produttore: { nome: "Mario Rossi" } }).includes("cf-produttore"));
   assert.ok(missingFields({ ...ok, certificato: undefined }).includes("certificato"));
@@ -96,7 +97,7 @@ test("workingDaysAfter: si saltano sabato e domenica", () => {
 });
 
 test("moveIssues: bozze bloccanti, formulari come avvisi", () => {
-  assert.deepEqual(moveIssues(mv({ causale: "*T" })).map((i) => [i.code, i.blocking]), [["bozza", true]]);
+  assert.deepEqual(moveIssues(mv({ causale: "T*" })).map((i) => [i.code, i.blocking]), [["bozza", true]]);
   const out = mv({ numero: 1, kind: "scarico", causale: "aT", eer: "16 01 06", kg: 5000, fir: "F-1" });
   assert.deepEqual(moveIssues(out, fir({})).map((i) => i.code), ["esito-mancante"]);
   assert.deepEqual(moveIssues(out, fir({ esito: "respinto", kgAccettati: 0 })).map((i) => i.code), ["respinto"]);
@@ -174,14 +175,14 @@ test("parseKg: il punto come decimale (tastiera del telefono) non moltiplica per
 });
 
 test("missingFields: lo scarico interno resta bozza finché il carico d'ingresso è bozza", () => {
-  const carico = mv({ id: "C-1", causale: "*T", vfu: true, produttore: { nome: "A" }, pesoPesa: true, certificato: { numero: "CR", data: "2026-10-01" } });
+  const carico = mv({ id: "C-1", causale: "T*", vfu: true, produttore: { nome: "A" }, pesoPesa: true, certificato: { numero: "CR", data: "2026-10-01" } });
   const scarico = mv({ kind: "scarico", causale: "I", caricoRif: "C-1" });
   assert.ok(missingFields(scarico, [carico, scarico]).includes("carico"));
   assert.deepEqual(missingFields(scarico, [{ ...carico, numero: 4 }, scarico]), []);
 });
 
 test("missingFields: senza nome di chi conferisce non si numera", () => {
-  const m = mv({ causale: "*T", vfu: true, produttore: { nome: "", cf: "X" }, pesoPesa: true, certificato: { numero: "CR", data: "2026-10-01" } });
+  const m = mv({ causale: "T*", vfu: true, produttore: { nome: "", cf: "X" }, pesoPesa: true, certificato: { numero: "CR", data: "2026-10-01" } });
   assert.ok(missingFields(m).includes("produttore"));
   assert.ok(missingFields({ ...m, produttore: undefined }).includes("produttore"));
 });
@@ -217,7 +218,7 @@ test("firNumberTaken: lo stesso formulario non si registra due volte", () => {
 });
 
 test("moveIssues: pesa molto diversa dal libretto è un avviso", () => {
-  const m = mv({ numero: 9, causale: "*T", vfu: true, kg: 700, kgLibretto: 975, pesoPesa: true, produttore: { nome: "A", cf: "X" }, certificato: { numero: "CR", data: "2026-10-01" } });
+  const m = mv({ numero: 9, causale: "T*", vfu: true, kg: 700, kgLibretto: 975, pesoPesa: true, produttore: { nome: "A", cf: "X" }, certificato: { numero: "CR", data: "2026-10-01" } });
   assert.deepEqual(moveIssues(m).map((i) => [i.code, i.blocking]), [["peso-diverso", false]]);
   assert.deepEqual(moveIssues({ ...m, kg: 990 }), []);
 });

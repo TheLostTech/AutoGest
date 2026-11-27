@@ -1,7 +1,7 @@
 import { defaultRule, PART_TYPES, typeById } from "./catalog";
 import { catalogFor, CATALOG_SOURCE } from "./partsdb";
 import { corsiaId, locToString, scaffaleId, warehouseFor } from "./warehouse";
-import { eerByCode, itemKg, movesForBonifica, movesForIntake, typicalBonifica } from "./ambiente";
+import { datiRifiuto, itemKg, movesForBonifica, movesForIntake, typicalBonifica } from "./ambiente";
 import { missingFields, monthKey } from "./periodo";
 import { groupKey } from "./annunci";
 import { buildAnnuncio } from "./annuncio-build";
@@ -384,15 +384,14 @@ export function buildSeed() {
       kgAccettati,
       arrivoAt: accepted ? hours(f.at, 3) : undefined,
     });
-    const e = eerByCode(f.eer);
-    raw.push({ at: hours(f.at, 1), kind: "scarico", eer: f.eer, kg: f.kg, origin: id, note: `Uscita verso ${nomeOf(f.destinatarioId!)}`, rentri: "da trasmettere", causale: "aT", fir: id, operazione: "R13", statoFisico: e?.stato, hp: e?.hp });
+    raw.push({ at: hours(f.at, 1), kind: "scarico", eer: f.eer, kg: f.kg, origin: id, note: `Uscita verso ${nomeOf(f.destinatarioId!)}`, rentri: "da trasmettere", causale: "aT", fir: id, operazione: "R13", ...datiRifiuto(f.eer) });
   }
   const batt = sumOf(vehicles.filter((v) => v.bonifica), () => 14);
   firs.push({ id: `F-${pad(++fn)}`, at: daysAgo(0, 7), eer: "16 06 01*", kg: batt, destinatario: nomeOf("S-007"), trasportatore: nomeOf("S-009"), status: "da firmare", history: [{ at: daysAgo(0, 7), status: "da firmare", by: "Sara (responsabile)" }], numero: "DEMOD 00104 AA", emessoAt: daysAgo(0, 7), destinatarioId: "S-007", trasportatoreId: "S-009", targa: "IL789MN", conducente: "Autista Demo", rinfusa: false });
 
   // Ottobre resta con una bozza: il primo ingresso del mese senza codice fiscale di chi conferisce
   raw.sort((a, b) => a.at.localeCompare(b.at));
-  const octIntake = raw.find((m) => m.causale === "*T" && monthKey(m.at) === "2026-10");
+  const octIntake = raw.find((m) => m.causale === "T*" && monthKey(m.at) === "2026-10");
   if (octIntake?.produttore) {
     octIntake.produttore = { nome: octIntake.produttore.nome };
     const veh = vehicles.find((v) => v.id === octIntake.origin);
@@ -405,7 +404,7 @@ export function buildSeed() {
   const sentOn = (key: string) => { const [y, mo] = key.split("-").map(Number); return new Date(y, mo, 10, 11).toISOString(); };
   const perYear = new Map<number, number>();
   // Il carico d'ingresso di ogni veicolo, per sapere se lo scarico interno della bonifica può essere numerato
-  const draftIntake = new Set(raw.filter((m) => m.causale === "*T" && missingFields(m as WasteMove).length > 0).map((m) => m.origin));
+  const draftIntake = new Set(raw.filter((m) => m.causale === "T*" && missingFields(m as WasteMove).length > 0).map((m) => m.origin));
   const wasteMoves: WasteMove[] = raw.map((m, i) => {
     const id = `M-${pad(i + 1)}`;
     const draft = missingFields(m as WasteMove).length > 0 || (m.causale === "I" && draftIntake.has(m.origin));
@@ -417,14 +416,14 @@ export function buildSeed() {
     return {
       ...m,
       id,
-      ...(draft ? {} : { numero, registeredAt: m.at, by: m.causale === "*T" ? "Giulia (accettazione)" : "Davide (smontaggio)" }),
+      ...(draft ? {} : { numero, registeredAt: m.at, by: m.causale === "T*" ? "Giulia (accettazione)" : "Davide (smontaggio)" }),
       rentri: sent ? "trasmesso" : "da trasmettere",
       rentriAt: sent ? sentOn(key) : undefined,
       rentriRicevuta: sent ? `RENTRI-SIM-${key}-DEMO01` : undefined,
     };
   });
   // Lo scarico interno della bonifica richiama il carico d'ingresso del veicolo
-  for (const m of wasteMoves) if (m.causale === "I") m.caricoRif = wasteMoves.find((x) => x.causale === "*T" && x.origin === m.origin)?.id;
+  for (const m of wasteMoves) if (m.causale === "I") m.caricoRif = wasteMoves.find((x) => x.causale === "T*" && x.origin === m.origin)?.id;
 
   // ——— Documenti di vendita: scontrini e una fattura per le vendite al banco, un preventivo aperto ———
   const docs: SalesDoc[] = [];

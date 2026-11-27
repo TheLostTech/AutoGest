@@ -7,7 +7,7 @@ import { buildSeed, pad } from "./seed";
 import { statoVuoto } from "./stato-iniziale";
 import { STORE_SCHEMA } from "./schema";
 import { locToString, originLabel, WAREHOUSES, type Warehouse } from "./warehouse";
-import { eerByCode, movesForBonifica, movesForIntake, stockByEer } from "./ambiente";
+import { datiCompleti, datiRifiuto, movesForBonifica, movesForIntake, stockByEer } from "./ambiente";
 import { differenzaPesata } from "./stime";
 import { DEFAULT_LISTINI, onlinePrice, type Listino } from "./pricing";
 import { typeById } from "./catalog";
@@ -40,7 +40,7 @@ import type {
 } from "./types";
 import { euro, publishChecks } from "./logic";
 import { assestaPezzi, collocaPezzoInAnnuncio, ordineNegozio, pagaOrdine, ricalcolaAnnuncio } from "./negozio-ordine";
-import { canTransmit, currentKg, firNumberTaken, isDraft, missingFields, monthLabel, nextRegisterNumber, periodsOf } from "./periodo";
+import { canTransmit, currentKg, firNumberTaken, isDraft, missingFields, monthLabel, nextRegisterNumber, normalizzaMovimenti, periodsOf } from "./periodo";
 import { MODULI, moduliIniziali, ORDINE_MODULI, type Modulo, type StatoModulo } from "./moduli";
 import { bonificaRegistrabile, datiRegistroErrori, normCf, statoDatiRegistro, type DatiRegistro } from "./dati-registro";
 
@@ -394,7 +394,7 @@ export const useStore = create<State & Actions>()(
           }));
           push(event({ entity: "veicolo", entityId: vehicleId, action: "Dati per il registro rifiuti", detail: `${nome} · certificato ${numero}` }));
           // Il carico d'ingresso in bozza si completa con gli stessi dati (e prende il numero se non manca altro)
-          const carico = get().wasteMoves.find((m) => m.origin === vehicleId && m.causale === "*T" && isDraft(m));
+          const carico = get().wasteMoves.find((m) => m.origin === vehicleId && m.causale === "T*" && isDraft(m));
           if (carico) get().completeDraft(carico.id, { produttoreNome: nome, produttoreCf: cf, certificato: { numero, data } });
           return { ok: true, value: undefined };
         },
@@ -957,7 +957,7 @@ export const useStore = create<State & Actions>()(
           // Una bonifica segnata senza il modulo Ambiente (nessun materiale) si completa qui con i materiali tolti
           if (!v0 || !bonificaRegistrabile(v0.bonifica)) return 0;
           const at = now();
-          let carico = get().wasteMoves.find((m) => m.origin === vehicleId && m.causale === "*T");
+          let carico = get().wasteMoves.find((m) => m.origin === vehicleId && m.causale === "T*");
           const intake = carico ? [] : movesForIntake({ ...v0, weightKg: v0.weightKg ?? (weightKg || undefined) }, v0.intakeAt);
           let rettifiche = 0;
           // Pesata fatta o corretta alla bonifica: il carico in bozza si completa, quello già numerato si rettifica
@@ -1000,25 +1000,27 @@ export const useStore = create<State & Actions>()(
           set((s) => {
             let all = s.wasteMoves.map((x) => (x.id === id ? { ...next, ...(ready ? { numero: nextRegisterNumber(s.wasteMoves, at), registeredAt: at, by } : {}) } : x));
             // Registrato il carico d'ingresso, si registrano anche gli scarichi interni che lo aspettavano, con lo stesso peso
-            if (ready && next.causale === "*T")
+            if (ready && next.causale === "T*")
               for (const d of all.filter((x) => isDraft(x) && x.causale === "I" && x.caricoRif === id)) {
                 const fixed = { ...d, kg: next.kg };
                 if (missingFields(fixed, all).length === 0) all = all.map((x) => (x.id === d.id ? { ...fixed, numero: nextRegisterNumber(all, at), registeredAt: at, by } : x));
               }
             // Il peso della pesa diventa il peso del veicolo: la bonifica scaricherà lo stesso peso
-            const vehicles = patch.kg !== undefined && next.causale === "*T" ? s.vehicles.map((v) => (v.id === m.origin ? { ...v, weightKg: patch.kg } : v)) : s.vehicles;
+            const vehicles = patch.kg !== undefined && next.causale === "T*" ? s.vehicles.map((v) => (v.id === m.origin ? { ...v, weightKg: patch.kg } : v)) : s.vehicles;
             return { wasteMoves: all, vehicles };
           });
           push(event({ entity: "sistema", entityId: id, action: ready ? "Registrazione completata" : "Bozza aggiornata", detail: `${m.eer} · ${next.kg} kg · ${m.note ?? ""}` }));
           return { ok: true, value: ready };
         },
 
+        // La rettifica tiene i dati del rifiuto registrati e completa quelli che mancavano (classi di pericolo,
+        // provenienza) con quelli del codice
         rectifyMove: (id, kg, motivo) => {
           const m = get().wasteMoves.find((x) => x.id === id);
           if (!m || isDraft(m)) return { ok: false, error: "Si rettificano solo le registrazioni numerate" };
           if (!(kg > 0)) return { ok: false, error: "Scrivi i kg corretti" };
           if (!motivo.trim()) return { ok: false, error: "Scrivi il motivo della rettifica" };
-          const [newId] = addMoves([{ at: now(), kind: m.kind, eer: m.eer, kg, origin: m.origin, note: `Rettifica della n. ${m.numero}`, rentri: "da trasmettere", causale: "RETT", rettificaDi: id, motivo: motivo.trim(), statoFisico: m.statoFisico, hp: m.hp, operazione: m.operazione }]);
+          const [newId] = addMoves([{ at: now(), kind: m.kind, eer: m.eer, kg, origin: m.origin, note: `Rettifica della n. ${m.numero}`, rentri: "da trasmettere", causale: "RETT", rettificaDi: id, motivo: motivo.trim(), ...datiCompleti(m), operazione: m.operazione }]);
           push(event({ entity: "sistema", entityId: newId, action: "Rettifica registrata", detail: `n. ${m.numero}: ${m.kg} → ${kg} kg · ${motivo.trim()}` }));
           return { ok: true, value: newId };
         },
@@ -1069,16 +1071,15 @@ export const useStore = create<State & Actions>()(
           }
           const at = now();
           const dest = get().soggetti.find((x) => x.id === f.destinatarioId);
-          const e = eerByCode(f.eer);
           const nome = f.numero ?? id;
           const diff = f.svuota ? differenzaPesata(stock, f.kg) : 0;
           set((s) => ({ firs: s.firs.map((x) => (x.id === id ? { ...x, status: "firmato", history: [...x.history, { at, status: "firmato", by: nomeOperatore(s.operatore) }] } : x)) }));
           addMoves([
             ...(diff
-              ? [{ at, kind: diff > 0 ? ("carico" as const) : ("scarico" as const), eer: f.eer, kg: Math.abs(diff), origin: id, note: `Differenza tra giacenza stimata (${stock} kg) e pesata del formulario ${nome} (${f.kg} kg)`, rentri: "da trasmettere" as const, causale: "DIFF" as const, fir: id, statoFisico: e?.stato, hp: e?.hp }]
+              ? [{ at, kind: diff > 0 ? ("carico" as const) : ("scarico" as const), eer: f.eer, kg: Math.abs(diff), origin: id, note: `Differenza tra giacenza stimata (${stock} kg) e pesata del formulario ${nome} (${f.kg} kg)`, rentri: "da trasmettere" as const, causale: "DIFF" as const, fir: id, ...datiRifiuto(f.eer) }]
               : []),
             // Con la firma il rifiuto lascia l'impianto: scarico "a terzi" nel registro, legato al formulario
-            { at, kind: "scarico", eer: f.eer, kg: f.kg, origin: id, note: `Uscita verso ${f.destinatario ?? "destinatario"} · formulario ${nome}`, rentri: "da trasmettere", causale: "aT", fir: id, operazione: dest?.operazione ?? "R13", statoFisico: e?.stato, hp: e?.hp },
+            { at, kind: "scarico", eer: f.eer, kg: f.kg, origin: id, note: `Uscita verso ${f.destinatario ?? "destinatario"} · formulario ${nome}`, rentri: "da trasmettere", causale: "aT", fir: id, operazione: dest?.operazione ?? "R13", ...datiRifiuto(f.eer) },
           ]);
           push(event({ entity: "sistema", entityId: id, action: "Formulario firmato", detail: `${f.numero ?? ""} · ${f.eer} · ${f.kg} kg${diff ? ` · differenza di pesata ${diff > 0 ? "+" : ""}${diff} kg` : ""}` }));
           return { ok: true, value: undefined };
@@ -1192,6 +1193,7 @@ export const useStore = create<State & Actions>()(
       // Dopo il caricamento dal browser il ruolo salvato non può superare quelli permessi.
       merge: (salvato, attuale) => {
         const m = { ...attuale, ...(salvato as Partial<State & Actions>) };
+        if (Array.isArray(m.wasteMoves)) m.wasteMoves = normalizzaMovimenti(m.wasteMoves);
         m.operatore = attuale.operatore;
         m.ruoliPermessi = attuale.ruoliPermessi;
         if (attuale.ruoliPermessi.length > 0 && !attuale.ruoliPermessi.includes(m.role)) m.role = attuale.ruoliPermessi[0];

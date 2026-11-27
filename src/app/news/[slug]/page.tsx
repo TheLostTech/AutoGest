@@ -54,9 +54,22 @@ export default async function ArticoloPage({ params }: PageProps<"/news/[slug]">
       mainEntityOfPage: `${SITO}/news/${a.slug}`,
       author: { "@type": "Organization", name: PRODUTTORE.nome, url: PRODUTTORE.sito },
       publisher: { "@type": "Organization", name: PRODUTTORE.nome, url: PRODUTTORE.sito },
-      citation: a.fonti.map((f) => f.url),
-      about: a.norma,
+      ...(a.inBreve ? { abstract: a.inBreve } : {}),
+      isAccessibleForFree: true,
+      citation: a.fonti.map((f) => ({ "@type": "CreativeWork", name: f.nome, url: f.url })),
+      about: [a.norma, ...a.riferimenti].map((r) => ({ "@type": "Legislation", name: r, legislationJurisdiction: "IT" })),
+      // Le parti da leggere ad alta voce o citare: la risposta diretta e le domande
+      speakable: { "@type": "SpeakableSpecification", cssSelector: ["#in-breve", "#domande"] },
     },
+    ...(a.domande?.length
+      ? [
+          {
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            mainEntity: a.domande.map((q) => ({ "@type": "Question", name: q.d, acceptedAnswer: { "@type": "Answer", text: q.r } })),
+          },
+        ]
+      : []),
     {
       "@context": "https://schema.org",
       "@type": "BreadcrumbList",
@@ -98,6 +111,15 @@ export default async function ArticoloPage({ params }: PageProps<"/news/[slug]">
 
           <div className="mx-auto grid max-w-[1240px] gap-12 px-4 py-12 md:px-8 md:py-16 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-16">
             <div className="min-w-0 max-w-[68ch]">
+              {a.inBreve && (
+                <section id="in-breve" aria-labelledby="in-breve-titolo" className="label-sheet mb-12 border-l-4 border-l-band p-6">
+                  <h2 id="in-breve-titolo" className="text-[15px] font-semibold uppercase tracking-wide text-band">
+                    In breve
+                  </h2>
+                  <p className="mt-2 text-[19px] leading-[1.6] text-ink">{a.inBreve}</p>
+                </section>
+              )}
+
               <h2 className="text-[26px] font-bold tracking-[-0.02em]">Cosa dice la norma</h2>
               <ul className="mt-5 space-y-3">
                 {a.sintesi.map((s) => (
@@ -107,6 +129,37 @@ export default async function ArticoloPage({ params }: PageProps<"/news/[slug]">
                   </li>
                 ))}
               </ul>
+
+              {a.codici && (
+                <>
+                  <h2 className="mt-12 text-[26px] font-bold tracking-[-0.02em]">{a.codici.titolo}</h2>
+                  <div className="mt-5 overflow-x-auto rounded-md border border-hair">
+                  <table className="w-full border-collapse bg-label text-left">
+                    <thead>
+                      <tr className="bg-band text-white">
+                        <th scope="col" className="px-4 py-2.5 text-[15px] font-semibold">
+                          Codice
+                        </th>
+                        <th scope="col" className="px-4 py-2.5 text-[15px] font-semibold">
+                          Cosa indica
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-hair-soft">
+                      {a.codici.righe.map((r) => (
+                        <tr key={r.codice}>
+                          <th scope="row" className="code min-w-[7rem] px-4 py-3 align-top text-[17px] font-bold">
+                            {/* Un codice EER non si spezza a metà: si va a capo solo tra un codice e l'altro */}
+                            {r.codice.replace(/(\d) (?=\d)/g, "$1\u00a0")}
+                          </th>
+                          <td className="px-4 py-3 text-[17px] leading-[1.5] text-ink-2">{r.cosa}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  </div>
+                </>
+              )}
 
               {a.date.length > 0 && (
                 <>
@@ -142,6 +195,22 @@ export default async function ArticoloPage({ params }: PageProps<"/news/[slug]">
                     Registrati gratis
                   </a>
                 </>
+              )}
+
+              {a.domande && a.domande.length > 0 && (
+                <section id="domande" aria-labelledby="domande-titolo" className="mt-12">
+                  <h2 id="domande-titolo" className="text-[26px] font-bold tracking-[-0.02em]">
+                    Domande frequenti
+                  </h2>
+                  <dl className="mt-5 divide-y divide-hair-soft rounded-md border border-hair bg-label">
+                    {a.domande.map((q) => (
+                      <div key={q.d} className="p-5">
+                        <dt className="text-[19px] font-bold leading-snug">{q.d}</dt>
+                        <dd className="mt-2 text-[17px] leading-[1.6] text-ink-2">{q.r}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
               )}
 
               <p className="mt-12 border-t border-hair pt-6 text-[15px] leading-[1.6] text-ink-3">
